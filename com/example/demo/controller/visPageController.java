@@ -8,13 +8,29 @@ import com.lowagie.text.Font;
 import com.lowagie.text.Paragraph;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
-import java.awt.Desktop;
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import javafx.application.Platform;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.event.ActionEvent;
+import javafx.fxml.FXML;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Node;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
+import javafx.scene.chart.LineChart;
+import javafx.scene.control.*;
+import javafx.scene.control.Alert.AlertType;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.AnchorPane;
+import javafx.scene.layout.VBox;
+import javafx.scene.web.WebView;
+import javafx.stage.Stage;
+
+import java.awt.*;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -26,30 +42,8 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
-import javafx.application.Platform;
-import javafx.collections.FXCollections;
-import javafx.collections.ObservableList;
-import javafx.event.ActionEvent;
-import javafx.fxml.FXML;
-import javafx.fxml.FXMLLoader;
-import javafx.scene.Node;
-import javafx.scene.Parent;
-import javafx.scene.Scene;
-import javafx.scene.chart.LineChart;
-import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
-import javafx.scene.control.ComboBox;
-import javafx.scene.control.Hyperlink;
-import javafx.scene.control.Label;
-import javafx.scene.control.Tooltip;
-import javafx.scene.control.Alert.AlertType;
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
-import javafx.scene.layout.AnchorPane;
-import javafx.scene.layout.VBox;
-import javafx.scene.web.WebView;
-import javafx.stage.Stage;
 
 public class visPageController {
    private final ObservableList<User> userData = FXCollections.observableArrayList();
@@ -79,6 +73,9 @@ public class visPageController {
    private WebView webView;
    private final String htmlTemplate = "\t\t\t\t\t\t<!DOCTYPE html>\n\t\t\t<html lang=\"en\">\n\t\t\t<head>\n\t\t\t  <meta charset=\"UTF-8\">\n\t\t\t  <title>Sensor Feedback Over Time</title>\n\t\t\t  <script src=\"https://d3js.org/d3.v7.min.js\"></script>\n\t\t\t  <style>\n\t\t\t    body {\n\t\t\t      font-family: sans-serif;\n\t\t\t      margin: 0;\n\t\t\t      padding: 20px;\n\t\t\t    }\n\n\t\t\t    h2 {\n\t\t\t      text-align: center;\n\t\t\t      margin-bottom: 10px;\n\t\t\t    }\n\t\t\t.tooltip {\n\t\t\t  position: absolute;\n\t\t\t  background: rgba(255, 255, 255, 0.95);\n\t\t\t  border: 1px solid #888;\n\t\t\t  border-radius: 6px;\n\t\t\t  padding: 10px;\n\t\t\t  box-shadow: 0px 2px 8px rgba(0,0,0,0.2);\n\t\t\t  font-size: 13px;\n\t\t\t  line-height: 1.4;\n\t\t\t  pointer-events: none;\n\t\t\t  opacity: 0;\n\t\t\t  transition: opacity 0.3s ease, transform 0.3s ease;\n\t\t\t  transform: translateY(-10px);\n\t\t\t}\n\n\t\t\t    .legend {\n\t\t\t      font-size: 12px;\n\t\t\t    }\n\n\t\t\t    svg {\n\t\t\t      width: 100%;\n\t\t\t      height: 600px;\n\t\t\t    }\n\n\t\t\t    /* ✨ Modern axis styles */\n\t\t\t    .axis path,\n\t\t\t    .axis line {\n\t\t\t      stroke: #333;\n\t\t\t      stroke-width: 1.5px;\n\t\t\t      shape-rendering: crispEdges;\n\t\t\t    }\n\n\t\t\t    .axis text {\n\t\t\t      fill: #333;\n\t\t\t      font-size: 13px;\n\t\t\t      font-family: sans-serif;\n\t\t\t    }\n\n\t\t\t    .grid line {\n\t\t\t      stroke: #ddd;\n\t\t\t      stroke-opacity: 0.7;\n\t\t\t      shape-rendering: crispEdges;\n\t\t\t    }\n\n\t\t\t    .grid path {\n\t\t\t      stroke: none;\n\t\t\t    }\n\t\t\t  </style>\n\t\t\t</head>\n\t\t\t<body>\n\t\t\t  <h2>Sensor Feedback Over Time</h2>\n\t\t\t  <h3 id=\"meta-info\" style=\"text-align:center; margin-top: 0; font-weight: normal; color: #555;\"></h3>\n\n\t\t\t  <svg></svg>\n\t\t\t  <div class=\"tooltip\"></div>\n\n\t\t\t  <script>\n\t\t\tconst data = DATA_PLACEHOLDER;\n\n\n\t\t\tconsole.log(data.map(d => d.time));\n\n\n\n\t\t\t    const userId = USER_ID_PLACEHOLDER; //\n\t\t\t    const sensorType = SENSOR_TYPE_PLACEHOLDER;\n\n\t\t\t    document.getElementById(\"meta-info\").textContent = `User ID: ${userId} | Sensor: ${sensorType}`;\n\t\t\tconst parseTime = d3.utcParse(\"%Y-%m-%dT%H:%M:%S.%LZ\");\n\t\t\tconst formatTime = d3.timeFormat(\"%Y-%m-%d %H:%M\");\n\t\t\t    data.forEach(d => d.parsedTime = parseTime(d.time));\n\n\t\t\t    const svg = d3.select(\"svg\");\n\t\t\tconst margin = { top: 40, right: 200, bottom: 60, left: 100 };\n\t\t\t    const width = svg.node().clientWidth - margin.left - margin.right;\n\t\t\t    const height = svg.node().clientHeight - margin.top - margin.bottom;\n\t\t\t// Define a clip path to constrain drawing inside the chart area\n\t\t\tsvg.append(\"defs\").append(\"clipPath\")\n\t\t\t  .attr(\"id\", \"clip\")\n\t\t\t  .append(\"rect\")\n\t\t\t  .attr(\"x\", 0)\n\t\t\t  .attr(\"y\", 0)\n\t\t\t  .attr(\"width\", width)\n\t\t\t  .attr(\"height\", height);\n\n\t\t\t// Main container group\n\t\t\tconst g = svg.append(\"g\")\n\t\t\t  .attr(\"transform\", `translate(${margin.left},${margin.top})`);\n\n\t\t\t// This group will be clipped — for line and circles only\n\t\t\tconst dataLayer = g.append(\"g\")\n\t\t\t  .attr(\"clip-path\", \"url(#clip)\");\n\n\n\t\t\t    const x = d3.scaleTime()\n\t\t\t      .domain(d3.extent(data, d => d.parsedTime))\n\t\t\t      .range([20, width]);\n\n\t\t\t    const y = d3.scaleLinear()\n\t\t\t\t.domain([\n\t\t\t\t    (() => {\n\t\t\t\t        const minVal = d3.min(data, d => d.value);\n\t\t\t\t        return minVal === 0 ? 0 : minVal - 10;\n\t\t\t\t    })(),\n\t\t\t\t    d3.max(data, d => d.value) + 10\n\t\t\t\t])\n\t\t\t    .nice()\n\t\t\t    .range([height, 0]);\n\t\t\tconst intensityThresholds = [20, 50, 100, 150, 200, 230, 255];\n\t\t\tconst intensityColors = [\n\t\t  \"#fceabb\",  // 0–20 → very light yellow\n\t\t  \"#f8c156\",  // 21–50 → light orange\n\t\t  \"#f59e42\",  // 51–100 → orange\n\t\t  \"#ec5e34\",  // 101–150 → red-orange\n\t\t  \"#cd2e3a\",  // 151–200 → red\n\t\t  \"#8e063b\",  // 201–230 → dark red\n\t\t  \"#3b0a45\"   // 231–255 → very dark purple\n\t\t];\nconst color = d3.scaleThreshold()\n  .domain(intensityThresholds)\n  .range(intensityColors);\n\n\t\t\t    const maxPulses = d3.max(data, d => d.pulses || 0) || 1;\n\n\n\tconst radius = d3.scaleSqrt()\n\t  .domain([1, maxPulses])\n\t  .range([2, 8]);  //  Dynamically scaled, but visually safe\n\n\t\t\t    const tooltip = d3.select(\".tooltip\");\n\n\tconst timeExtent = d3.extent(data, d => d.parsedTime);\n\tconst tickCount = 6;\n\tconst step = (timeExtent[1] - timeExtent[0]) / (tickCount - 1);\n\n\tconst tickTimes = d3.range(tickCount).map(i => new Date(timeExtent[0].getTime() + i * step));\n\t\tconst xAxis = d3.axisBottom(x)\n\t\t  .tickValues(tickTimes)      // Use exactly these values\n\t\t  .tickFormat(formatTime);    // Format each tick as \"YYYY-MM-DD HH:mm\"\n\t\t\tconst xAxisG = g.append(\"g\")\n\t\t\t  .attr(\"class\", \"axis x-axis\")\n\t\t\t  .attr(\"transform\", `translate(0,${height})`)\n\t\t\t  .call(xAxis);\n\n\t\t\t    g.append(\"g\")\n\t\t\t      .attr(\"class\", \"axis y-axis grid\")\n\t\t\t      .call(\n\t\t\t        d3.axisLeft(y)\n\t\t\t          .ticks(6)\n\t\t\t          .tickSize(-width)\n\t\t\t      );\n\n\t\t\t    // Line generator\n\t\t\t    const line = d3.line()\n\t\t\t      .x(d => x(d.parsedTime))\n\t\t\t      .y(d => y(d.value))\n\t\t\t      .curve(d3.curveMonotoneX); // optional smoothing\n\n\n\t\t\t        // Group by minute and pick one alert per minute, or fallback to any point in that minute\n\t\t\t    const bucketedData = d3.groups(data, d => d3.timeMinute(d.parsedTime));\n\t\t\t    const reducedData = bucketedData.map(([minute, group]) =>\n\t\t\t    group.find(d => d.alert_type) || group[0]\n\t\t\t    );\n\t\t\t    // Draw animated line\n\t\t\tconst linePath = dataLayer.append(\"path\")\n\t\t\t      .datum(data)\n\t\t\t      .attr(\"fill\", \"none\")\n\t\t\t      .attr(\"stroke\", \"#4682B4\")\n\t\t\t      .attr(\"stroke-width\", 2)\n\t\t\t      .attr(\"d\", line);\n\n\t\t\t    const totalLength = linePath.node().getTotalLength();\n\n\t\t\t    linePath\n\t\t\t      .attr(\"stroke-dasharray\", totalLength + \" \" + totalLength)\n\t\t\t      .attr(\"stroke-dashoffset\", totalLength)\n\t\t\t      .transition()\n\t\t\t      .duration(2000)\n\t\t\t      .ease(d3.easeLinear)\n\t\t\t      .attr(\"stroke-dashoffset\", 0);\n\n\t\t\t    // Feedback circles with animation\n\t\t\tdataLayer.selectAll(\"circle\")\n\t\t\t      .data(data.filter(d => d.alert_type))\n\t\t\t      .enter().append(\"circle\")\n\t\t\t      .attr(\"cx\", d => x(d.parsedTime))\n\t\t\t      .attr(\"cy\", d => y(d.value))\n\t\t\t      .attr(\"r\", 0)\n\t\t\t      .attr(\"fill\", d => color(d.intensity))\n\t\t\t      .attr(\"stroke\", \"#333\")\n\t\t\t      .attr(\"opacity\", 0)\n\t\t\t      .transition()\n\t\t\t      .duration(1000)\n\t\t\t      .delay((d, i) => i * 250)\n\t\t\t      .attr(\"r\", d => radius(d.pulses))\n\t\t\t      .attr(\"opacity\", 1);\n\n\t\t\t    // Re-select for interactivity\n\t\t\tdataLayer.selectAll(\"circle\")\n\t\t\t      .on(\"mouseover\", function (event, d) {\n\t\t\t        tooltip\n\t\t\t        .style(\"transform\", \"translateY(-10px)\")\n\t\t\t        .transition()\n\t\t\t        .duration(200)\n\t\t\t        .style(\"opacity\", 1)\n\t\t\t        .style(\"transform\", \"translateY(0px)\");\n\t\t\t    tooltip.html(\n\t\t\t            `<strong>Time:</strong> ${formatTime(d.parsedTime)}<br>\n\t\t\t            <strong>Value:</strong> ${d.value}<br>\n\t\t\t            <strong>Intensity:</strong> ${d.intensity}<br>\n\t\t\t            <strong>Pulses:</strong> ${d.pulses}<br>\n\t\t\t            <strong>Duration:</strong> ${d.duration || 0} ms<br>\n\t\t\t            <strong>Interval:</strong> ${d.interval || 0} ms`\n\t\t\t        )\n\t\t\t          .style(\"left\", (event.pageX + 10) + \"px\")\n\t\t\t          .style(\"top\", (event.pageY - 30) + \"px\");\n\n\t\t\t        d3.select(this)\n\t\t\t          .transition()\n\t\t\t          .duration(150)\n\t\t\t          .attr(\"r\", radius(d.pulses) * 1.3);\n\t\t\t      })\n\t\t\t      .on(\"mouseout\", function (event, d) {\n\t\t\t        tooltip.transition().duration(200).style(\"opacity\", 0);\n\t\t\t        d3.select(this)\n\t\t\t          .transition()\n\t\t\t          .duration(200)\n\t\t\t        .attr(\"r\", radius(d.pulses));\n\t\t\t      });\n\n\t\t\t    // Legend\n\t\t\t    const legendThresholds = [0, ...intensityThresholds]; // include start 0 explicitly\n\t\t\t\tconst legend = svg.append(\"g\")\n\t\t\t\t  .attr(\"class\", \"legend\")\n\t\t\t\t  .attr(\"transform\", `translate(${width + margin.left + 20},${margin.top})`);\n\t\t\t    legend.append(\"text\")\n\t\t\t  .text(\"Intensity (Color)\")\n\t\t\t  .attr(\"font-weight\", \"bold\");\n\n\t\t\tlegendThresholds.forEach((v, i) => {\n\t\t\t  if (i < intensityColors.length) {\n\t\t\t    const rangeLabel = `${v}–${intensityThresholds[i] ?? 255}`;\n\n\t\t\t    legend.append(\"rect\")\n\t\t\t      .attr(\"x\", 0)\n\t\t\t      .attr(\"y\", 20 + i * 14)\n\t\t\t      .attr(\"width\", 20)\n\t\t\t      .attr(\"height\", 12)\n\t\t\t      .attr(\"fill\", intensityColors[i]);\n\n\t\t\t    legend.append(\"text\")\n\t\t\t      .attr(\"x\", 30)\n\t\t\t      .attr(\"y\", 30 + i * 14)\n\t\t\t      .text(rangeLabel);\n\t\t\t  }\n\t\t\t});\n\n\t\t\t    legend.append(\"text\").text(\"Pulses (Size)\").attr(\"y\", 170).attr(\"font-weight\", \"bold\");\n\t\t\tlet pulseValues;\n\n\t\t\tif (maxPulses <= 10) {\n\t\t\t  pulseValues = [2, 4, 6, 8, 10];\n\t\t\t} else {\n\t\t\t  const step = Math.ceil(maxPulses / 5); // choose 5 buckets\n\t\t\t  pulseValues = d3.range(step, maxPulses + 1, step);\n\t\t\t}\n\t\t\tlet currentY = 190; // starting y-position\n\t\t\tconst pulsePadding = 6; // desired gap between circles\n\t\t\tpulseValues.forEach((v, i) => {\n\t\t\t  const r = radius(v);\n\n\t\t\t  legend.append(\"circle\")\n\t\t\t    .attr(\"cx\", 10)\n\t\t\t    .attr(\"cy\", currentY + r)\n\t\t\t    .attr(\"r\", r)\n\t\t\t    .attr(\"fill\", \"#999\");\n\n\t\t\t  legend.append(\"text\")\n\t\t\t    .attr(\"x\", 30)\n\t\t\t    .attr(\"y\", currentY + r + 4) // text slightly below circle center\n\t\t\t    .text(v);\n\n\t\t\t  currentY += 2 * r + pulsePadding; // move down for next circle\n\t\t\t});\n\n\t\t\tconst zoom = d3.zoom()\n\t\t\t  .scaleExtent([1, 100]) // Zoom in/out limits\n\t\t\t  .translateExtent([[0, 0], [width, height]]) // Pan bounds\n\t\t\t  .extent([[0, 0], [width, height]])\n\t\t\t  .on(\"zoom\", zoomed);\n\n\t\t\tsvg.call(zoom);\n\n\t\t\t// Prevent zoom reset on double-click\n\t\t\tsvg.on(\"dblclick.zoom\", null);\n\n\t\t\tfunction zoomed(event) {\n\t\t\t  const transform = event.transform;\n\t\t\t  const zx = transform.rescaleX(x);\n\n\t\t\t  // Updated line generator using same smoothing\n\t\t\t  const lineWithZoom = d3.line()\n\t\t\t    .x(d => zx(d.parsedTime))\n\t\t\t    .y(d => y(d.value))\n\t\t\t    .curve(d3.curveMonotoneX);\n\n\t\t\t  // Redraw the line using same data\n\t\t\t  linePath.datum(data).attr(\"d\", lineWithZoom);\n\n\t\t\t  // Reposition the alert circles\n\t\t\t  g.selectAll(\"circle\")\n\t\t\t    .attr(\"cx\", d => zx(d.parsedTime));\n\t\t\t}\n\t\t\t  </script>\n\t\t\t</body>\n\t\t\t</html>\n\n";
 
+   //ngrok link base:
+   private final String URL_BASE = /*"https://marcella-unguerdoned-ayanna.ngrok-free.dev"*/ "http://localhost:5678" + "/webhook";   //tali
+
    @FXML
    private void initialize() {
       this.loadUserData();
@@ -87,7 +84,7 @@ public class visPageController {
       Tooltip.install(this.backButton, new Tooltip("Back to Main Menu"));
       if (this.sunIcon != null) {
          try {
-            Image sunImage = new Image(this.getClass().getResourceAsStream("/com/example/demo/images/sun.png"));
+            Image sunImage = new Image(Objects.requireNonNull(this.getClass().getResourceAsStream("/com/example/demo/images/sun.png")));
             this.sunIcon.setImage(sunImage);
             this.sunIcon.setVisible(false);
          } catch (Exception var2) {
@@ -121,7 +118,7 @@ public class visPageController {
       this.userData.clear();
 
       try {
-         URL url = new URL("http://localhost:1880/get-users");
+         URL url = new URL(URL_BASE+"/get-users");
          HttpURLConnection conn = (HttpURLConnection)url.openConnection();
          conn.setRequestMethod("GET");
          BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
@@ -179,10 +176,10 @@ public class visPageController {
          int selectedUserID = Integer.parseInt(userSelection.split(" ")[0]);
 
          try {
-            String urlStr = "http://localhost:1880/get-data?range="
+            String urlStr = URL_BASE+"/sensor-data?range="
                + URLEncoder.encode(timeRange, StandardCharsets.UTF_8)
                + "&alert_type="
-               + URLEncoder.encode(useCase, StandardCharsets.UTF_8)
+               + getSensorIdByName(useCase)
                + "&userid="
                + selectedUserID;
             HttpURLConnection conn = (HttpURLConnection)new URL(urlStr).openConnection();
@@ -252,8 +249,7 @@ public class visPageController {
          int userID = user.getUserID();
 
          try {
-            String urlStr = "http://localhost:1880/get-data?userId=" + userID;
-            URL url = new URL(urlStr);
+            String urlStr = URL_BASE+"/sensor-data?userId=" + userID + "&alert_type=" + getSensorIdByName("HeartRate");            URL url = new URL(urlStr);
             HttpURLConnection conn = (HttpURLConnection)url.openConnection();
             conn.setRequestMethod("GET");
             if (conn.getResponseCode() != 200) {
@@ -380,7 +376,7 @@ public class visPageController {
 
    public int getSensorIdByName(String name) {
       try {
-         URL url = new URL("http://localhost:1880/get-sensortypes");
+         URL url = new URL(URL_BASE+"/sensor-types");
          HttpURLConnection conn = (HttpURLConnection)url.openConnection();
          conn.setRequestMethod("GET");
          if (conn.getResponseCode() != 200) {
@@ -424,8 +420,7 @@ public class visPageController {
          String timeRange = (String)this.timeRangeSelector.getValue();
 
          try {
-            String urlStr = "http://localhost:1880/get-data?userId=" + userID + "&sensorId=" + sensorID + "&timeRange=" + timeRange.replace(" ", "%20");
-            URL url = new URL(urlStr);
+            String urlStr = URL_BASE+"/sensor-data?userId=" + userID + "&alert_type=" + sensorID + "&timeRange=" + timeRange.replace(" ", "%20");            URL url = new URL(urlStr);
             HttpURLConnection conn = (HttpURLConnection)url.openConnection();
             conn.setRequestMethod("GET");
             BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));

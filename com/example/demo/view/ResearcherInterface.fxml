@@ -109,7 +109,7 @@
 						<ComboBox fx:id="monitoringComboBox" prefHeight="25.0" prefWidth="169.0" promptText="Select" />
 						<HBox prefHeight="62.0" prefWidth="373.0">
 							<children>
-								<Button fx:id="MonitorSave" onAction="#sendMonitoringTypeToNodeRed" prefHeight="25.0" prefWidth="68.0" style="-fx-background-color: #28a745; -fx-text-fill: white;" text="Save" />
+								<Button fx:id="MonitorSave" onAction="#sendMonitoringType" prefHeight="25.0" prefWidth="68.0" style="-fx-background-color: #28a745; -fx-text-fill: white;" text="Save" />
 							</children>
 						</HBox>
 					</children>

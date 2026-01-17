@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
-import javafx.beans.value.ObservableValue;
+
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
@@ -102,23 +102,26 @@ public class ResearcherController {
    private final List<AzimuthRange> moonRangeInputsTest = new ArrayList<>();
    private boolean fetchConfigurationClicked = false;
 
+   //ngrok link base:
+   private final String URL_BASE = /*"https://marcella-unguerdoned-ayanna.ngrok-free.dev"*/ "http://localhost:5678" + "/webhook";   //tali
+
    public void initialize() {
       this.populateMonitorTypes();
    }
 
    @FXML
-   public void sendMonitoringTypeToNodeRed() {
+   public void sendMonitoringType() {
       String selectedType = (String)this.monitoringComboBox.getSelectionModel().getSelectedItem();
       Map<String, String> requestBody = new HashMap<>();
       requestBody.put("monitoringType", selectedType);
-      if (this.postJsonToNodeRed(requestBody, "http://localhost:1880/set-monitoring-type", "Monitoring type sent successfully!")) {
-         this.showAlert("Success", "Data Source was sucessfully sent");
+      if (this.postJson(requestBody,  URL_BASE+"/set-monitoring-type", "Monitoring type sent successfully!")) {
+         this.showAlert("Success", "Data Source was successfully sent");
       } else {
          this.showAlert("Failure", "An Error was encountered while sending the data source");
       }
    }
 
-   private boolean sendSunRangeMappingsToNodeRed() {
+   private boolean sendSunRangeMappings() {
       if (!this.handleSaveSunData()) {
          return false;
       } else {
@@ -129,7 +132,7 @@ public class ResearcherController {
             System.out.println(p + " FROM SEND SUN RANGE MAPPING 1");
          }
 
-         this.postJsonToNodeRed(sunThreshold, "http://localhost:1880/set-sun-azimuth-threshold", "Sun Azimuth Ranges sent successfully!");
+         this.postJson(sunThreshold, URL_BASE+"/set-sun-azimuth-threshold", "Sun Azimuth Ranges sent successfully!");
 
          for (HeartRateRange.HeartRateThresholdMapping p : this.heartRateMappingsTest) {
             System.out.println(p + " FROM SEND SUN RANGE MAPPING 2");
@@ -140,13 +143,13 @@ public class ResearcherController {
       }
    }
 
-   private boolean sendMoonRangeMappingsToNodeRed() {
+   private boolean sendMoonRangeMappings() {
       if (!this.handleSaveMoonData()) {
          return false;
       } else {
          SunMoonThreshold moonThreshold = new SunMoonThreshold();
          moonThreshold.setMoonAzimuthRanges(new ArrayList<>(this.moonRangeInputsTest));
-         this.postJsonToNodeRed(moonThreshold, "http://localhost:1880/set-moon-azimuth-threshold", "Moon Azimuth Ranges sent successfully!");
+         this.postJson(moonThreshold, URL_BASE+"/set-moon-azimuth-threshold", "Moon Azimuth Ranges sent successfully!");
 
          for (HeartRateRange.HeartRateThresholdMapping p : this.heartRateMappingsTest) {
             System.out.println(p + " FROM SEND SUN RANGE MAPPING 2");
@@ -157,7 +160,7 @@ public class ResearcherController {
       }
    }
 
-   private boolean sendHeartRateMappingsToNodeRed() {
+   private boolean sendHeartRateMappings() {
       for (HeartRateRange.HeartRateThresholdMapping p : this.heartRateMappingsTest) {
          System.out.println(p + " FROM SEND HEART RATE MAPPINGS");
       }
@@ -165,7 +168,7 @@ public class ResearcherController {
       if (this.saveHeartRateMappings()) {
          HeartRateRange heartThreshold = new HeartRateRange();
          heartThreshold.setThresholds(new ArrayList<>(this.heartRateMappingsTest));
-         this.postJsonToNodeRed(heartThreshold, "http://localhost:1880/set-heart-rate-threshold", "Heart Rate mappings sent successfully!");
+         this.postJson(heartThreshold, URL_BASE+"/set-heart-rate-threshold", "Heart Rate mappings sent successfully!");
          this.removeInvisibleNodes(this.heartRateMappingsBox);
          return true;
       } else {
@@ -195,9 +198,9 @@ public class ResearcherController {
             System.out.println(p + " FROM SAVE CONFIG");
          }
 
-         Boolean sendSunRangeMappings = this.sendSunRangeMappingsToNodeRed();
-         Boolean sendHeartRateMappings = this.sendHeartRateMappingsToNodeRed();
-         Boolean sendMoonRangeMappings = this.sendMoonRangeMappingsToNodeRed();
+         Boolean sendSunRangeMappings = this.sendSunRangeMappings();
+         Boolean sendHeartRateMappings = this.sendHeartRateMappings();
+         Boolean sendMoonRangeMappings = this.sendMoonRangeMappings();
          List<String> successList = new ArrayList<>();
          if (sendSunRangeMappings) {
             successList.add("Sun Rules");
@@ -615,6 +618,7 @@ public class ResearcherController {
                   intervalRange[1]
                );
                mapping.setActive(input.isVisible());
+               System.out.println(mapping);
                this.heartRateMappings.add(mapping);
                this.heartRateMappingsTest.add(mapping);
             } catch (IllegalArgumentException var15) {
@@ -633,7 +637,7 @@ public class ResearcherController {
 
    public void fetchCurrentConfigurationsWithoutMessage() {
       try {
-         JsonNode rootNode = this.getJsonFromNodeRed("http://127.0.0.1:1880/current-configurations");
+         JsonNode rootNode = this.getJson(URL_BASE+"/current-configurations");
          System.out.println(rootNode);
          this.parseSunAzimuthRanges(rootNode.path("sunAzimuthRanges"));
          this.parseMoonAzimuthRanges(rootNode.path("moonAzimuthRanges"));
@@ -648,7 +652,7 @@ public class ResearcherController {
 
    public void fetchCurrentConfigurations() {
       try {
-         JsonNode rootNode = this.getJsonFromNodeRed("http://127.0.0.1:1880/current-configurations");
+         JsonNode rootNode = this.getJson(URL_BASE+"/current-configurations");
          System.out.println(rootNode);
          this.parseSunAzimuthRanges(rootNode.path("sunAzimuthRanges"));
          this.parseMoonAzimuthRanges(rootNode.path("moonAzimuthRanges"));
@@ -810,7 +814,7 @@ public class ResearcherController {
       }
    }
 
-    private boolean postJsonToNodeRed(Object data, String endpointUrl, String successMessage) {
+    private boolean postJson(Object data, String endpointUrl, String successMessage) {
         HttpURLConnection connection = null;
         try {
             String jsonInputString = new ObjectMapper().writeValueAsString(data);
@@ -853,7 +857,7 @@ public class ResearcherController {
       textField.setTextFormatter(new TextFormatter(rangeFilter));
    }
 
-    private JsonNode getJsonFromNodeRed(String urlString) throws IOException {
+    private JsonNode getJson(String urlString) throws IOException {
         HttpURLConnection connection = null;
         try {
             URL url = new URL(urlString);
