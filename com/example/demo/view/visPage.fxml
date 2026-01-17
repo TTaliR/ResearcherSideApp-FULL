@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.AnchorPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+
+<StackPane prefHeight="800" prefWidth="1200" xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.example.demo.controller.visPageController">
+    <VBox spacing="10" style="-fx-background-color: #f5f5f5;" VBox.vgrow="ALWAYS">
+        <!-- Header Section -->
+        <VBox spacing="10" style="-fx-background-color: #2c3e50; -fx-padding: 15;">
+            <HBox alignment="CENTER_LEFT" spacing="10">
+                <!-- Back Button -->
+                <Button fx:id="backButton" onAction="#handleBackButton" style="-fx-background-color: transparent;">
+                    <graphic>
+                        <ImageView fitHeight="24" fitWidth="24" preserveRatio="true">
+                            <image>
+                                <Image url="@/com/example/demo/images/backicon.png" />
+                            </image>
+                        </ImageView>
+                    </graphic>
+                </Button>
+                
+                <!-- App Logo -->
+                <ImageView fitHeight="41.0" fitWidth="53.0" pickOnBounds="true" preserveRatio="true">
+                    <image>
+                        <Image url="@/com/example/demo/images/data-vis.png" />
+                    </image>
+                </ImageView>
+                
+                <!-- Title -->
+                <Label style="-fx-text-fill: white; -fx-font-size: 24;" text="Celestial Research Configuration Panel" />
+            </HBox>
+        </VBox>
+        
+        <!-- Selection Controls Section -->
+        <HBox alignment="CENTER" spacing="10" style="-fx-padding: 20;">
+            <Label text="Select User:" />
+            <ComboBox fx:id="userSelector" prefWidth="200.0" />
+            
+            <Label text="Select Use Case:" />
+            <ComboBox fx:id="useCaseSelector" prefWidth="200.0" />
+            
+            <Label text="Time Range:" />
+            <ComboBox fx:id="timeRangeSelector" prefWidth="150.0" />
+        </HBox>
+        
+        <!-- Buttons Section -->
+        <HBox alignment="CENTER" spacing="10" style="-fx-padding: 0 0 10 0;">
+            <Button fx:id="generatePdfButton" onAction="#generatePdfLog" text="Generate PDF Log" />
+            <Button fx:id="dailyHeartPdfBtn" onAction="#generateDailyHeartRatePdfForAllUsers" text="Generate Daily HR PDF" />
+        </HBox>
+<AnchorPane fx:id="chartAnchor" prefHeight="600.0" maxHeight="600.0" VBox.vgrow="ALWAYS" />
+    </VBox>
+</StackPane>

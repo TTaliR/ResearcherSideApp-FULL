@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.chart.LineChart?>
+<?import javafx.scene.chart.NumberAxis?>
+<?import javafx.scene.chart.CategoryAxis?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.AnchorPane?>
+
+<AnchorPane xmlns:fx="http://javafx.com/fxml"
+            fx:controller="com.example.demo.controller.SunPositionController"
+            prefWidth="700" prefHeight="400">
+
+    <!-- Line chart showing sun azimuth over time -->
+    <LineChart fx:id="sunChart"
+               layoutX="20" layoutY="20"
+               prefWidth="480" prefHeight="300">
+        <xAxis>
+            <CategoryAxis label="Time"/>
+        </xAxis>
+        <yAxis>
+            <NumberAxis label="Azimuth (°)"/>
+        </yAxis>
+    </LineChart>
+
+    <!-- Compass-style sun icon -->
+   <!-- Sun icon -->
+<ImageView fx:id="sunIcon"
+           layoutX="550" layoutY="40"
+           fitWidth="100" fitHeight="100"
+           preserveRatio="true" />
+
+<!-- Azimuth label above the icon -->
+<Label fx:id="azimuthLabel"
+       layoutX="555" layoutY="20"
+       text="Azimuth: --°"
+       style="-fx-font-size: 16px; -fx-font-weight: bold;" />
+
+<!-- Elevation label below the icon -->
+<Label fx:id="elevationLabel"
+       layoutX="555" layoutY="150"
+       text="Elevation: --°"
+       style="-fx-font-size: 16px; -fx-font-weight: bold;" />
+
+</AnchorPane>

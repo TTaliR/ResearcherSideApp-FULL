@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sensor Feedback Over Time</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h2 {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+.tooltip {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #888;
+  border-radius: 6px;
+  padding: 10px;
+  box-shadow: 0px 2px 8px rgba(0,0,0,0.2);
+  font-size: 13px;
+  line-height: 1.4;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  transform: translateY(-10px);
+}
+
+    .legend {
+      font-size: 12px;
+    }
+
+    svg {
+      width: 100%;
+      height: 600px;
+    }
+
+    /* ✨ Modern axis styles */
+    .axis path,
+    .axis line {
+      stroke: #333;
+      stroke-width: 1.5px;
+      shape-rendering: crispEdges;
+    }
+
+    .axis text {
+      fill: #333;
+      font-size: 13px;
+      font-family: sans-serif;
+    }
+
+    .grid line {
+      stroke: #ddd;
+      stroke-opacity: 0.7;
+      shape-rendering: crispEdges;
+    }
+
+    .grid path {
+      stroke: none;
+    }
+  </style>
+</head>
+<body>
+  <h2>Sensor Feedback Over Time</h2>
+  <h3 id="meta-info" style="text-align:center; margin-top: 0; font-weight: normal; color: #555;"></h3>
+
+  <svg></svg>
+  <div class="tooltip"></div>
+
+  <script>
+const data = Array.from({ length: 10000 }, (_, i) => {
+  const time = new Date(Date.UTC(2024, 5, 11, 0, 0, i * 10)); // 10 seconds apart
+  const value = 100 + 20 * Math.sin(i / 50) + Math.random() * 10;
+  const hasAlert = Math.random() < 0.15; // lower alert frequency
+  return {
+    time: time.toISOString(),
+    value: parseFloat(value.toFixed(1)),
+    pulses: hasAlert ? Math.floor(Math.random() * 30) + 1 : 0,
+    intensity: hasAlert ? Math.floor(Math.random() * 101) : 0,
+    duration: hasAlert ? Math.floor(Math.random() * 1000) + 100 : 0,
+    interval: hasAlert ? Math.floor(Math.random() * 1000) + 100 : 0,
+    alert_type: hasAlert ? "HeartRate" : undefined
+  };
+});
+
+
+console.log(data.map(d => d.time));
+
+
+
+    const userId = 123; // Replace with real value if needed
+    const sensorType = "HeartRate"; // Or "SunAzimuth", etc.
+
+    document.getElementById("meta-info").textContent = `User ID: ${userId} | Sensor: ${sensorType}`;
+const parseTime = d3.utcParse("%Y-%m-%dT%H:%M:%S.%LZ");
+const formatTime = d3.timeFormat("%Y-%m-%d %H:%M");
+    data.forEach(d => d.parsedTime = parseTime(d.time));
+
+    const svg = d3.select("svg");
+const margin = { top: 40, right: 200, bottom: 60, left: 100 };
+    const width = svg.node().clientWidth - margin.left - margin.right;
+    const height = svg.node().clientHeight - margin.top - margin.bottom;
+// Define a clip path to constrain drawing inside the chart area
+svg.append("defs").append("clipPath")
+  .attr("id", "clip")
+  .append("rect")
+  .attr("x", 0)
+  .attr("y", 0)
+  .attr("width", width)
+  .attr("height", height);
+
+// Main container group
+const g = svg.append("g")
+  .attr("transform", `translate(${margin.left},${margin.top})`);
+
+// This group will be clipped — for line and circles only
+const dataLayer = g.append("g")
+  .attr("clip-path", "url(#clip)");
+
+
+    const x = d3.scaleTime()
+      .domain(d3.extent(data, d => d.parsedTime))
+      .range([20, width]);
+
+    const y = d3.scaleLinear()
+    .domain([
+        d3.min(data, d => d.value) - 10,
+        d3.max(data, d => d.value) + 10
+    ])
+    .nice()
+    .range([height, 0]);
+
+    const color = d3.scaleDiverging()
+      .domain([100, 50, 0])
+      .interpolator(d3.interpolateRdYlBu);
+
+    const maxPulses = d3.max(data, d => d.pulses || 0) || 1;
+
+    const radius = d3.scaleSqrt()
+    .domain([0, maxPulses])
+    .range([4, 14]);
+
+    const tooltip = d3.select(".tooltip");
+
+const xAxis = d3.axisBottom(x).ticks(6).tickFormat(formatTime);
+
+const xAxisG = g.append("g")
+  .attr("class", "axis x-axis")
+  .attr("transform", `translate(0,${height})`)
+  .call(xAxis);
+
+    g.append("g")
+      .attr("class", "axis y-axis grid")
+      .call(
+        d3.axisLeft(y)
+          .ticks(6)
+          .tickSize(-width)
+      );
+
+    // Line generator
+    const line = d3.line()
+      .x(d => x(d.parsedTime))
+      .y(d => y(d.value));
+
+        // Group by minute and pick one alert per minute, or fallback to any point in that minute
+    const bucketedData = d3.groups(data, d => d3.timeMinute(d.parsedTime));
+    const reducedData = bucketedData.map(([minute, group]) =>
+    group.find(d => d.alert_type) || group[0]
+    );
+    // Draw animated line
+const linePath = dataLayer.append("path")
+      .datum(reducedData)
+      .attr("fill", "none")
+      .attr("stroke", "#4682B4")
+      .attr("stroke-width", 2)
+      .attr("d", line);
+
+    const totalLength = linePath.node().getTotalLength();
+
+    linePath
+      .attr("stroke-dasharray", totalLength + " " + totalLength)
+      .attr("stroke-dashoffset", totalLength)
+      .transition()
+      .duration(2000)
+      .ease(d3.easeLinear)
+      .attr("stroke-dashoffset", 0);
+
+    // Feedback circles with animation
+dataLayer.selectAll("circle")
+      .data(reducedData.filter(d => d.alert_type))
+      .enter().append("circle")
+      .attr("cx", d => x(d.parsedTime))
+      .attr("cy", d => y(d.value))
+      .attr("r", 0)
+      .attr("fill", d => color(d.intensity))
+      .attr("stroke", "#333")
+      .attr("opacity", 0)
+      .transition()
+      .duration(1000)
+      .delay((d, i) => i * 250)
+      .attr("r", d => radius(d.pulses))
+      .attr("opacity", 1);
+
+    // Re-select for interactivity
+dataLayer.selectAll("circle")
+      .on("mouseover", function (event, d) {
+        tooltip
+        .style("transform", "translateY(-10px)")
+        .transition()
+        .duration(200)
+        .style("opacity", 1)
+        .style("transform", "translateY(0px)");
+    tooltip.html(
+            `<strong>Time:</strong> ${formatTime(d.parsedTime)}<br>
+            <strong>Value:</strong> ${d.value}<br>
+            <strong>Intensity:</strong> ${d.intensity}<br>
+            <strong>Pulses:</strong> ${d.pulses}<br>
+            <strong>Duration:</strong> ${d.duration || 0} ms<br>
+            <strong>Interval:</strong> ${d.interval || 0} ms`
+        )
+          .style("left", (event.pageX + 10) + "px")
+          .style("top", (event.pageY - 30) + "px");
+
+        d3.select(this)
+          .transition()
+          .duration(150)
+          .attr("r", radius(d.pulses) * 1.3);
+      })
+      .on("mouseout", function (event, d) {
+        tooltip.transition().duration(200).style("opacity", 0);
+        d3.select(this)
+          .transition()
+          .duration(200)
+        .attr("r", radius(d.pulses));
+      });
+
+    // Legend
+    const legend = svg.append("g")
+      .attr("class", "legend")
+      .attr("transform", `translate(${width + margin.left + 20},${margin.top})`);
+
+    legend.append("text").text("Intensity (Color)").attr("font-weight", "bold");
+
+    const intensityScale = d3.range(0, 101, 10);
+    intensityScale.forEach((v, i) => {
+      legend.append("rect")
+        .attr("x", 0)
+        .attr("y", 20 + i * 12)
+        .attr("width", 20)
+        .attr("height", 10)
+        .attr("fill", color(v));
+
+      legend.append("text")
+        .attr("x", 30)
+        .attr("y", 29 + i * 12)
+        .text(v);
+    });
+
+    legend.append("text").text("Pulses (Size)").attr("y", 170).attr("font-weight", "bold");
+const pulseValues = [2, 4, 6, 8, 10];
+let currentY = 190; // starting y-position
+const pulsePadding = 6; // desired gap between circles
+pulseValues.forEach((v, i) => {
+  const r = radius(v);
+
+  legend.append("circle")
+    .attr("cx", 10)
+    .attr("cy", currentY + r)
+    .attr("r", r)
+    .attr("fill", "#999");
+
+  legend.append("text")
+    .attr("x", 30)
+    .attr("y", currentY + r + 4) // text slightly below circle center
+    .text(v);
+
+  currentY += 2 * r + pulsePadding; // move down for next circle
+});
+
+const zoom = d3.zoom()
+  .scaleExtent([1, 100]) // Zoom in/out limits
+  .translateExtent([[0, 0], [width, height]]) // Pan bounds
+  .extent([[0, 0], [width, height]])
+  .on("zoom", zoomed);
+
+svg.call(zoom);
+
+// Prevent zoom reset on double-click
+svg.on("dblclick.zoom", null);
+
+function zoomed(event) {
+  const transform = event.transform;
+  const zx = transform.rescaleX(x);
+
+  // Update the X axis
+  xAxisG.call(xAxis.scale(zx));
+
+  // Redraw line with new x-scale
+  linePath.attr("d", d3.line()
+    .x(d => zx(d.parsedTime))
+    .y(d => y(d.value))
+  );
+
+  // Update circles' x position
+  g.selectAll("circle")
+    .attr("cx", d => zx(d.parsedTime));
+}
+  </script>
+</body>
+</html>
