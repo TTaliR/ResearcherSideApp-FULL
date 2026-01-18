@@ -21,6 +21,7 @@ public class ApiService {
     public static final String EP_GET_USERS = "/get-users";
     public static final String EP_GET_SENSOR_TYPES = "/get-sensor-types";
     public static final String EP_SENSOR_DATA = "/sensor-data";
+    public static final String EP_CURRENT_CONFIGURATION = "/current-configurations";
     public static final String EP_SET_SUN = "/set-sun-azimuth-threshold";
     public static final String EP_SET_MOON = "/set-moon-azimuth-threshold";
     public static final String EP_SET_HEART = "/set-heart-rate-threshold";
@@ -156,5 +157,9 @@ public class ApiService {
 
     private String encode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    public String getBaseUrl() {
+        return BASE_URL;
     }
 }
