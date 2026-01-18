@@ -3,6 +3,7 @@ package com.example.demo.controller;
 import com.example.demo.model.AzimuthRange;
 import com.example.demo.model.HeartRateRange;
 import com.example.demo.model.SunMoonThreshold;
+import com.example.demo.service.ApiService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.BufferedReader;
@@ -102,9 +103,6 @@ public class ResearcherController {
    private final List<AzimuthRange> moonRangeInputsTest = new ArrayList<>();
    private boolean fetchConfigurationClicked = false;
 
-   //ngrok link base:
-   private final String URL_BASE = /*"https://marcella-unguerdoned-ayanna.ngrok-free.dev"*/ "http://localhost:5678" + "/webhook";   //tali
-
    public void initialize() {
       this.populateMonitorTypes();
    }
@@ -114,7 +112,7 @@ public class ResearcherController {
       String selectedType = (String)this.monitoringComboBox.getSelectionModel().getSelectedItem();
       Map<String, String> requestBody = new HashMap<>();
       requestBody.put("monitoringType", selectedType);
-      if (this.postJson(requestBody,  URL_BASE+"/set-monitoring-type", "Monitoring type sent successfully!")) {
+      if (this.postJson(requestBody,  ApiService.getInstance().getBaseUrl() + ApiService.EP_SET_MONITORING_TYPE, "Monitoring type sent successfully!")) {
          this.showAlert("Success", "Data Source was successfully sent");
       } else {
          this.showAlert("Failure", "An Error was encountered while sending the data source");
@@ -132,7 +130,7 @@ public class ResearcherController {
             System.out.println(p + " FROM SEND SUN RANGE MAPPING 1");
          }
 
-         this.postJson(sunThreshold, URL_BASE+"/set-sun-azimuth-threshold", "Sun Azimuth Ranges sent successfully!");
+         this.postJson(sunThreshold, ApiService.getInstance().getBaseUrl()+ApiService.EP_SET_SUN, "Sun Azimuth Ranges sent successfully!");
 
          for (HeartRateRange.HeartRateThresholdMapping p : this.heartRateMappingsTest) {
             System.out.println(p + " FROM SEND SUN RANGE MAPPING 2");
@@ -149,7 +147,7 @@ public class ResearcherController {
       } else {
          SunMoonThreshold moonThreshold = new SunMoonThreshold();
          moonThreshold.setMoonAzimuthRanges(new ArrayList<>(this.moonRangeInputsTest));
-         this.postJson(moonThreshold, URL_BASE+"/set-moon-azimuth-threshold", "Moon Azimuth Ranges sent successfully!");
+         this.postJson(moonThreshold, ApiService.getInstance().getBaseUrl()+ApiService.EP_SET_MOON, "Moon Azimuth Ranges sent successfully!");
 
          for (HeartRateRange.HeartRateThresholdMapping p : this.heartRateMappingsTest) {
             System.out.println(p + " FROM SEND SUN RANGE MAPPING 2");
@@ -168,7 +166,7 @@ public class ResearcherController {
       if (this.saveHeartRateMappings()) {
          HeartRateRange heartThreshold = new HeartRateRange();
          heartThreshold.setThresholds(new ArrayList<>(this.heartRateMappingsTest));
-         this.postJson(heartThreshold, URL_BASE+"/set-heart-rate-threshold", "Heart Rate mappings sent successfully!");
+         this.postJson(heartThreshold, ApiService.getInstance().getBaseUrl()+ApiService.EP_SET_HEART, "Heart Rate mappings sent successfully!");
          this.removeInvisibleNodes(this.heartRateMappingsBox);
          return true;
       } else {
@@ -637,7 +635,7 @@ public class ResearcherController {
 
    public void fetchCurrentConfigurationsWithoutMessage() {
       try {
-         JsonNode rootNode = this.getJson(URL_BASE+"/current-configurations");
+         JsonNode rootNode = this.getJson(ApiService.getInstance().getBaseUrl()+ApiService.EP_CURRENT_CONFIGURATION);
          System.out.println(rootNode);
          this.parseSunAzimuthRanges(rootNode.path("sunAzimuthRanges"));
          this.parseMoonAzimuthRanges(rootNode.path("moonAzimuthRanges"));
@@ -652,7 +650,7 @@ public class ResearcherController {
 
    public void fetchCurrentConfigurations() {
       try {
-         JsonNode rootNode = this.getJson(URL_BASE+"/current-configurations");
+         JsonNode rootNode = this.getJson(ApiService.getInstance().getBaseUrl()+ApiService.EP_CURRENT_CONFIGURATION);
          System.out.println(rootNode);
          this.parseSunAzimuthRanges(rootNode.path("sunAzimuthRanges"));
          this.parseMoonAzimuthRanges(rootNode.path("moonAzimuthRanges"));

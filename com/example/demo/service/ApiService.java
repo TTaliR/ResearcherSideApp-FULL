@@ -15,15 +15,18 @@ import java.util.stream.Collectors;
 
 public class ApiService {
 
-    //should be replaced with ngrok link
+    //should be replaced with ngrok link (or maybe not to keep it local & secure?)
     private static final String BASE_URL = "http://localhost:5678/webhook";
 
     public static final String EP_GET_USERS = "/get-users";
     public static final String EP_GET_SENSOR_TYPES = "/get-sensor-types";
     public static final String EP_SENSOR_DATA = "/sensor-data";
+    public static final String EP_CURRENT_CONFIGURATION = "/current-configurations";
     public static final String EP_SET_SUN = "/set-sun-azimuth-threshold";
     public static final String EP_SET_MOON = "/set-moon-azimuth-threshold";
     public static final String EP_SET_HEART = "/set-heart-rate-threshold";
+    public static final String EP_SET_MONITORING_TYPE = "/set-monitoring-type";
+
 
     private static final ApiService INSTANCE = new ApiService();
     private final ObjectMapper mapper;
@@ -118,5 +121,9 @@ public class ApiService {
 
     private String encode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    public String getBaseUrl() {
+        return BASE_URL;
     }
 }
