@@ -15,15 +15,16 @@ import java.util.stream.Collectors;
 
 public class ApiService {
 
-    //should be replaced with ngrok link
-    private static final String BASE_URL = "http://localhost:5678/webhook";
-
+    /*should be replaced with ngrok link
+    private static final String BASE_URL = "http://localhost:5678/webhook";*/
+    private static final String BASE_URL = "https://marcella-unguerdoned-ayanna.ngrok-free.dev/webhook";
     public static final String EP_GET_USERS = "/get-users";
     public static final String EP_GET_SENSOR_TYPES = "/get-sensor-types";
     public static final String EP_SENSOR_DATA = "/sensor-data";
     public static final String EP_SET_SUN = "/set-sun-azimuth-threshold";
     public static final String EP_SET_MOON = "/set-moon-azimuth-threshold";
     public static final String EP_SET_HEART = "/set-heart-rate-threshold";
+    public static final String EP_CHAT_CONFIG = "/chat-config"; //
 
     private static final ApiService INSTANCE = new ApiService();
     private final ObjectMapper mapper;
@@ -110,6 +111,43 @@ public class ApiService {
             } catch (Exception e) {
                 e.printStackTrace();
                 return false;
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        });
+    }
+
+    public CompletableFuture<JsonNode> postWithResponse(String endpoint, Object data) {
+        return CompletableFuture.supplyAsync(() -> {
+            HttpURLConnection conn = null;
+            try {
+                String jsonInputString = mapper.writeValueAsString(data);
+                URL url = new URL(BASE_URL + endpoint);
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                conn.setDoOutput(true);
+
+                try (OutputStream os = conn.getOutputStream()) {
+                    byte[] input = jsonInputString.getBytes(StandardCharsets.UTF_8);
+                    os.write(input, 0, input.length);
+                }
+
+                int code = conn.getResponseCode();
+                if (code == 200) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+                    StringBuilder response = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        response.append(line);
+                    }
+                    reader.close();
+                    return mapper.readTree(response.toString());
+                } else {
+                    return mapper.createObjectNode().put("error", "Server returned code: " + code);
+                }
+            } catch (Exception e) {
+                return mapper.createObjectNode().put("error", e.getMessage());
             } finally {
                 if (conn != null) conn.disconnect();
             }
