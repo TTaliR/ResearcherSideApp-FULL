@@ -117,65 +117,73 @@ public class visPageController {
 
       try {
          URL url = new URL(ApiService.getInstance().getBaseUrl() + ApiService.EP_GET_USERS);
-         HttpURLConnection conn = (HttpURLConnection)url.openConnection();
+         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
          conn.setRequestMethod("GET");
-
-         // timeouts to prevent hanging
          conn.setConnectTimeout(5000);
          conn.setReadTimeout(5000);
 
-         BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-         StringBuilder response = new StringBuilder();
-
-         String line;
-         while ((line = reader.readLine()) != null) {
-            response.append(line);
-         }
-         reader.close();
-
-         ObjectMapper mapper = new ObjectMapper();
-         JsonNode root = mapper.readTree(response.toString());
-
-         // --- START OF MISSING LOGIC ---
-         JsonNode usersArray = null;
-
-         // Check 1: Is it a raw array? [ {user}, {user} ]
-         if (root.isArray()) {
-            usersArray = root;
-         }
-         // Check 2: Is it wrapped in "data"? { "data": [ ... ] }
-         else if (root.has("data") && root.get("data").isArray()) {
-            usersArray = root.get("data");
-         }
-         // Check 3: Is it wrapped in "payload"? { "payload": [ ... ] }
-         else if (root.has("payload") && root.get("payload").isArray()) {
-            usersArray = root.get("payload");
-         }
-         // Check 4: Is it a single user object? { "userid": 1, ... }
-         else if (root.has("userid")) {
-            usersArray = mapper.createArrayNode().add(root);
-         }
-
-         if (usersArray == null) {
-            System.err.println("Unexpected JSON format: " + response.toString());
-            return;
-         }
-         // --- END OF MISSING LOGIC ---
-
-         for (JsonNode userNode : usersArray) {
-            // Add safety check for missing ID
-            if (userNode.hasNonNull("userid")) {
-               int id = userNode.get("userid").asInt();
-               String firstName = userNode.hasNonNull("fname") ? userNode.get("fname").asText() : "";
-               String lastName = userNode.hasNonNull("lname") ? userNode.get("lname").asText() : "";
-               this.userData.add(new User(id, firstName, lastName));
+         try (InputStream raw = (conn.getResponseCode() >= 400 ? conn.getErrorStream() : conn.getInputStream())) {
+            if (raw == null) {
+               System.err.println("No response stream available");
+               return;
             }
+
+            InputStream in = raw;
+            String encoding = conn.getContentEncoding();
+            if (encoding != null && encoding.toLowerCase().contains("gzip")) {
+               in = new java.util.zip.GZIPInputStream(raw);
+            }
+
+            // Read all bytes to preserve newlines and full payload
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = in.read(buf)) != -1) {
+               baos.write(buf, 0, n);
+            }
+            String response = baos.toString(StandardCharsets.UTF_8.name());
+            System.out.println("Full response length: " + response.length());
+            System.out.println("Full response preview: " + (response.length() > 300 ? response.substring(0, 300) + "..." : response));
+
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode root = mapper.readTree(response);
+
+            JsonNode usersArray = null;
+            if (root.isArray()) {
+               usersArray = root;
+            } else if (root.has("data") && root.get("data").isArray()) {
+               usersArray = root.get("data");
+            } else if (root.has("payload") && root.get("payload").isArray()) {
+               usersArray = root.get("payload");
+            } else if (root.has("userid")) {
+               usersArray = mapper.createArrayNode().add(root);
+            }
+
+            if (usersArray == null) {
+               System.err.println("Unexpected JSON format when loading users: " + response);
+               return;
+            }
+
+            for (JsonNode userNode : usersArray) {
+               if (userNode.hasNonNull("userid")) {
+                  int id = userNode.get("userid").asInt();
+                  String firstName = userNode.hasNonNull("fname") ? userNode.get("fname").asText() : "";
+                  String lastName = userNode.hasNonNull("lname") ? userNode.get("lname").asText() : "";
+                  this.userData.add(new User(id, firstName, lastName));
+                  System.out.println("Loaded user: " + id + " - " + firstName + " " + lastName);
+               } else {
+                  System.out.println("Skipping user entry without userid: " + userNode);
+               }
+            }
+         } catch (IOException e) {
+            System.err.println("Error reading users response: " + e.getMessage());
+            e.printStackTrace();
          }
 
-         // Force UI refresh if needed
          Platform.runLater(this::populateUserSelector);
 
       } catch (Exception e) {
+         System.err.println("Failed to load user data: " + e.getMessage());
          e.printStackTrace();
       }
    }
