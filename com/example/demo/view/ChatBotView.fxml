@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.image.*?>
+<?import javafx.geometry.Insets?>
+
+<StackPane prefHeight="800" prefWidth="1200" xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.example.demo.controller.ChatBotController">
+    <VBox style="-fx-background-color: #f5f5f5;">
+
+        <VBox spacing="10" style="-fx-background-color: #2c3e50; -fx-padding: 15;">
+            <HBox spacing="15" alignment="CENTER_LEFT">
+                <Button onAction="#goBack" style="-fx-background-color: transparent; -fx-padding: 0; -fx-cursor: hand;">
+                    <graphic>
+                        <ImageView fitHeight="41.0" fitWidth="53.0" preserveRatio="true">
+                            <image>
+                                <Image url="@/com/example/demo/images/backicon.png" />
+                            </image>
+                        </ImageView>
+                    </graphic>
+                </Button>
+                <Label style="-fx-text-fill: white; -fx-font-size: 24;" text="AI Research Configuration Assistant" />
+            </HBox>
+        </VBox>
+
+        <VBox VBox.vgrow="ALWAYS" spacing="15" style="-fx-padding: 20;">
+
+            <ScrollPane fx:id="scrollPane" fitToWidth="true" VBox.vgrow="ALWAYS" style="-fx-background-color: white; -fx-background-radius: 5;">
+                <VBox fx:id="chatHistoryBox" spacing="15" style="-fx-padding: 20;">
+                </VBox>
+            </ScrollPane>
+
+            <HBox spacing="10" alignment="CENTER">
+                <TextField fx:id="userInputField" HBox.hgrow="ALWAYS" prefHeight="40.0"
+                           promptText="Type a rule, e.g., 'Strong vibration when heart rate exceeds 140'..."
+                           onAction="#onSendMessage" />
+                <Button onAction="#onSendMessage" prefHeight="40.0" prefWidth="80.0"
+                        style="-fx-background-color: #007bff; -fx-text-fill: white; -fx-font-weight: bold;" text="Send" />
+            </HBox>
+        </VBox>
+    </VBox>
+</StackPane>

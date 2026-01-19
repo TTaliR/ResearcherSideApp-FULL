@@ -3,6 +3,7 @@ package com.example.demo.controller;
 import com.example.demo.model.AzimuthRange;
 import com.example.demo.model.HeartRateRange;
 import com.example.demo.model.SunMoonThreshold;
+import com.example.demo.service.ApiService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.BufferedReader;
@@ -19,7 +20,7 @@ import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
-import javafx.beans.value.ObservableValue;
+
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
@@ -107,18 +108,18 @@ public class ResearcherController {
    }
 
    @FXML
-   public void sendMonitoringTypeToNodeRed() {
+   public void sendMonitoringType() {
       String selectedType = (String)this.monitoringComboBox.getSelectionModel().getSelectedItem();
       Map<String, String> requestBody = new HashMap<>();
       requestBody.put("monitoringType", selectedType);
-      if (this.postJsonToNodeRed(requestBody, "http://localhost:1880/set-monitoring-type", "Monitoring type sent successfully!")) {
-         this.showAlert("Success", "Data Source was sucessfully sent");
+      if (this.postJson(requestBody,  ApiService.getInstance().getBaseUrl() + ApiService.EP_SET_MONITORING_TYPE, "Monitoring type sent successfully!")) {
+         this.showAlert("Success", "Data Source was successfully sent");
       } else {
          this.showAlert("Failure", "An Error was encountered while sending the data source");
       }
    }
 
-   private boolean sendSunRangeMappingsToNodeRed() {
+   private boolean sendSunRangeMappings() {
       if (!this.handleSaveSunData()) {
          return false;
       } else {
@@ -129,7 +130,7 @@ public class ResearcherController {
             System.out.println(p + " FROM SEND SUN RANGE MAPPING 1");
          }
 
-         this.postJsonToNodeRed(sunThreshold, "http://localhost:1880/set-sun-azimuth-threshold", "Sun Azimuth Ranges sent successfully!");
+         this.postJson(sunThreshold, ApiService.getInstance().getBaseUrl()+ApiService.EP_SET_SUN, "Sun Azimuth Ranges sent successfully!");
 
          for (HeartRateRange.HeartRateThresholdMapping p : this.heartRateMappingsTest) {
             System.out.println(p + " FROM SEND SUN RANGE MAPPING 2");
@@ -140,13 +141,13 @@ public class ResearcherController {
       }
    }
 
-   private boolean sendMoonRangeMappingsToNodeRed() {
+   private boolean sendMoonRangeMappings() {
       if (!this.handleSaveMoonData()) {
          return false;
       } else {
          SunMoonThreshold moonThreshold = new SunMoonThreshold();
          moonThreshold.setMoonAzimuthRanges(new ArrayList<>(this.moonRangeInputsTest));
-         this.postJsonToNodeRed(moonThreshold, "http://localhost:1880/set-moon-azimuth-threshold", "Moon Azimuth Ranges sent successfully!");
+         this.postJson(moonThreshold, ApiService.getInstance().getBaseUrl()+ApiService.EP_SET_MOON, "Moon Azimuth Ranges sent successfully!");
 
          for (HeartRateRange.HeartRateThresholdMapping p : this.heartRateMappingsTest) {
             System.out.println(p + " FROM SEND SUN RANGE MAPPING 2");
@@ -157,7 +158,7 @@ public class ResearcherController {
       }
    }
 
-   private boolean sendHeartRateMappingsToNodeRed() {
+   private boolean sendHeartRateMappings() {
       for (HeartRateRange.HeartRateThresholdMapping p : this.heartRateMappingsTest) {
          System.out.println(p + " FROM SEND HEART RATE MAPPINGS");
       }
@@ -165,7 +166,7 @@ public class ResearcherController {
       if (this.saveHeartRateMappings()) {
          HeartRateRange heartThreshold = new HeartRateRange();
          heartThreshold.setThresholds(new ArrayList<>(this.heartRateMappingsTest));
-         this.postJsonToNodeRed(heartThreshold, "http://localhost:1880/set-heart-rate-threshold", "Heart Rate mappings sent successfully!");
+         this.postJson(heartThreshold, ApiService.getInstance().getBaseUrl()+ApiService.EP_SET_HEART, "Heart Rate mappings sent successfully!");
          this.removeInvisibleNodes(this.heartRateMappingsBox);
          return true;
       } else {
@@ -195,9 +196,9 @@ public class ResearcherController {
             System.out.println(p + " FROM SAVE CONFIG");
          }
 
-         Boolean sendSunRangeMappings = this.sendSunRangeMappingsToNodeRed();
-         Boolean sendHeartRateMappings = this.sendHeartRateMappingsToNodeRed();
-         Boolean sendMoonRangeMappings = this.sendMoonRangeMappingsToNodeRed();
+         Boolean sendSunRangeMappings = this.sendSunRangeMappings();
+         Boolean sendHeartRateMappings = this.sendHeartRateMappings();
+         Boolean sendMoonRangeMappings = this.sendMoonRangeMappings();
          List<String> successList = new ArrayList<>();
          if (sendSunRangeMappings) {
             successList.add("Sun Rules");
@@ -239,23 +240,23 @@ public class ResearcherController {
          String interval = intervalField.getText();
          if (!azimuth.isEmpty() && !pulses.isEmpty() && !intensity.isEmpty() && !duration.isEmpty() && !interval.isEmpty()) {
             boolean isDuplicate = this.sunAzimuthRangesBox
-               .getChildren()
-               .stream()
-               .filter(node -> node instanceof HBox && node != rangeInput && node.isVisible())
-               .map(node -> (HBox)node)
-               .anyMatch(
-                  existing -> {
-                     try {
-                        return azimuth.equals(((TextField)existing.getChildren().get(0)).getText())
-                           && pulses.equals(((TextField)existing.getChildren().get(1)).getText())
-                           && intensity.equals(((TextField)existing.getChildren().get(2)).getText())
-                           && duration.equals(((TextField)existing.getChildren().get(3)).getText())
-                           && interval.equals(((TextField)existing.getChildren().get(4)).getText());
-                     } catch (Exception var7x) {
-                        return false;
-                     }
-                  }
-               );
+                    .getChildren()
+                    .stream()
+                    .filter(node -> node instanceof HBox && node != rangeInput && node.isVisible())
+                    .map(node -> (HBox)node)
+                    .anyMatch(
+                            existing -> {
+                               try {
+                                  return azimuth.equals(((TextField)existing.getChildren().get(0)).getText())
+                                          && pulses.equals(((TextField)existing.getChildren().get(1)).getText())
+                                          && intensity.equals(((TextField)existing.getChildren().get(2)).getText())
+                                          && duration.equals(((TextField)existing.getChildren().get(3)).getText())
+                                          && interval.equals(((TextField)existing.getChildren().get(4)).getText());
+                               } catch (Exception var7x) {
+                                  return false;
+                               }
+                            }
+                    );
             if (isDuplicate) {
                this.showAlert("Duplicate Mapping", "This Sun Azimuth range already exists.");
                intervalField.clear();
@@ -263,11 +264,11 @@ public class ResearcherController {
          }
       };
       Stream.of(azimuthRangeField, pulsesField, intensityField, durationField, intervalField)
-         .forEach(field -> field.focusedProperty().addListener((obs, wasFocused, nowFocused) -> {
-            if (!nowFocused) {
-               checkDuplicate.run();
-            }
-         }));
+              .forEach(field -> field.focusedProperty().addListener((obs, wasFocused, nowFocused) -> {
+                 if (!nowFocused) {
+                    checkDuplicate.run();
+                 }
+              }));
       Button deleteButton = new Button("❌");
       deleteButton.setStyle("-fx-background-color: #dc3545; -fx-text-fill: white;");
       deleteButton.setOnAction(e -> this.sunAzimuthRangesBox.getChildren().remove(rangeInput));
@@ -344,10 +345,10 @@ public class ResearcherController {
                TextField durationField = (TextField)rangeInput.getChildren().get(3);
                TextField intervalField = (TextField)rangeInput.getChildren().get(4);
                if (azimuthRangeField.getText().isEmpty()
-                  || pulsesField.getText().isEmpty()
-                  || intensityField.getText().isEmpty()
-                  || durationField.getText().isEmpty()
-                  || intervalField.getText().isEmpty()) {
+                       || pulsesField.getText().isEmpty()
+                       || intensityField.getText().isEmpty()
+                       || durationField.getText().isEmpty()
+                       || intervalField.getText().isEmpty()) {
                   this.showAlert("Validation Error", "Please fill in all fields before saving.");
                   return false;
                }
@@ -400,23 +401,23 @@ public class ResearcherController {
          String interval = intervalField.getText();
          if (!azimuth.isEmpty() && !pulses.isEmpty() && !intensity.isEmpty() && !duration.isEmpty() && !interval.isEmpty()) {
             boolean isDuplicate = this.moonAzimuthRangesBox
-               .getChildren()
-               .stream()
-               .filter(node -> node instanceof HBox && node != rangeInput && node.isVisible())
-               .map(node -> (HBox)node)
-               .anyMatch(
-                  existing -> {
-                     try {
-                        return azimuth.equals(((TextField)existing.getChildren().get(0)).getText())
-                           && pulses.equals(((TextField)existing.getChildren().get(1)).getText())
-                           && intensity.equals(((TextField)existing.getChildren().get(2)).getText())
-                           && duration.equals(((TextField)existing.getChildren().get(3)).getText())
-                           && interval.equals(((TextField)existing.getChildren().get(4)).getText());
-                     } catch (Exception var7x) {
-                        return false;
-                     }
-                  }
-               );
+                    .getChildren()
+                    .stream()
+                    .filter(node -> node instanceof HBox && node != rangeInput && node.isVisible())
+                    .map(node -> (HBox)node)
+                    .anyMatch(
+                            existing -> {
+                               try {
+                                  return azimuth.equals(((TextField)existing.getChildren().get(0)).getText())
+                                          && pulses.equals(((TextField)existing.getChildren().get(1)).getText())
+                                          && intensity.equals(((TextField)existing.getChildren().get(2)).getText())
+                                          && duration.equals(((TextField)existing.getChildren().get(3)).getText())
+                                          && interval.equals(((TextField)existing.getChildren().get(4)).getText());
+                               } catch (Exception var7x) {
+                                  return false;
+                               }
+                            }
+                    );
             if (isDuplicate) {
                this.showAlert("Duplicate Mapping", "This Moon Azimuth range already exists.");
                intervalField.clear();
@@ -424,11 +425,11 @@ public class ResearcherController {
          }
       };
       Stream.of(azimuthRangeField, pulsesField, intensityField, durationField, intervalField)
-         .forEach(field -> field.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
-            if (!isFocused) {
-               checkDuplicate.run();
-            }
-         }));
+              .forEach(field -> field.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+                 if (!isFocused) {
+                    checkDuplicate.run();
+                 }
+              }));
       Button deleteButton = new Button("❌");
       deleteButton.setStyle("-fx-background-color: #dc3545; -fx-text-fill: white;");
       deleteButton.setOnAction(e -> this.moonAzimuthRangesBox.getChildren().remove(rangeInput));
@@ -470,10 +471,10 @@ public class ResearcherController {
                TextField durationField = (TextField)rangeInput.getChildren().get(3);
                TextField intervalField = (TextField)rangeInput.getChildren().get(4);
                if (azimuthRangeField.getText().isEmpty()
-                  || pulsesField.getText().isEmpty()
-                  || intensityField.getText().isEmpty()
-                  || durationField.getText().isEmpty()
-                  || intervalField.getText().isEmpty()) {
+                       || pulsesField.getText().isEmpty()
+                       || intensityField.getText().isEmpty()
+                       || durationField.getText().isEmpty()
+                       || intervalField.getText().isEmpty()) {
                   this.showAlert("Validation Error", "Please fill in all fields before saving.");
                   return false;
                }
@@ -529,23 +530,23 @@ public class ResearcherController {
             String interval = intervalField.getText();
             if (!hr.isEmpty() && !pulses.isEmpty() && !intensity.isEmpty() && !duration.isEmpty() && !interval.isEmpty()) {
                boolean isDuplicate = this.heartRateMappingsBox
-                  .getChildren()
-                  .stream()
-                  .filter(node -> node instanceof HBox && node != mappingInput && node.isVisible())
-                  .map(node -> (HBox)node)
-                  .anyMatch(
-                     existing -> {
-                        try {
-                           return hr.equals(((TextField)existing.getChildren().get(0)).getText())
-                              && pulses.equals(((TextField)existing.getChildren().get(1)).getText())
-                              && intensity.equals(((TextField)existing.getChildren().get(2)).getText())
-                              && duration.equals(((TextField)existing.getChildren().get(3)).getText())
-                              && interval.equals(((TextField)existing.getChildren().get(4)).getText());
-                        } catch (Exception var7x) {
-                           return false;
-                        }
-                     }
-                  );
+                       .getChildren()
+                       .stream()
+                       .filter(node -> node instanceof HBox && node != mappingInput && node.isVisible())
+                       .map(node -> (HBox)node)
+                       .anyMatch(
+                               existing -> {
+                                  try {
+                                     return hr.equals(((TextField)existing.getChildren().get(0)).getText())
+                                             && pulses.equals(((TextField)existing.getChildren().get(1)).getText())
+                                             && intensity.equals(((TextField)existing.getChildren().get(2)).getText())
+                                             && duration.equals(((TextField)existing.getChildren().get(3)).getText())
+                                             && interval.equals(((TextField)existing.getChildren().get(4)).getText());
+                                  } catch (Exception var7x) {
+                                     return false;
+                                  }
+                               }
+                       );
                if (isDuplicate) {
                   this.showAlert("Duplicate Mapping", "This heart rate mapping already exists.");
                   intervalField.clear();
@@ -553,11 +554,11 @@ public class ResearcherController {
             }
          };
          Stream.of(heartRateRangeField, pulsesField, intensityField, durationField, intervalField)
-            .forEach(field -> field.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
-               if (!isFocused) {
-                  checkDuplicate.run();
-               }
-            }));
+                 .forEach(field -> field.focusedProperty().addListener((obs, wasFocused, isFocused) -> {
+                    if (!isFocused) {
+                       checkDuplicate.run();
+                    }
+                 }));
          Button deleteButton = new Button("❌");
          deleteButton.setStyle("-fx-background-color: #dc3545; -fx-text-fill: white;");
          deleteButton.setOnAction(e -> this.heartRateMappingsBox.getChildren().remove(mappingInput));
@@ -588,10 +589,10 @@ public class ResearcherController {
             TextField durationField = (TextField)input.getChildren().get(3);
             TextField intervalField = (TextField)input.getChildren().get(4);
             if (heartRateField.getText().isEmpty()
-               || pulsesField.getText().isEmpty()
-               || intensityField.getText().isEmpty()
-               || durationField.getText().isEmpty()
-               || intervalField.getText().isEmpty()) {
+                    || pulsesField.getText().isEmpty()
+                    || intensityField.getText().isEmpty()
+                    || durationField.getText().isEmpty()
+                    || intervalField.getText().isEmpty()) {
                this.showAlert("Validation Error", "Please fill in all fields before saving.");
                return false;
             }
@@ -603,18 +604,19 @@ public class ResearcherController {
                int[] durationRange = this.parseRange(durationField.getText(), Integer.MAX_VALUE);
                int[] intervalRange = this.parseRange(intervalField.getText(), Integer.MAX_VALUE);
                HeartRateRange.HeartRateThresholdMapping mapping = new HeartRateRange.HeartRateThresholdMapping(
-                  hrRange[0],
-                  hrRange[1],
-                  intensityRange[0],
-                  intensityRange[1],
-                  pulsesRange[0],
-                  pulsesRange[1],
-                  durationRange[0],
-                  durationRange[1],
-                  intervalRange[0],
-                  intervalRange[1]
+                       hrRange[0],
+                       hrRange[1],
+                       intensityRange[0],
+                       intensityRange[1],
+                       pulsesRange[0],
+                       pulsesRange[1],
+                       durationRange[0],
+                       durationRange[1],
+                       intervalRange[0],
+                       intervalRange[1]
                );
                mapping.setActive(input.isVisible());
+               System.out.println(mapping);
                this.heartRateMappings.add(mapping);
                this.heartRateMappingsTest.add(mapping);
             } catch (IllegalArgumentException var15) {
@@ -633,7 +635,7 @@ public class ResearcherController {
 
    public void fetchCurrentConfigurationsWithoutMessage() {
       try {
-         JsonNode rootNode = this.getJsonFromNodeRed("http://127.0.0.1:1880/current-configurations");
+         JsonNode rootNode = this.getJson(ApiService.getInstance().getBaseUrl()+ApiService.EP_CURRENT_CONFIGURATION);
          System.out.println(rootNode);
          this.parseSunAzimuthRanges(rootNode.path("sunAzimuthRanges"));
          this.parseMoonAzimuthRanges(rootNode.path("moonAzimuthRanges"));
@@ -648,7 +650,7 @@ public class ResearcherController {
 
    public void fetchCurrentConfigurations() {
       try {
-         JsonNode rootNode = this.getJsonFromNodeRed("http://127.0.0.1:1880/current-configurations");
+         JsonNode rootNode = this.getJson(ApiService.getInstance().getBaseUrl()+ApiService.EP_CURRENT_CONFIGURATION);
          System.out.println(rootNode);
          this.parseSunAzimuthRanges(rootNode.path("sunAzimuthRanges"));
          this.parseMoonAzimuthRanges(rootNode.path("moonAzimuthRanges"));
@@ -694,22 +696,22 @@ public class ResearcherController {
             String durationTooltip = "Duration range in ms, e.g., 100-200.";
             String intervalTooltip = "Interval range in ms, e.g., 50-150.";
             row.getChildren()
-               .addAll(new Node[]{this.bindRangeField(model.getMinAzimuth(), model.getMaxAzimuth(), 130, Integer.MAX_VALUE, azimuthTooltip, (min, max) -> {
-                  model.setMinAzimuth(min);
-                  model.setMaxAzimuth(max);
-               }), this.bindRangeField(model.getMinPulses(), model.getMaxPulses(), 80, Integer.MAX_VALUE, pulsesTooltip, (min, max) -> {
-                  model.setMinPulses(min);
-                  model.setMaxPulses(max);
-               }), this.bindRangeField(model.getMinIntensity(), model.getMaxIntensity(), 80, 255, intensityTooltip, (min, max) -> {
-                  model.setMinIntensity(min);
-                  model.setMaxIntensity(max);
-               }), this.bindRangeField(model.getMinDuration(), model.getMaxDuration(), 100, Integer.MAX_VALUE, durationTooltip, (min, max) -> {
-                  model.setMinDuration(min);
-                  model.setMaxDuration(max);
-               }), this.bindRangeField(model.getMinInterval(), model.getMaxInterval(), 100, Integer.MAX_VALUE, intervalTooltip, (min, max) -> {
-                  model.setMinInterval(min);
-                  model.setMaxInterval(max);
-               }), this.createDeleteButton(row, () -> model.setActive(false))});
+                    .addAll(new Node[]{this.bindRangeField(model.getMinAzimuth(), model.getMaxAzimuth(), 130, Integer.MAX_VALUE, azimuthTooltip, (min, max) -> {
+                       model.setMinAzimuth(min);
+                       model.setMaxAzimuth(max);
+                    }), this.bindRangeField(model.getMinPulses(), model.getMaxPulses(), 80, Integer.MAX_VALUE, pulsesTooltip, (min, max) -> {
+                       model.setMinPulses(min);
+                       model.setMaxPulses(max);
+                    }), this.bindRangeField(model.getMinIntensity(), model.getMaxIntensity(), 80, 255, intensityTooltip, (min, max) -> {
+                       model.setMinIntensity(min);
+                       model.setMaxIntensity(max);
+                    }), this.bindRangeField(model.getMinDuration(), model.getMaxDuration(), 100, Integer.MAX_VALUE, durationTooltip, (min, max) -> {
+                       model.setMinDuration(min);
+                       model.setMaxDuration(max);
+                    }), this.bindRangeField(model.getMinInterval(), model.getMaxInterval(), 100, Integer.MAX_VALUE, intervalTooltip, (min, max) -> {
+                       model.setMinInterval(min);
+                       model.setMaxInterval(max);
+                    }), this.createDeleteButton(row, () -> model.setActive(false))});
             this.sunAzimuthRangesBox.getChildren().add(row);
          }
       }
@@ -742,22 +744,22 @@ public class ResearcherController {
             String durationTooltip = "Duration range in ms, e.g., 100-200.";
             String intervalTooltip = "Interval range in ms, e.g., 50-150.";
             row.getChildren()
-               .addAll(new Node[]{this.bindRangeField(model.getMinAzimuth(), model.getMaxAzimuth(), 130, Integer.MAX_VALUE, azimuthTooltip, (min, max) -> {
-                  model.setMinAzimuth(min);
-                  model.setMaxAzimuth(max);
-               }), this.bindRangeField(model.getMinPulses(), model.getMaxPulses(), 80, Integer.MAX_VALUE, pulsesTooltip, (min, max) -> {
-                  model.setMinPulses(min);
-                  model.setMaxPulses(max);
-               }), this.bindRangeField(model.getMinIntensity(), model.getMaxIntensity(), 80, Integer.MAX_VALUE, intensityTooltip, (min, max) -> {
-                  model.setMinIntensity(min);
-                  model.setMaxIntensity(max);
-               }), this.bindRangeField(model.getMinDuration(), model.getMaxDuration(), 100, Integer.MAX_VALUE, durationTooltip, (min, max) -> {
-                  model.setMinDuration(min);
-                  model.setMaxDuration(max);
-               }), this.bindRangeField(model.getMinInterval(), model.getMaxInterval(), 100, Integer.MAX_VALUE, intervalTooltip, (min, max) -> {
-                  model.setMinInterval(min);
-                  model.setMaxInterval(max);
-               }), this.createDeleteButton(row, () -> model.setActive(false))});
+                    .addAll(new Node[]{this.bindRangeField(model.getMinAzimuth(), model.getMaxAzimuth(), 130, Integer.MAX_VALUE, azimuthTooltip, (min, max) -> {
+                       model.setMinAzimuth(min);
+                       model.setMaxAzimuth(max);
+                    }), this.bindRangeField(model.getMinPulses(), model.getMaxPulses(), 80, Integer.MAX_VALUE, pulsesTooltip, (min, max) -> {
+                       model.setMinPulses(min);
+                       model.setMaxPulses(max);
+                    }), this.bindRangeField(model.getMinIntensity(), model.getMaxIntensity(), 80, Integer.MAX_VALUE, intensityTooltip, (min, max) -> {
+                       model.setMinIntensity(min);
+                       model.setMaxIntensity(max);
+                    }), this.bindRangeField(model.getMinDuration(), model.getMaxDuration(), 100, Integer.MAX_VALUE, durationTooltip, (min, max) -> {
+                       model.setMinDuration(min);
+                       model.setMaxDuration(max);
+                    }), this.bindRangeField(model.getMinInterval(), model.getMaxInterval(), 100, Integer.MAX_VALUE, intervalTooltip, (min, max) -> {
+                       model.setMinInterval(min);
+                       model.setMaxInterval(max);
+                    }), this.createDeleteButton(row, () -> model.setActive(false))});
             this.moonAzimuthRangesBox.getChildren().add(row);
          }
       }
@@ -810,42 +812,42 @@ public class ResearcherController {
       }
    }
 
-    private boolean postJsonToNodeRed(Object data, String endpointUrl, String successMessage) {
-        HttpURLConnection connection = null;
-        try {
-            String jsonInputString = new ObjectMapper().writeValueAsString(data);
-            System.out.println("Sending JSON to Node-RED (" + endpointUrl + "): " + jsonInputString);
+   private boolean postJson(Object data, String endpointUrl, String successMessage) {
+      HttpURLConnection connection = null;
+      try {
+         String jsonInputString = new ObjectMapper().writeValueAsString(data);
+         System.out.println("Sending JSON to Node-RED (" + endpointUrl + "): " + jsonInputString);
 
-            URL url = new URL(endpointUrl);
-            connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("POST");
-            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            connection.setDoOutput(true);
+         URL url = new URL(endpointUrl);
+         connection = (HttpURLConnection) url.openConnection();
+         connection.setRequestMethod("POST");
+         connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+         connection.setDoOutput(true);
 
-            try (OutputStream os = connection.getOutputStream()) {
-                os.write(jsonInputString.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            }
+         try (OutputStream os = connection.getOutputStream()) {
+            os.write(jsonInputString.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+         }
 
-            int responseCode = connection.getResponseCode();
-            if (responseCode != 200) {
-                System.out.println("Failed to send data. Response code: " + responseCode);
-                return false;
-            }
-
-            System.out.println(successMessage);
-            return true;
-
-        } catch (Exception e) {
-            e.printStackTrace();
-            showAlert("Error", "An error occurred: " + e.getMessage());
+         int responseCode = connection.getResponseCode();
+         if (responseCode != 200) {
+            System.out.println("Failed to send data. Response code: " + responseCode);
             return false;
-        } finally {
-            if (connection != null) connection.disconnect();
-        }
-    }
+         }
+
+         System.out.println(successMessage);
+         return true;
+
+      } catch (Exception e) {
+         e.printStackTrace();
+         showAlert("Error", "An error occurred: " + e.getMessage());
+         return false;
+      } finally {
+         if (connection != null) connection.disconnect();
+      }
+   }
 
 
-    private void enforceIntegerInput(TextField textField) {
+   private void enforceIntegerInput(TextField textField) {
       UnaryOperator<Change> rangeFilter = change -> {
          String newText = change.getControlNewText();
          return !newText.matches("\\d*") && !newText.matches("\\d+-?\\d*") ? null : change;
@@ -853,36 +855,36 @@ public class ResearcherController {
       textField.setTextFormatter(new TextFormatter(rangeFilter));
    }
 
-    private JsonNode getJsonFromNodeRed(String urlString) throws IOException {
-        HttpURLConnection connection = null;
-        try {
-            URL url = new URL(urlString);
-            connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("GET");
-            connection.setRequestProperty("Accept", "application/json");
+   private JsonNode getJson(String urlString) throws IOException {
+      HttpURLConnection connection = null;
+      try {
+         URL url = new URL(urlString);
+         connection = (HttpURLConnection) url.openConnection();
+         connection.setRequestMethod("GET");
+         connection.setRequestProperty("Accept", "application/json");
 
-            int responseCode = connection.getResponseCode();
-            if (responseCode != 200) {
-                throw new IOException("Failed with HTTP code: " + responseCode);
+         int responseCode = connection.getResponseCode();
+         if (responseCode != 200) {
+            throw new IOException("Failed with HTTP code: " + responseCode);
+         }
+
+         StringBuilder response = new StringBuilder();
+         try (BufferedReader reader = new BufferedReader(
+                 new InputStreamReader(connection.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+               response.append(line.trim());
             }
+         }
 
-            StringBuilder response = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(connection.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    response.append(line.trim());
-                }
-            }
-
-            return new ObjectMapper().readTree(response.toString());
-        } finally {
-            if (connection != null) connection.disconnect();
-        }
-    }
+         return new ObjectMapper().readTree(response.toString());
+      } finally {
+         if (connection != null) connection.disconnect();
+      }
+   }
 
 
-    private TextField bindRangeField(int min, int max, int width, int maxAllowed, String tooltipLabel, BiConsumer<Integer, Integer> setter) {
+   private TextField bindRangeField(int min, int max, int width, int maxAllowed, String tooltipLabel, BiConsumer<Integer, Integer> setter) {
       TextField field = new TextField(min + "-" + max);
       field.setPrefWidth(width);
       field.setDisable(true);
@@ -957,6 +959,22 @@ public class ResearcherController {
          stage.show();
       } catch (IOException var6) {
          var6.printStackTrace();
+      }
+   }
+
+   @FXML
+   private void goToChatBot(ActionEvent event) {
+      try {
+         FXMLLoader loader = new FXMLLoader(getClass().getResource("/com/example/demo/view/ChatBotView.fxml"));
+         Parent root = loader.load();
+
+         Stage stage = (Stage) ((Node) event.getSource()).getScene().getWindow();
+         Scene scene = new Scene(root);
+         stage.setScene(scene);
+         stage.show();
+      } catch (IOException e) {
+         e.printStackTrace();
+         showAlert("Navigation Error", "Could not load ChatBot page.");
       }
    }
 }
