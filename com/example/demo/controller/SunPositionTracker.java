@@ -47,6 +47,9 @@ public class SunPositionTracker {
    private List<SunPositionTracker.SunPosition> sunPositionHistory = new ArrayList<>();
    private List<SunPositionTracker.FeedbackEvent> feedbackEvents = new ArrayList<>();
 
+   //ngrok link base:
+   private final String URL_BASE = /*"https://marcella-unguerdoned-ayanna.ngrok-free.dev"*/ "http://localhost:5678" + "/webhook";   //tali
+
    public SunPositionTracker(int userID) {
       this.selectedUserID = userID;
       this.initializeStage();
@@ -111,7 +114,7 @@ public class SunPositionTracker {
 
    private void updateSunPosition() {
       try {
-         URL url = new URL("http://localhost:1880/get-data");
+         URL url = new URL(URL_BASE+"/sensor-data");
          HttpURLConnection conn = (HttpURLConnection)url.openConnection();
          conn.setRequestMethod("GET");
          BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));

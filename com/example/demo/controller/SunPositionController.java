@@ -40,6 +40,9 @@ public class SunPositionController {
    private ScheduledExecutorService compassScheduler;
    private int selectedUserID;
 
+   //ngrok link base:
+   private final String URL_BASE = /*"https://marcella-unguerdoned-ayanna.ngrok-free.dev"*/ "http://localhost:5678" + "/webhook";   //tali
+
    public void initializeLiveView(int userId) {
       this.selectedUserID = userId;
       Image sunImage = new Image(this.getClass().getResourceAsStream("/com/example/demo/images/sun.png"));
@@ -52,7 +55,7 @@ public class SunPositionController {
 
    private void fetchAndUpdateChart() {
       try {
-         URL url = new URL("http://localhost:1880/get-data");
+         URL url = new URL(URL_BASE+"/sensor-data");
          HttpURLConnection conn = (HttpURLConnection)url.openConnection();
          conn.setRequestMethod("GET");
          BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
@@ -131,7 +134,7 @@ public class SunPositionController {
 
    private void updateCompass() {
       try {
-         URL url = new URL("http://localhost:1880/get-sun");
+         URL url = new URL(URL_BASE+"/get-sun");
          HttpURLConnection conn = (HttpURLConnection)url.openConnection();
          conn.setRequestMethod("GET");
          BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
