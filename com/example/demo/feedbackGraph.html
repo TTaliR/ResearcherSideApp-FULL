@@ -72,28 +72,15 @@
   <div class="tooltip"></div>
 
   <script>
-const data = Array.from({ length: 10000 }, (_, i) => {
-  const time = new Date(Date.UTC(2024, 5, 11, 0, 0, i * 10)); // 10 seconds apart
-  const value = 100 + 20 * Math.sin(i / 50) + Math.random() * 10;
-  const hasAlert = Math.random() < 0.15; // lower alert frequency
-  return {
-    time: time.toISOString(),
-    value: parseFloat(value.toFixed(1)),
-    pulses: hasAlert ? Math.floor(Math.random() * 30) + 1 : 0,
-    intensity: hasAlert ? Math.floor(Math.random() * 101) : 0,
-    duration: hasAlert ? Math.floor(Math.random() * 1000) + 100 : 0,
-    interval: hasAlert ? Math.floor(Math.random() * 1000) + 100 : 0,
-    alert_type: hasAlert ? "HeartRate" : undefined
-  };
-});
+const data = DATA_PLACEHOLDER;
 
 
 console.log(data.map(d => d.time));
 
 
 
-    const userId = 123; // Replace with real value if needed
-    const sensorType = "HeartRate"; // Or "SunAzimuth", etc.
+    const userId = USER_ID_PLACEHOLDER; //
+    const sensorType = SENSOR_TYPE_PLACEHOLDER;
 
     document.getElementById("meta-info").textContent = `User ID: ${userId} | Sensor: ${sensorType}`;
 const parseTime = d3.utcParse("%Y-%m-%dT%H:%M:%S.%LZ");
@@ -128,7 +115,10 @@ const dataLayer = g.append("g")
 
     const y = d3.scaleLinear()
     .domain([
-        d3.min(data, d => d.value) - 10,
+        (() => {
+            const minVal = d3.min(data, d => d.value);
+            return minVal === 0 ? 0 : minVal - 10;
+        })(),
         d3.max(data, d => d.value) + 10
     ])
     .nice()
@@ -164,16 +154,17 @@ const xAxisG = g.append("g")
     // Line generator
     const line = d3.line()
       .x(d => x(d.parsedTime))
-      .y(d => y(d.value));
+      .y(d => y(d.value))
+      .curve(d3.curveMonotoneX);
 
         // Group by minute and pick one alert per minute, or fallback to any point in that minute
     const bucketedData = d3.groups(data, d => d3.timeMinute(d.parsedTime));
     const reducedData = bucketedData.map(([minute, group]) =>
     group.find(d => d.alert_type) || group[0]
     );
-    // Draw animated line
+    // Draw animated line using full data for smooth curve
 const linePath = dataLayer.append("path")
-      .datum(reducedData)
+      .datum(data)
       .attr("fill", "none")
       .attr("stroke", "#4682B4")
       .attr("stroke-width", 2)
@@ -245,7 +236,7 @@ dataLayer.selectAll("circle")
 
     legend.append("text").text("Intensity (Color)").attr("font-weight", "bold");
 
-    const intensityScale = d3.range(0, 101, 10);
+    const intensityScale = d3.range(0, 255, 10);
     intensityScale.forEach((v, i) => {
       legend.append("rect")
         .attr("x", 0)
@@ -299,14 +290,16 @@ function zoomed(event) {
   // Update the X axis
   xAxisG.call(xAxis.scale(zx));
 
-  // Redraw line with new x-scale
-  linePath.attr("d", d3.line()
+  // Redraw line with new x-scale using same curve and full data
+  const lineWithZoom = d3.line()
     .x(d => zx(d.parsedTime))
     .y(d => y(d.value))
-  );
+    .curve(d3.curveMonotoneX);
 
-  // Update circles' x position
-  g.selectAll("circle")
+  linePath.datum(data).attr("d", lineWithZoom);
+
+  // Update circles' x position (select from dataLayer, not g)
+  dataLayer.selectAll("circle")
     .attr("cx", d => zx(d.parsedTime));
 }
   </script>
