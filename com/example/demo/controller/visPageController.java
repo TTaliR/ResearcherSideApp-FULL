@@ -3,7 +3,6 @@ package com.example.demo.controller;
 import com.example.demo.model.User;
 import com.example.demo.service.ApiService;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lowagie.text.Document;
 import com.lowagie.text.Font;
 import com.lowagie.text.Paragraph;
@@ -32,10 +31,6 @@ import javafx.stage.Stage;
 
 import java.awt.*;
 import java.io.*;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -44,7 +39,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 public class visPageController {
    private final ObservableList<User> userData = FXCollections.observableArrayList();
@@ -97,13 +91,13 @@ public class visPageController {
          this.azimuthLabel.setVisible(false);
       }
 
-      this.userSelector.setOnAction(ex -> this.updateChart());
-      this.useCaseSelector.setOnAction(ex -> {
-         String selected = (String)this.useCaseSelector.getValue();
+      this.userSelector.setOnAction(_ -> this.updateChart());
+      this.useCaseSelector.setOnAction(_ -> {
+         String selected = this.useCaseSelector.getValue();
          this.isSunPositionSelected = "SunAzimuth".equals(selected);
          this.updateChart();
       });
-      this.timeRangeSelector.getItems().addAll(new String[]{"Last 24 Hours", "Last 7 Days", "Last 30 Days", "All Time"});
+      this.timeRangeSelector.getItems().addAll("Last 24 Hours", "Last 7 Days", "Last 30 Days", "All Time");
       this.timeRangeSelector.setValue("Last 24 Hours");
       this.timeRangeSelector.setOnAction(ex -> this.updateChart());
       if (this.generatePdfButton != null) {
@@ -114,69 +108,35 @@ public class visPageController {
    private void loadUserData() {
       this.userData.clear();
 
-      try {
-         URL url = new URL(ApiService.getInstance().getBaseUrl() + ApiService.EP_GET_USERS);
-         HttpURLConnection conn = (HttpURLConnection)url.openConnection();
-         conn.setRequestMethod("GET");
+      ApiService.getInstance().get(ApiService.EP_GET_USERS, null)
+         .thenAccept(response -> {
+            try {
+               JsonNode usersArray = ApiService.getInstance().extractArray(response);
 
-         // timeouts to prevent hanging
-         conn.setConnectTimeout(5000);
-         conn.setReadTimeout(5000);
+               if (usersArray == null) {
+                  System.err.println("Unexpected JSON format in users response");
+                  return;
+               }
 
-         BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-         StringBuilder response = new StringBuilder();
+               for (JsonNode userNode : usersArray) {
+                  if (userNode.hasNonNull("userid")) {
+                     int id = userNode.get("userid").asInt();
+                     String firstName = userNode.hasNonNull("fname") ? userNode.get("fname").asText() : "";
+                     String lastName = userNode.hasNonNull("lname") ? userNode.get("lname").asText() : "";
+                     this.userData.add(new User(id, firstName, lastName));
+                  }
+               }
 
-         String line;
-         while ((line = reader.readLine()) != null) {
-            response.append(line);
-         }
-         reader.close();
+               Platform.runLater(this::populateUserSelector);
 
-         ObjectMapper mapper = new ObjectMapper();
-         JsonNode root = mapper.readTree(response.toString());
-
-         // --- START OF MISSING LOGIC ---
-         JsonNode usersArray = null;
-
-         // Check 1: Is it a raw array? [ {user}, {user} ]
-         if (root.isArray()) {
-            usersArray = root;
-         }
-         // Check 2: Is it wrapped in "data"? { "data": [ ... ] }
-         else if (root.has("data") && root.get("data").isArray()) {
-            usersArray = root.get("data");
-         }
-         // Check 3: Is it wrapped in "payload"? { "payload": [ ... ] }
-         else if (root.has("payload") && root.get("payload").isArray()) {
-            usersArray = root.get("payload");
-         }
-         // Check 4: Is it a single user object? { "userid": 1, ... }
-         else if (root.has("userid")) {
-            usersArray = mapper.createArrayNode().add(root);
-         }
-
-         if (usersArray == null) {
-            System.err.println("Unexpected JSON format: " + response.toString());
-            return;
-         }
-         // --- END OF MISSING LOGIC ---
-
-         for (JsonNode userNode : usersArray) {
-            // Add safety check for missing ID
-            if (userNode.hasNonNull("userid")) {
-               int id = userNode.get("userid").asInt();
-               String firstName = userNode.hasNonNull("fname") ? userNode.get("fname").asText() : "";
-               String lastName = userNode.hasNonNull("lname") ? userNode.get("lname").asText() : "";
-               this.userData.add(new User(id, firstName, lastName));
+            } catch (Exception e) {
+               System.err.println("Failed to parse users response: " + e.getMessage());
             }
-         }
-
-         // Force UI refresh if needed
-         Platform.runLater(this::populateUserSelector);
-
-      } catch (Exception e) {
-         e.printStackTrace();
-      }
+         })
+         .exceptionally(e -> {
+            System.err.println("Failed to load user data: " + e.getMessage());
+            return null;
+         });
    }
 
    private void populateUserSelector() {
@@ -216,83 +176,75 @@ public class visPageController {
 
       int selectedUserID = Integer.parseInt(userSelection.split(" ")[0]);
 
-      // FIX 1: Get the numeric Sensor ID (n8n needs the ID, not the name)
-      int sensorID = getSensorIdByName(useCase);
+      // Get sensor ID asynchronously
+      ApiService.getInstance().getSensorIdByName(useCase)
+         .thenAccept(sensorID -> {
+            if (sensorID == -1) {
+               System.err.println("Could not find ID for sensor: " + useCase);
+               return;
+            }
 
-      if (sensorID == -1) {
-         System.out.println("Could not find ID for sensor: " + useCase);
-         return;
-      }
+            // Build query params
+            Map<String, String> params = new HashMap<>();
+            params.put("range", timeRange);
+            params.put("alert_type", String.valueOf(sensorID));
+            params.put("userid", String.valueOf(selectedUserID));
 
-      try {
-         // Build the URL with the numeric ID
-         String urlStr = ApiService.getInstance().getBaseUrl() + ApiService.EP_SENSOR_DATA + "?range="
-                 + URLEncoder.encode(timeRange, StandardCharsets.UTF_8)
-                 + "&alert_type=" + sensorID
-                 + "&userid=" + selectedUserID;
+            // Fetch sensor data
+            ApiService.getInstance().get(ApiService.EP_SENSOR_DATA, params)
+               .thenAccept(response -> {
+                  try {
+                     // Check for empty response
+                     if (response.has("error") || response.size() == 0) {
+                        Platform.runLater(() -> {
+                           ensureWebViewInitialized();
+                           webView.getEngine().loadContent(
+                              "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#555;'>" +
+                                 "<h3>No data available for this user and sensor type.</h3>" +
+                                 "</body></html>"
+                           );
+                        });
+                        return;
+                     }
 
-         System.out.println("Fetching data from: " + urlStr);
+                     // Escape JSON for safe injection into JavaScript
+                     String json = response.toString();
+                     String escapedJson = json.replace("\\", "\\\\").replace("\"", "\\\"");
 
-         HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
-         conn.setRequestMethod("GET");
-         conn.setConnectTimeout(5000);
-         conn.setReadTimeout(5000);
+                     String jsDataSetup = "const rawRes = JSON.parse(\"" + escapedJson + "\"); " +
+                        "const data = Array.isArray(rawRes) ? rawRes : (rawRes.payload || rawRes.data || []);";
 
-         int responseCode = conn.getResponseCode();
+                     // Load HTML template
+                     String htmlTemplate = loadHtmlTemplate();
+                     if (htmlTemplate == null) {
+                        System.err.println("Failed to load HTML template");
+                        return;
+                     }
 
-         // Handle non-200 errors
-         if (responseCode != 200) {
-            System.err.println("API Request failed with code: " + responseCode);
-            return;
-         }
+                     String html = htmlTemplate
+                        .replace("const data = DATA_PLACEHOLDER;", jsDataSetup)
+                        .replace("USER_ID_PLACEHOLDER", String.valueOf(selectedUserID))
+                        .replace("SENSOR_TYPE_PLACEHOLDER", "\"" + useCase + "\"");
 
-         BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-         String json = reader.lines().collect(Collectors.joining());
-         reader.close();
+                     Platform.runLater(() -> {
+                        ensureWebViewInitialized();
+                        System.out.println("Loading D3 Chart into WebView...");
+                        webView.getEngine().loadContent(html);
+                     });
 
-         // Check for empty or error responses before loading WebView
-         if (json.isEmpty() || json.contains("\"message\":\"No data found\"") || json.contains("\"statusCode\":404")) {
-            Platform.runLater(() -> {
-               ensureWebViewInitialized();
-               webView.getEngine().loadContent(
-                       "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#555;'>" +
-                               "<h3>No data available for this user and sensor type.</h3>" +
-                               "</body></html>"
-               );
-            });
-            return;
-         }
-
-         // FIX 3: Safe JSON Injection into JavaScript
-         // Escape backslashes and quotes so the JSON string doesn't break the JS syntax
-         String escapedJson = json.replace("\\", "\\\\").replace("\"", "\\\"");
-
-         // We inject a small JS snippet that parses the string AND handles the wrapper
-         // Logic: Parse string -> Check if it has .payload -> Use that or the raw object
-         String jsDataSetup = "const rawRes = JSON.parse(\"" + escapedJson + "\"); " +
-                 "const data = Array.isArray(rawRes) ? rawRes : (rawRes.payload || rawRes.data || []);";
-
-         // Load HTML template from file
-         String htmlTemplate = loadHtmlTemplate();
-         if (htmlTemplate == null) {
-            System.err.println("Failed to load HTML template from feedbackGraph.html");
-            return;
-         }
-
-         String html = htmlTemplate
-                 .replace("const data = DATA_PLACEHOLDER;", jsDataSetup)
-                 .replace("USER_ID_PLACEHOLDER", String.valueOf(selectedUserID))
-                 .replace("SENSOR_TYPE_PLACEHOLDER", "\"" + useCase + "\"");
-
-         Platform.runLater(() -> {
-            ensureWebViewInitialized();
-            System.out.println("Loading D3 Chart into WebView...");
-            webView.getEngine().loadContent(html);
+                  } catch (Exception e) {
+                     System.err.println("Failed to process chart data: " + e.getMessage());
+                  }
+               })
+               .exceptionally(e -> {
+                  System.err.println("Failed to fetch sensor data: " + e.getMessage());
+                  return null;
+               });
+         })
+         .exceptionally(e -> {
+            System.err.println("Failed to get sensor ID: " + e.getMessage());
+            return null;
          });
-
-      } catch (Exception e) {
-         e.printStackTrace();
-      }
    }
 
    // Helper to load the HTML template from the feedbackGraph.html file
@@ -336,281 +288,224 @@ public class visPageController {
       DateTimeFormatter dateOnly = DateTimeFormatter.ofPattern("yyyy-MM-dd");
       LocalDate today = LocalDate.now();
 
-      for (User user : this.userData) {
-         int userID = user.getUserID();
+      // Get HeartRate sensor ID once
+      ApiService.getInstance().getSensorIdByName("HeartRate")
+         .thenAccept(heartRateSensorId -> {
+            if (heartRateSensorId == -1) {
+               System.err.println("Could not find HeartRate sensor");
+               return;
+            }
 
-         try {
-            String urlStr = ApiService.getInstance().getBaseUrl()+ ApiService.EP_SENSOR_DATA +"?userId=" + userID + "&alert_type=" + getSensorIdByName("HeartRate");            URL url = new URL(urlStr);
-            HttpURLConnection conn = (HttpURLConnection)url.openConnection();
-            conn.setRequestMethod("GET");
-            if (conn.getResponseCode() != 200) {
-               System.err.println("HTTP request failed with response code: " + conn.getResponseCode());
-            } else {
-               BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-               StringBuilder response = new StringBuilder();
+            // Process each user
+            for (User user : this.userData) {
+               int userID = user.getUserID();
 
-               String line;
-               while ((line = reader.readLine()) != null) {
-                  response.append(line);
-               }
+               Map<String, String> params = new HashMap<>();
+               params.put("userId", String.valueOf(userID));
+               params.put("alert_type", String.valueOf(heartRateSensorId));
 
-               reader.close();
-               ObjectMapper mapper = new ObjectMapper();
-               JsonNode root = mapper.readTree(response.toString());
-               String fileName = "HeartRateLog_User" + userID + "_" + today.format(dateOnly) + ".pdf";
-               Document document = new Document();
-               PdfWriter writer = PdfWriter.getInstance(document, new FileOutputStream(fileName));
-               document.open();
-               Font titleFont = new Font(1, 14.0F, 1);
-               document.add(new Paragraph("Daily Heart Rate Log - User ID: " + userID, titleFont));
-               document.add(new Paragraph("Date: " + today.format(dateOnly)));
-               document.add(new Paragraph(" "));
-               PdfPTable table = new PdfPTable(7);
-               table.setWidthPercentage(100.0F);
-               table.addCell("Time");
-               table.addCell("Heart Rate (BPM)");
-               table.addCell("Alert Type");
-               table.addCell("Pulses");
-               table.addCell("Intensity");
-               table.addCell("Duration");
-               table.addCell("Max Value");
-               int count = 0;
-               if (root.isArray()) {
-                  for (JsonNode node : root) {
+               ApiService.getInstance().get(ApiService.EP_SENSOR_DATA, params)
+                  .thenAccept(response -> {
                      try {
-                        if (node.has("sensorid") && node.get("sensorid").asInt() == 11) {
-                           if (node.has("time") && node.has("value")) {
-                              Instant instant = Instant.parse(node.get("time").asText());
-                              LocalDateTime dateTime = instant.atZone(ZoneId.systemDefault()).toLocalDateTime();
-                              LocalDate recordDate = dateTime.toLocalDate();
-                              if (recordDate.equals(today)) {
-                                 table.addCell(dateTime.format(DateTimeFormatter.ofPattern("HH:mm:ss")));
-                                 table.addCell(node.has("value") ? String.valueOf(node.get("value").asInt()) : "N/A");
-                                 table.addCell(node.has("alert_type") ? node.get("alert_type").asText() : "N/A");
-                                 table.addCell(node.has("pulses") ? String.valueOf(node.get("pulses").asInt()) : "N/A");
-                                 table.addCell(node.has("intensity") ? String.valueOf(node.get("intensity").asInt()) : "N/A");
-                                 table.addCell(node.has("duration") ? String.valueOf(node.get("duration").asInt()) : "N/A");
-                                 table.addCell(node.has("maxvalue") ? String.valueOf(node.get("maxvalue").asInt()) : "N/A");
-                                 count++;
+                        JsonNode root = response;
+                        String fileName = "HeartRateLog_User" + userID + "_" + today.format(dateOnly) + ".pdf";
+                        Document document = new Document();
+                        PdfWriter writer = PdfWriter.getInstance(document, new FileOutputStream(fileName));
+                        document.open();
+
+                        Font titleFont = new Font(1, 14.0F, 1);
+                        document.add(new Paragraph("Daily Heart Rate Log - User ID: " + userID, titleFont));
+                        document.add(new Paragraph("Date: " + today.format(dateOnly)));
+                        document.add(new Paragraph(" "));
+
+                        PdfPTable table = new PdfPTable(7);
+                        table.setWidthPercentage(100.0F);
+                        table.addCell("Time");
+                        table.addCell("Heart Rate (BPM)");
+                        table.addCell("Alert Type");
+                        table.addCell("Pulses");
+                        table.addCell("Intensity");
+                        table.addCell("Duration");
+                        table.addCell("Max Value");
+
+                        int count = 0;
+                        if (root.isArray()) {
+                           for (JsonNode node : root) {
+                              try {
+                                 if (node.has("sensorid") && node.get("sensorid").asInt() == heartRateSensorId) {
+                                    if (node.has("time") && node.has("value")) {
+                                       Instant instant = Instant.parse(node.get("time").asText());
+                                       LocalDateTime dateTime = instant.atZone(ZoneId.systemDefault()).toLocalDateTime();
+                                       LocalDate recordDate = dateTime.toLocalDate();
+
+                                       if (recordDate.equals(today)) {
+                                          table.addCell(dateTime.format(DateTimeFormatter.ofPattern("HH:mm:ss")));
+                                          table.addCell(node.has("value") ? String.valueOf(node.get("value").asInt()) : "N/A");
+                                          table.addCell(node.has("alert_type") ? node.get("alert_type").asText() : "N/A");
+                                          table.addCell(node.has("pulses") ? String.valueOf(node.get("pulses").asInt()) : "N/A");
+                                          table.addCell(node.has("intensity") ? String.valueOf(node.get("intensity").asInt()) : "N/A");
+                                          table.addCell(node.has("duration") ? String.valueOf(node.get("duration").asInt()) : "N/A");
+                                          table.addCell(node.has("maxvalue") ? String.valueOf(node.get("maxvalue").asInt()) : "N/A");
+                                          count++;
+                                       }
+                                    }
+                                 }
+                              } catch (Exception e) {
+                                 System.err.println("Error processing node: " + e.getMessage());
                               }
-                           } else {
-                              System.out.println("Node missing time or value field: " + node);
                            }
                         }
-                     } catch (Exception var28) {
-                        System.err.println("Error processing node " + node + ": " + var28.getMessage());
-                     }
-                  }
-               }
 
-               if (count == 0) {
-                  document.add(new Paragraph("No heart rate data found for today."));
-                  document.add(new Paragraph("Debug Info:"));
-                  document.add(new Paragraph("Today's date: " + today.format(dateOnly)));
-                  document.add(new Paragraph("Total records received: " + root.size()));
-                  document.add(new Paragraph("Filtered for sensor ID: 11 (Heart Rate)"));
-               } else {
-                  document.add(table);
-                  document.add(new Paragraph("Total heart rate records for today: " + count));
-               }
-
-               document.close();
-               writer.close();
-               System.out.println("PDF saved: " + new File(fileName).getAbsolutePath());
-
-               try {
-                  if (Desktop.isDesktopSupported()) {
-                     Desktop.getDesktop().open(new File(fileName));
-                  } else {
-                     String osName = System.getProperty("os.name").toLowerCase();
-                     if (osName.contains("win")) {
-                        Runtime.getRuntime().exec("rundll32 url.dll,FileProtocolHandler " + new File(fileName).getAbsolutePath());
-                     } else if (osName.contains("mac")) {
-                        Runtime.getRuntime().exec("open " + new File(fileName).getAbsolutePath());
-                     } else if (osName.contains("nix") || osName.contains("nux")) {
-                        String[] browsers = new String[]{"google-chrome", "firefox", "mozilla", "epiphany", "konqueror", "netscape", "opera", "links", "lynx"};
-                        String browser = null;
-                        String[] var26 = browsers;
-                        int var25 = browsers.length;
-                        int var34 = 0;
-
-                        while (true) {
-                           if (var34 < var25) {
-                              String b = var26[var34];
-                              if (Runtime.getRuntime().exec(new String[]{"which", b}).waitFor() != 0) {
-                                 var34++;
-                                 continue;
-                              }
-
-                              browser = b;
-                           }
-
-                           if (browser != null) {
-                              Runtime.getRuntime().exec(new String[]{browser, new File(fileName).getAbsolutePath()});
-                           } else {
-                              System.out.println("Could not find web browser to open PDF");
-                           }
-                           break;
+                        if (count == 0) {
+                           document.add(new Paragraph("No heart rate data found for today."));
+                        } else {
+                           document.add(table);
+                           document.add(new Paragraph("Total records: " + count));
                         }
+
+                        document.close();
+                        writer.close();
+                        System.out.println("PDF saved: " + new File(fileName).getAbsolutePath());
+
+                     } catch (Exception e) {
+                        System.err.println("Error generating PDF for user " + userID + ": " + e.getMessage());
                      }
-                  }
-               } catch (Exception var27) {
-                  System.out.println("Could not open PDF in browser: " + var27.getMessage());
-               }
+                  })
+                  .exceptionally(e -> {
+                     System.err.println("Failed to fetch data for user " + userID + ": " + e.getMessage());
+                     return null;
+                  });
             }
-         } catch (Exception var29) {
-            System.err.println("Error processing user " + userID + ": " + var29.getMessage());
-            var29.printStackTrace();
-         }
-      }
+         })
+         .exceptionally(e -> {
+            System.err.println("Failed to get HeartRate sensor ID: " + e.getMessage());
+            return null;
+         });
    }
 
-   public int getSensorIdByName(String name) {
-      try {
-         URL url = new URL(ApiService.getInstance().getBaseUrl()+ApiService.EP_GET_SENSOR_TYPES);
-         HttpURLConnection conn = (HttpURLConnection)url.openConnection();
-         conn.setRequestMethod("GET");
-         if (conn.getResponseCode() != 200) {
-            System.out.println("HTTP error: " + conn.getResponseCode());
-            return -1;
-         } else {
-            BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-            StringBuilder response = new StringBuilder();
-
-            String line;
-            while ((line = in.readLine()) != null) {
-               response.append(line);
-            }
-
-            in.close();
-            ObjectMapper mapper = new ObjectMapper();
-            JsonNode root = mapper.readTree(response.toString());
-            Map<String, Integer> sensorMap = new HashMap<>();
-
-            for (JsonNode node : root) {
-               String sensorName = node.get("name").asText();
-               int sensorId = node.get("sensorid").asInt();
-               sensorMap.put(sensorName, sensorId);
-            }
-
-            return sensorMap.getOrDefault(name, -1);
-         }
-      } catch (Exception var14) {
-         var14.printStackTrace();
-         return -1;
-      }
-   }
 
    @FXML
    private void generatePdfLog() {
-      String userSelection = (String)this.userSelector.getValue();
-      String useCase = (String)this.useCaseSelector.getValue();
-      if (userSelection != null && useCase != null) {
-         int userID = Integer.parseInt(userSelection.split(" ")[0]);
-         int sensorID = this.getSensorIdByName(useCase);
-         String timeRange = (String)this.timeRangeSelector.getValue();
+      String userSelection = this.userSelector.getValue();
+      String useCase = this.useCaseSelector.getValue();
+      String timeRange = this.timeRangeSelector.getValue();
 
-         try {
-            String urlStr = ApiService.getInstance().getBaseUrl() +
-                    ApiService.EP_SENSOR_DATA + "?userId=" + userID +
-                    "&alert_type=" + sensorID +
-                    "&timeRange=" + timeRange.replace(" ", "%20");
-            URL url = new URL(urlStr);
-            HttpURLConnection conn = (HttpURLConnection)url.openConnection();
-            conn.setRequestMethod("GET");
-            BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-            StringBuilder response = new StringBuilder();
-
-            String line;
-            while ((line = reader.readLine()) != null) {
-               response.append(line);
-            }
-
-            reader.close();
-            ObjectMapper mapper = new ObjectMapper();
-            JsonNode root = mapper.readTree(response.toString());
-            Document document = new Document();
-            String fileName = "User_" + userID + useCase.replace(" ", "") + "_log.pdf";
-            PdfWriter.getInstance(document, new FileOutputStream(fileName));
-            document.open();
-            Font titleFont = new Font(1, 16.0F, 1);
-            Font headingFont = new Font(1, 12.0F, 1);
-            Paragraph title = new Paragraph("User Data Report", titleFont);
-            title.setAlignment(1);
-            document.add(title);
-            document.add(new Paragraph(" "));
-            document.add(new Paragraph("User ID: " + userID, headingFont));
-            document.add(new Paragraph("Use Case: " + useCase, headingFont));
-            document.add(new Paragraph("Time Range: " + timeRange, headingFont));
-            document.add(new Paragraph("Generated: " + LocalDateTime.now(), headingFont));
-            document.add(new Paragraph(" "));
-            PdfPTable table = new PdfPTable(7);
-            table.setWidthPercentage(100.0F);
-            String[] headers = new String[]{"Time", "Value", "Feedback", "Pulses", "Intensity", "Duration (ms)", "Interval (ms)"};
-
-            for (String header : headers) {
-               table.addCell(new Paragraph(header, headingFont));
-            }
-
-            int rowCount = 0;
-            if (root.isArray()) {
-               for (JsonNode node : root) {
-                  rowCount++;
-                  String time = node.hasNonNull("time") ? node.get("time").asText() : "N/A";
-                  double value = node.hasNonNull("value") ? node.get("value").asDouble() : 0.0;
-                  String alertType = node.hasNonNull("alert_type") ? node.get("alert_type").asText() : null;
-                  table.addCell(time);
-                  table.addCell(String.valueOf(value));
-                  table.addCell(alertType != null ? "Yes" : "No");
-                  table.addCell(node.hasNonNull("pulses") ? String.valueOf(node.get("pulses").asInt()) : "N/A");
-                  table.addCell(node.hasNonNull("intensity") ? String.valueOf(node.get("intensity").asInt()) : "N/A");
-                  table.addCell(node.hasNonNull("duration") ? String.valueOf(node.get("duration").asInt()) : "N/A");
-                  table.addCell(node.hasNonNull("interval") ? String.valueOf(node.get("interval").asInt()) : "N/A");
-               }
-            }
-
-            if (rowCount == 0) {
-               document.add(new Paragraph("No data found for the selected user and use case."));
-            } else {
-               document.add(table);
-            }
-
-            document.close();
-            File pdfFile = new File(fileName).getAbsoluteFile();
-            String fullPath = pdfFile.getAbsolutePath();
-            System.out.println("PDF generated: " + fullPath);
-            Platform.runLater(() -> {
-               Alert alert = new Alert(AlertType.INFORMATION);
-               alert.setTitle("PDF Generated");
-               alert.setHeaderText("PDF Report Created Successfully");
-               alert.setContentText("The report has been saved to:\n" + fullPath);
-               Hyperlink link = new Hyperlink("Open PDF");
-               link.setOnAction(ex -> {
-                  try {
-                     if (Desktop.isDesktopSupported()) {
-                        Desktop.getDesktop().open(pdfFile);
-                     }
-                  } catch (Exception var3x) {
-                     System.out.println("Cannot open PDF: " + var3x.getMessage());
-                  }
-               });
-               VBox content = new VBox(10.0);
-               content.getChildren().addAll(new Node[]{new Label("The report has been saved to:"), new Label(fullPath), link});
-               alert.getDialogPane().setContent(content);
-               alert.showAndWait();
-            });
-         } catch (Exception var28) {
-            var28.printStackTrace();
-            Platform.runLater(() -> {
-               Alert alert = new Alert(AlertType.ERROR);
-               alert.setTitle("Error");
-               alert.setHeaderText("Failed to Generate PDF");
-               alert.setContentText("Error: " + var28.getMessage());
-               alert.showAndWait();
-            });
-         }
-      } else {
-         System.out.println("Please select a user and use case.");
+      if (userSelection == null || useCase == null || timeRange == null) {
+         System.out.println("Please select a user, use case, and time range.");
+         return;
       }
+
+      int userID = Integer.parseInt(userSelection.split(" ")[0]);
+
+      // Get sensor ID and fetch data asynchronously
+      ApiService.getInstance().getSensorIdByName(useCase)
+         .thenAccept(sensorID -> {
+            if (sensorID == -1) {
+               System.err.println("Could not find sensor: " + useCase);
+               return;
+            }
+
+            Map<String, String> params = new HashMap<>();
+            params.put("userId", String.valueOf(userID));
+            params.put("alert_type", String.valueOf(sensorID));
+            params.put("timeRange", timeRange);
+
+            ApiService.getInstance().get(ApiService.EP_SENSOR_DATA, params)
+               .thenAccept(response -> {
+                  try {
+                     JsonNode root = response;
+                     Document document = new Document();
+                     String fileName = "User_" + userID + useCase.replace(" ", "") + "_log.pdf";
+                     PdfWriter.getInstance(document, new FileOutputStream(fileName));
+                     document.open();
+
+                     Font titleFont = new Font(1, 16.0F, 1);
+                     Font headingFont = new Font(1, 12.0F, 1);
+                     Paragraph title = new Paragraph("User Data Report", titleFont);
+                     title.setAlignment(1);
+                     document.add(title);
+                     document.add(new Paragraph(" "));
+                     document.add(new Paragraph("User ID: " + userID, headingFont));
+                     document.add(new Paragraph("Use Case: " + useCase, headingFont));
+                     document.add(new Paragraph("Time Range: " + timeRange, headingFont));
+                     document.add(new Paragraph("Generated: " + LocalDateTime.now(), headingFont));
+                     document.add(new Paragraph(" "));
+
+                     PdfPTable table = new PdfPTable(7);
+                     table.setWidthPercentage(100.0F);
+                     String[] headers = {"Time", "Value", "Feedback", "Pulses", "Intensity", "Duration (ms)", "Interval (ms)"};
+                     for (String header : headers) {
+                        table.addCell(new Paragraph(header, headingFont));
+                     }
+
+                     int rowCount = 0;
+                     if (root.isArray()) {
+                        for (JsonNode node : root) {
+                           rowCount++;
+                           String time = node.hasNonNull("time") ? node.get("time").asText() : "N/A";
+                           double value = node.hasNonNull("value") ? node.get("value").asDouble() : 0.0;
+                           String alertType = node.hasNonNull("alert_type") ? node.get("alert_type").asText() : null;
+                           table.addCell(time);
+                           table.addCell(String.valueOf(value));
+                           table.addCell(alertType != null ? "Yes" : "No");
+                           table.addCell(node.hasNonNull("pulses") ? String.valueOf(node.get("pulses").asInt()) : "N/A");
+                           table.addCell(node.hasNonNull("intensity") ? String.valueOf(node.get("intensity").asInt()) : "N/A");
+                           table.addCell(node.hasNonNull("duration") ? String.valueOf(node.get("duration").asInt()) : "N/A");
+                           table.addCell(node.hasNonNull("interval") ? String.valueOf(node.get("interval").asInt()) : "N/A");
+                        }
+                     }
+
+                     if (rowCount == 0) {
+                        document.add(new Paragraph("No data found for the selected user and use case."));
+                     } else {
+                        document.add(table);
+                     }
+
+                     document.close();
+                     File pdfFile = new File(fileName).getAbsoluteFile();
+                     String fullPath = pdfFile.getAbsolutePath();
+                     System.out.println("PDF generated: " + fullPath);
+
+                     Platform.runLater(() -> {
+                        Alert alert = new Alert(AlertType.INFORMATION);
+                        alert.setTitle("PDF Generated");
+                        alert.setHeaderText("PDF Report Created Successfully");
+                        alert.setContentText("The report has been saved to:\n" + fullPath);
+                        Hyperlink link = new Hyperlink("Open PDF");
+                        link.setOnAction(e -> {
+                           try {
+                              if (Desktop.isDesktopSupported()) {
+                                 Desktop.getDesktop().open(pdfFile);
+                              }
+                           } catch (Exception ex) {
+                              System.out.println("Cannot open PDF: " + ex.getMessage());
+                           }
+                        });
+                        VBox content = new VBox(10.0);
+                        content.getChildren().addAll(new Label("The report has been saved to:"), new Label(fullPath), link);
+                        alert.getDialogPane().setContent(content);
+                        alert.showAndWait();
+                     });
+
+                  } catch (Exception e) {
+                     System.err.println("Failed to generate PDF: " + e.getMessage());
+                     Platform.runLater(() -> {
+                        Alert alert = new Alert(AlertType.ERROR);
+                        alert.setTitle("Error");
+                        alert.setHeaderText("Failed to Generate PDF");
+                        alert.setContentText("Error: " + e.getMessage());
+                        alert.showAndWait();
+                     });
+                  }
+               })
+               .exceptionally(e -> {
+                  System.err.println("Failed to fetch data: " + e.getMessage());
+                  return null;
+               });
+         })
+         .exceptionally(e -> {
+            System.err.println("Failed to get sensor ID: " + e.getMessage());
+            return null;
+         });
    }
 }

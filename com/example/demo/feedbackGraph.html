@@ -124,9 +124,20 @@ const dataLayer = g.append("g")
     .nice()
     .range([height, 0]);
 
-    const color = d3.scaleDiverging()
-      .domain([100, 50, 0])
-      .interpolator(d3.interpolateRdYlBu);
+    // Intensity color scale mapping 0-255 to a color gradient
+    const intensityThresholds = [20, 50, 100, 150, 200, 230, 255];
+    const intensityColors = [
+      "#fceabb",  // 0–20 → very light yellow
+      "#f8c156",  // 21–50 → light orange
+      "#f59e42",  // 51–100 → orange
+      "#ec5e34",  // 101–150 → red-orange
+      "#cd2e3a",  // 151–200 → red
+      "#8e063b",  // 201–230 → dark red
+      "#3b0a45"   // 231–255 → very dark purple
+    ];
+    const color = d3.scaleThreshold()
+      .domain(intensityThresholds)
+      .range(intensityColors);
 
     const maxPulses = d3.max(data, d => d.pulses || 0) || 1;
 
@@ -236,24 +247,31 @@ dataLayer.selectAll("circle")
 
     legend.append("text").text("Intensity (Color)").attr("font-weight", "bold");
 
-    const intensityScale = d3.range(0, 255, 10);
-    intensityScale.forEach((v, i) => {
-      legend.append("rect")
-        .attr("x", 0)
-        .attr("y", 20 + i * 12)
-        .attr("width", 20)
-        .attr("height", 10)
-        .attr("fill", color(v));
+    // Display intensity legend with ranges
+    const legendThresholds = [0, ...intensityThresholds];
+    legendThresholds.forEach((v, i) => {
+      if (i < intensityColors.length) {
+        const rangeEnd = intensityThresholds[i] ?? 255;
+        const rangeLabel = `${v}–${rangeEnd}`;
 
-      legend.append("text")
-        .attr("x", 30)
-        .attr("y", 29 + i * 12)
-        .text(v);
+        legend.append("rect")
+          .attr("x", 0)
+          .attr("y", 20 + i * 14)
+          .attr("width", 20)
+          .attr("height", 12)
+          .attr("fill", intensityColors[i]);
+
+        legend.append("text")
+          .attr("x", 30)
+          .attr("y", 30 + i * 14)
+          .attr("font-size", "11px")
+          .text(rangeLabel);
+      }
     });
 
-    legend.append("text").text("Pulses (Size)").attr("y", 170).attr("font-weight", "bold");
+    legend.append("text").text("Pulses (Size)").attr("y", 130).attr("font-weight", "bold");
 const pulseValues = [2, 4, 6, 8, 10];
-let currentY = 190; // starting y-position
+let currentY = 150; // starting y-position
 const pulsePadding = 6; // desired gap between circles
 pulseValues.forEach((v, i) => {
   const r = radius(v);
