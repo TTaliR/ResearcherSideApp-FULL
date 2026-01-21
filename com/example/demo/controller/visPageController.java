@@ -2,12 +2,8 @@ package com.example.demo.controller;
 
 import com.example.demo.model.User;
 import com.example.demo.service.ApiService;
+import com.example.demo.service.PdfService;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.lowagie.text.Document;
-import com.lowagie.text.Font;
-import com.lowagie.text.Paragraph;
-import com.lowagie.text.pdf.PdfPTable;
-import com.lowagie.text.pdf.PdfWriter;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -31,11 +27,7 @@ import javafx.stage.Stage;
 
 import java.awt.*;
 import java.io.*;
-import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -111,30 +103,53 @@ public class visPageController {
       ApiService.getInstance().get(ApiService.EP_GET_USERS, null)
          .thenAccept(response -> {
             try {
-               JsonNode usersArray = ApiService.getInstance().extractArray(response);
-
-               if (usersArray == null) {
-                  System.err.println("Unexpected JSON format in users response");
+               // Check for API error
+               if (response.has("error")) {
+                  int errorCode = response.get("error").asInt();
+                  String errorMsg = response.has("message") ? response.get("message").asText() : "Unknown error";
+                  System.err.println("ERROR: Failed to load users - API returned error " + errorCode + ": " + errorMsg);
                   return;
                }
 
+               JsonNode usersArray = ApiService.getInstance().extractArray(response);
+
+               if (usersArray == null) {
+                  System.err.println("ERROR: Unexpected JSON format in users response. No 'data' or 'payload' field found.");
+                  return;
+               }
+
+               if (usersArray.size() == 0) {
+                  System.out.println("WARNING: No users returned from API");
+               }
+
+               int loadedCount = 0;
                for (JsonNode userNode : usersArray) {
-                  if (userNode.hasNonNull("userid")) {
-                     int id = userNode.get("userid").asInt();
-                     String firstName = userNode.hasNonNull("fname") ? userNode.get("fname").asText() : "";
-                     String lastName = userNode.hasNonNull("lname") ? userNode.get("lname").asText() : "";
-                     this.userData.add(new User(id, firstName, lastName));
+                  try {
+                     if (userNode.hasNonNull("userid")) {
+                        int id = userNode.get("userid").asInt();
+                        String firstName = userNode.hasNonNull("fname") ? userNode.get("fname").asText() : "";
+                        String lastName = userNode.hasNonNull("lname") ? userNode.get("lname").asText() : "";
+                        this.userData.add(new User(id, firstName, lastName));
+                        loadedCount++;
+                     } else {
+                        System.err.println("WARNING: User node missing userid field");
+                     }
+                  } catch (Exception e) {
+                     System.err.println("ERROR: Failed to parse user node: " + e.getMessage());
                   }
                }
 
+               System.out.println("Successfully loaded " + loadedCount + " users");
                Platform.runLater(this::populateUserSelector);
 
             } catch (Exception e) {
-               System.err.println("Failed to parse users response: " + e.getMessage());
+               System.err.println("ERROR: Failed to parse users response: " + e.getMessage());
+               e.printStackTrace();
             }
          })
          .exceptionally(e -> {
-            System.err.println("Failed to load user data: " + e.getMessage());
+            System.err.println("ERROR: Failed to load user data: " + e.getMessage());
+            e.printStackTrace();
             return null;
          });
    }
@@ -170,81 +185,111 @@ public class visPageController {
       String timeRange = timeRangeSelector.getValue();
 
       if (userSelection == null || useCase == null || timeRange == null) {
-         System.out.println("Please select user, use case, and time range.");
+         System.out.println("ERROR: Please select user, use case, and time range.");
          return;
       }
 
-      int selectedUserID = Integer.parseInt(userSelection.split(" ")[0]);
+      try {
+         int selectedUserID = Integer.parseInt(userSelection.split(" ")[0]);
 
-      // Get sensor ID asynchronously
-      ApiService.getInstance().getSensorIdByName(useCase)
-         .thenAccept(sensorID -> {
-            if (sensorID == -1) {
-               System.err.println("Could not find ID for sensor: " + useCase);
-               return;
-            }
+         // Get sensor ID asynchronously
+         ApiService.getInstance().getSensorIdByName(useCase)
+            .thenAccept(sensorID -> {
+               if (sensorID == -1) {
+                  System.err.println("ERROR: Could not find ID for sensor: " + useCase);
+                  return;
+               }
 
-            // Build query params
-            Map<String, String> params = new HashMap<>();
-            params.put("range", timeRange);
-            params.put("alert_type", String.valueOf(sensorID));
-            params.put("userid", String.valueOf(selectedUserID));
+               // Build query params
+               Map<String, String> params = new HashMap<>();
+               params.put("range", timeRange);
+               params.put("alert_type", String.valueOf(sensorID));
+               params.put("userid", String.valueOf(selectedUserID));
 
-            // Fetch sensor data
-            ApiService.getInstance().get(ApiService.EP_SENSOR_DATA, params)
-               .thenAccept(response -> {
-                  try {
-                     // Check for empty response
-                     if (response.has("error") || response.size() == 0) {
+               // Fetch sensor data
+               ApiService.getInstance().get(ApiService.EP_SENSOR_DATA, params)
+                  .thenAccept(response -> {
+                     try {
+                        // Check for API error
+                        if (response.has("error")) {
+                           int errorCode = response.get("error").asInt();
+                           String errorMsg = response.has("message") ? response.get("message").asText() : "Unknown error";
+                           System.err.println("ERROR: API returned error " + errorCode + ": " + errorMsg);
+                           Platform.runLater(() -> {
+                              ensureWebViewInitialized();
+                              webView.getEngine().loadContent(
+                                 "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#d32f2f;'>" +
+                                    "<h3>Error: Failed to load data</h3>" +
+                                    "<p>API Error " + errorCode + ": " + errorMsg + "</p>" +
+                                    "</body></html>"
+                              );
+                           });
+                           return;
+                        }
+
+                        // Extract array from potentially wrapped response
+                        JsonNode dataArray = ApiService.getInstance().extractArray(response);
+
+                        // Check for empty response
+                        if (dataArray == null || dataArray.size() == 0) {
+                           System.out.println("INFO: No data available for user " + selectedUserID + " and sensor " + useCase);
+                           Platform.runLater(() -> {
+                              ensureWebViewInitialized();
+                              webView.getEngine().loadContent(
+                                 "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#555;'>" +
+                                    "<h3>No data available for this user and sensor type.</h3>" +
+                                    "</body></html>"
+                              );
+                           });
+                           return;
+                        }
+
+                        // Escape JSON for safe injection into JavaScript
+                        String json = dataArray.toString();
+                        String escapedJson = json.replace("\\", "\\\\").replace("\"", "\\\"");
+
+                        String jsDataSetup = "const data = JSON.parse(\"" + escapedJson + "\");";
+
+                        // Load HTML template
+                        String htmlTemplate = loadHtmlTemplate();
+                        if (htmlTemplate == null) {
+                           System.err.println("ERROR: Failed to load HTML template");
+                           return;
+                        }
+
+                        String html = htmlTemplate
+                           .replace("const data = DATA_PLACEHOLDER;", jsDataSetup)
+                           .replace("USER_ID_PLACEHOLDER", String.valueOf(selectedUserID))
+                           .replace("SENSOR_TYPE_PLACEHOLDER", "\"" + useCase + "\"");
+
                         Platform.runLater(() -> {
                            ensureWebViewInitialized();
-                           webView.getEngine().loadContent(
-                              "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#555;'>" +
-                                 "<h3>No data available for this user and sensor type.</h3>" +
-                                 "</body></html>"
-                           );
+                           System.out.println("Loading D3 Chart into WebView...");
+                           webView.getEngine().loadContent(html);
                         });
-                        return;
+
+                     } catch (Exception e) {
+                        System.err.println("ERROR: Failed to process chart data: " + e.getMessage());
+                        e.printStackTrace();
                      }
-
-                     // Escape JSON for safe injection into JavaScript
-                     String json = response.toString();
-                     String escapedJson = json.replace("\\", "\\\\").replace("\"", "\\\"");
-
-                     String jsDataSetup = "const rawRes = JSON.parse(\"" + escapedJson + "\"); " +
-                        "const data = Array.isArray(rawRes) ? rawRes : (rawRes.payload || rawRes.data || []);";
-
-                     // Load HTML template
-                     String htmlTemplate = loadHtmlTemplate();
-                     if (htmlTemplate == null) {
-                        System.err.println("Failed to load HTML template");
-                        return;
-                     }
-
-                     String html = htmlTemplate
-                        .replace("const data = DATA_PLACEHOLDER;", jsDataSetup)
-                        .replace("USER_ID_PLACEHOLDER", String.valueOf(selectedUserID))
-                        .replace("SENSOR_TYPE_PLACEHOLDER", "\"" + useCase + "\"");
-
-                     Platform.runLater(() -> {
-                        ensureWebViewInitialized();
-                        System.out.println("Loading D3 Chart into WebView...");
-                        webView.getEngine().loadContent(html);
-                     });
-
-                  } catch (Exception e) {
-                     System.err.println("Failed to process chart data: " + e.getMessage());
-                  }
-               })
-               .exceptionally(e -> {
-                  System.err.println("Failed to fetch sensor data: " + e.getMessage());
-                  return null;
-               });
-         })
-         .exceptionally(e -> {
-            System.err.println("Failed to get sensor ID: " + e.getMessage());
-            return null;
-         });
+                  })
+                  .exceptionally(e -> {
+                     System.err.println("ERROR: Failed to fetch sensor data: " + e.getMessage());
+                     e.printStackTrace();
+                     return null;
+                  });
+            })
+            .exceptionally(e -> {
+               System.err.println("ERROR: Failed to get sensor ID: " + e.getMessage());
+               e.printStackTrace();
+               return null;
+            });
+      } catch (NumberFormatException nfe) {
+         System.err.println("ERROR: Invalid user ID format: " + nfe.getMessage());
+      } catch (Exception e) {
+         System.err.println("ERROR: Unexpected error in updateChart: " + e.getMessage());
+         e.printStackTrace();
+      }
    }
 
    // Helper to load the HTML template from the feedbackGraph.html file
@@ -285,7 +330,6 @@ public class visPageController {
    }
 
    public void generateDailyHeartRatePdfForAllUsers() {
-      DateTimeFormatter dateOnly = DateTimeFormatter.ofPattern("yyyy-MM-dd");
       LocalDate today = LocalDate.now();
 
       // Get HeartRate sensor ID once
@@ -301,71 +345,15 @@ public class visPageController {
                int userID = user.getUserID();
 
                Map<String, String> params = new HashMap<>();
-               params.put("userId", String.valueOf(userID));
+               params.put("userid", String.valueOf(userID));
                params.put("alert_type", String.valueOf(heartRateSensorId));
 
                ApiService.getInstance().get(ApiService.EP_SENSOR_DATA, params)
                   .thenAccept(response -> {
                      try {
-                        JsonNode root = response;
-                        String fileName = "HeartRateLog_User" + userID + "_" + today.format(dateOnly) + ".pdf";
-                        Document document = new Document();
-                        PdfWriter writer = PdfWriter.getInstance(document, new FileOutputStream(fileName));
-                        document.open();
-
-                        Font titleFont = new Font(1, 14.0F, 1);
-                        document.add(new Paragraph("Daily Heart Rate Log - User ID: " + userID, titleFont));
-                        document.add(new Paragraph("Date: " + today.format(dateOnly)));
-                        document.add(new Paragraph(" "));
-
-                        PdfPTable table = new PdfPTable(7);
-                        table.setWidthPercentage(100.0F);
-                        table.addCell("Time");
-                        table.addCell("Heart Rate (BPM)");
-                        table.addCell("Alert Type");
-                        table.addCell("Pulses");
-                        table.addCell("Intensity");
-                        table.addCell("Duration");
-                        table.addCell("Max Value");
-
-                        int count = 0;
-                        if (root.isArray()) {
-                           for (JsonNode node : root) {
-                              try {
-                                 if (node.has("sensorid") && node.get("sensorid").asInt() == heartRateSensorId) {
-                                    if (node.has("time") && node.has("value")) {
-                                       Instant instant = Instant.parse(node.get("time").asText());
-                                       LocalDateTime dateTime = instant.atZone(ZoneId.systemDefault()).toLocalDateTime();
-                                       LocalDate recordDate = dateTime.toLocalDate();
-
-                                       if (recordDate.equals(today)) {
-                                          table.addCell(dateTime.format(DateTimeFormatter.ofPattern("HH:mm:ss")));
-                                          table.addCell(node.has("value") ? String.valueOf(node.get("value").asInt()) : "N/A");
-                                          table.addCell(node.has("alert_type") ? node.get("alert_type").asText() : "N/A");
-                                          table.addCell(node.has("pulses") ? String.valueOf(node.get("pulses").asInt()) : "N/A");
-                                          table.addCell(node.has("intensity") ? String.valueOf(node.get("intensity").asInt()) : "N/A");
-                                          table.addCell(node.has("duration") ? String.valueOf(node.get("duration").asInt()) : "N/A");
-                                          table.addCell(node.has("maxvalue") ? String.valueOf(node.get("maxvalue").asInt()) : "N/A");
-                                          count++;
-                                       }
-                                    }
-                                 }
-                              } catch (Exception e) {
-                                 System.err.println("Error processing node: " + e.getMessage());
-                              }
-                           }
-                        }
-
-                        if (count == 0) {
-                           document.add(new Paragraph("No heart rate data found for today."));
-                        } else {
-                           document.add(table);
-                           document.add(new Paragraph("Total records: " + count));
-                        }
-
-                        document.close();
-                        writer.close();
-                        System.out.println("PDF saved: " + new File(fileName).getAbsolutePath());
+                        // Delegate to PdfService (will handle unwrapping internally)
+                        String filePath = PdfService.generateDailyHeartRateReport(userID, today, response, heartRateSensorId);
+                        System.out.println("PDF saved: " + filePath);
 
                      } catch (Exception e) {
                         System.err.println("Error generating PDF for user " + userID + ": " + e.getMessage());
@@ -391,121 +379,103 @@ public class visPageController {
       String timeRange = this.timeRangeSelector.getValue();
 
       if (userSelection == null || useCase == null || timeRange == null) {
-         System.out.println("Please select a user, use case, and time range.");
+         showErrorAlert("Missing Selection", "Please select a user, use case, and time range.");
+         System.out.println("ERROR: Missing required selections");
          return;
       }
 
-      int userID = Integer.parseInt(userSelection.split(" ")[0]);
+      try {
+         int userID = Integer.parseInt(userSelection.split(" ")[0]);
 
-      // Get sensor ID and fetch data asynchronously
-      ApiService.getInstance().getSensorIdByName(useCase)
-         .thenAccept(sensorID -> {
-            if (sensorID == -1) {
-               System.err.println("Could not find sensor: " + useCase);
-               return;
-            }
+         // Get sensor ID and fetch data asynchronously
+         ApiService.getInstance().getSensorIdByName(useCase)
+            .thenAccept(sensorID -> {
+               if (sensorID == -1) {
+                  showErrorAlert("Sensor Not Found", "Could not find sensor type: " + useCase);
+                  System.err.println("ERROR: Could not find sensor: " + useCase);
+                  return;
+               }
 
-            Map<String, String> params = new HashMap<>();
-            params.put("userId", String.valueOf(userID));
-            params.put("alert_type", String.valueOf(sensorID));
-            params.put("timeRange", timeRange);
+               Map<String, String> params = new HashMap<>();
+               params.put("userid", String.valueOf(userID));
+               params.put("alert_type", String.valueOf(sensorID));
+               params.put("range", timeRange);
 
-            ApiService.getInstance().get(ApiService.EP_SENSOR_DATA, params)
-               .thenAccept(response -> {
-                  try {
-                     JsonNode root = response;
-                     Document document = new Document();
-                     String fileName = "User_" + userID + useCase.replace(" ", "") + "_log.pdf";
-                     PdfWriter.getInstance(document, new FileOutputStream(fileName));
-                     document.open();
+               ApiService.getInstance().get(ApiService.EP_SENSOR_DATA, params)
+                  .thenAccept(response -> {
+                     try {
+                        System.out.println("DEBUG: generatePdfLog received response: " + response.getNodeType());
 
-                     Font titleFont = new Font(1, 16.0F, 1);
-                     Font headingFont = new Font(1, 12.0F, 1);
-                     Paragraph title = new Paragraph("User Data Report", titleFont);
-                     title.setAlignment(1);
-                     document.add(title);
-                     document.add(new Paragraph(" "));
-                     document.add(new Paragraph("User ID: " + userID, headingFont));
-                     document.add(new Paragraph("Use Case: " + useCase, headingFont));
-                     document.add(new Paragraph("Time Range: " + timeRange, headingFont));
-                     document.add(new Paragraph("Generated: " + LocalDateTime.now(), headingFont));
-                     document.add(new Paragraph(" "));
+                        // Delegate PDF generation to PdfService (will handle unwrapping internally)
+                        String fullPath = PdfService.generateSensorDataReport(userID, useCase, timeRange, response);
+                        System.out.println("PDF generated: " + fullPath);
 
-                     PdfPTable table = new PdfPTable(7);
-                     table.setWidthPercentage(100.0F);
-                     String[] headers = {"Time", "Value", "Feedback", "Pulses", "Intensity", "Duration (ms)", "Interval (ms)"};
-                     for (String header : headers) {
-                        table.addCell(new Paragraph(header, headingFont));
-                     }
-
-                     int rowCount = 0;
-                     if (root.isArray()) {
-                        for (JsonNode node : root) {
-                           rowCount++;
-                           String time = node.hasNonNull("time") ? node.get("time").asText() : "N/A";
-                           double value = node.hasNonNull("value") ? node.get("value").asDouble() : 0.0;
-                           String alertType = node.hasNonNull("alert_type") ? node.get("alert_type").asText() : null;
-                           table.addCell(time);
-                           table.addCell(String.valueOf(value));
-                           table.addCell(alertType != null ? "Yes" : "No");
-                           table.addCell(node.hasNonNull("pulses") ? String.valueOf(node.get("pulses").asInt()) : "N/A");
-                           table.addCell(node.hasNonNull("intensity") ? String.valueOf(node.get("intensity").asInt()) : "N/A");
-                           table.addCell(node.hasNonNull("duration") ? String.valueOf(node.get("duration").asInt()) : "N/A");
-                           table.addCell(node.hasNonNull("interval") ? String.valueOf(node.get("interval").asInt()) : "N/A");
-                        }
-                     }
-
-                     if (rowCount == 0) {
-                        document.add(new Paragraph("No data found for the selected user and use case."));
-                     } else {
-                        document.add(table);
-                     }
-
-                     document.close();
-                     File pdfFile = new File(fileName).getAbsoluteFile();
-                     String fullPath = pdfFile.getAbsolutePath();
-                     System.out.println("PDF generated: " + fullPath);
-
-                     Platform.runLater(() -> {
-                        Alert alert = new Alert(AlertType.INFORMATION);
-                        alert.setTitle("PDF Generated");
-                        alert.setHeaderText("PDF Report Created Successfully");
-                        alert.setContentText("The report has been saved to:\n" + fullPath);
-                        Hyperlink link = new Hyperlink("Open PDF");
-                        link.setOnAction(e -> {
-                           try {
-                              if (Desktop.isDesktopSupported()) {
-                                 Desktop.getDesktop().open(pdfFile);
+                        // Show success alert with file open link
+                        Platform.runLater(() -> {
+                           File pdfFile = new File(fullPath);
+                           Alert alert = new Alert(AlertType.INFORMATION);
+                           alert.setTitle("PDF Generated");
+                           alert.setHeaderText("PDF Report Created Successfully");
+                           alert.setContentText("The report has been saved to:\n" + fullPath);
+                           Hyperlink link = new Hyperlink("Open PDF");
+                           link.setOnAction(e -> {
+                              try {
+                                 if (Desktop.isDesktopSupported()) {
+                                    Desktop.getDesktop().open(pdfFile);
+                                 } else {
+                                    showErrorAlert("Cannot Open File", "Desktop is not supported on this system");
+                                 }
+                              } catch (Exception ex) {
+                                 System.out.println("ERROR: Cannot open PDF: " + ex.getMessage());
+                                 showErrorAlert("File Error", "Cannot open PDF: " + ex.getMessage());
                               }
-                           } catch (Exception ex) {
-                              System.out.println("Cannot open PDF: " + ex.getMessage());
-                           }
+                           });
+                           VBox content = new VBox(10.0);
+                           content.getChildren().addAll(new Label("The report has been saved to:"), new Label(fullPath), link);
+                           alert.getDialogPane().setContent(content);
+                           alert.showAndWait();
                         });
-                        VBox content = new VBox(10.0);
-                        content.getChildren().addAll(new Label("The report has been saved to:"), new Label(fullPath), link);
-                        alert.getDialogPane().setContent(content);
-                        alert.showAndWait();
-                     });
 
-                  } catch (Exception e) {
-                     System.err.println("Failed to generate PDF: " + e.getMessage());
-                     Platform.runLater(() -> {
-                        Alert alert = new Alert(AlertType.ERROR);
-                        alert.setTitle("Error");
-                        alert.setHeaderText("Failed to Generate PDF");
-                        alert.setContentText("Error: " + e.getMessage());
-                        alert.showAndWait();
-                     });
-                  }
-               })
-               .exceptionally(e -> {
-                  System.err.println("Failed to fetch data: " + e.getMessage());
-                  return null;
-               });
-         })
-         .exceptionally(e -> {
-            System.err.println("Failed to get sensor ID: " + e.getMessage());
-            return null;
-         });
+                     } catch (IllegalArgumentException iae) {
+                        System.err.println("ERROR: Invalid input - " + iae.getMessage());
+                        showErrorAlert("Invalid Input", iae.getMessage());
+                     } catch (Exception e) {
+                        System.err.println("ERROR: Failed to generate PDF: " + e.getMessage());
+                        e.printStackTrace();
+                        showErrorAlert("PDF Generation Failed", "Error: " + e.getMessage());
+                     }
+                  })
+                  .exceptionally(e -> {
+                     System.err.println("ERROR: Failed to fetch data: " + e.getMessage());
+                     showErrorAlert("Data Fetch Failed", "Failed to fetch sensor data: " + e.getMessage());
+                     return null;
+                  });
+            })
+            .exceptionally(e -> {
+               System.err.println("ERROR: Failed to get sensor ID: " + e.getMessage());
+               showErrorAlert("Sensor Lookup Failed", "Failed to get sensor ID: " + e.getMessage());
+               return null;
+            });
+      } catch (NumberFormatException nfe) {
+         System.err.println("ERROR: Invalid user ID format: " + nfe.getMessage());
+         showErrorAlert("Invalid User ID", "Could not parse user ID from selection");
+      } catch (Exception e) {
+         System.err.println("ERROR: Unexpected error in generatePdfLog: " + e.getMessage());
+         e.printStackTrace();
+         showErrorAlert("Unexpected Error", "An unexpected error occurred: " + e.getMessage());
+      }
+   }
+
+   /**
+    * Helper method to show error alerts to the user
+    */
+   private void showErrorAlert(String title, String message) {
+      Platform.runLater(() -> {
+         Alert alert = new Alert(AlertType.ERROR);
+         alert.setTitle(title);
+         alert.setHeaderText(title);
+         alert.setContentText(message);
+         alert.showAndWait();
+      });
    }
 }

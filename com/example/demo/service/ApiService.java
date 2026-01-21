@@ -60,13 +60,15 @@ public class ApiService {
                 URL url = new URL(urlStr);
                 conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("GET");
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(5000);
+                conn.setConnectTimeout(10000);  // 10 seconds for initial connection
+                conn.setReadTimeout(30000);     // 30 seconds for reading response (large payloads may take time)
 
                 int status = conn.getResponseCode();
                 if (status != 200) {
-                    System.err.println("Error: " + status);
-                    return mapper.createObjectNode().put("error", status);
+                    System.err.println("API Error: HTTP " + status + " - " + conn.getResponseMessage());
+                    System.err.println("Endpoint: " + endpoint);
+                    System.err.println("Parameters: " + params);
+                    return mapper.createObjectNode().put("error", status).put("message", conn.getResponseMessage());
                 }
 
                 BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
@@ -78,10 +80,16 @@ public class ApiService {
                 reader.close();
 
                 String body = response.toString();
-                if (body.trim().isEmpty()) return mapper.createArrayNode();
+                if (body.trim().isEmpty()) {
+                    System.out.println("GET returned empty response");
+                    return mapper.createArrayNode();
+                }
+                System.out.println("GET Response: Successfully received " + body.length() + " bytes");
                 return mapper.readTree(body);
 
             } catch (Exception e) {
+                System.err.println("GET Request Failed - " + e.getClass().getSimpleName() + ": " + e.getMessage());
+                System.err.println("Endpoint: " + endpoint);
                 e.printStackTrace();
                 throw new RuntimeException("Connection failed: " + e.getMessage());
             } finally {
@@ -104,7 +112,8 @@ public class ApiService {
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
                 conn.setDoOutput(true);
-                conn.setConnectTimeout(5000);
+                conn.setConnectTimeout(10000);  // 10 seconds for connection
+                conn.setReadTimeout(30000);     // 30 seconds for response
 
                 try (OutputStream os = conn.getOutputStream()) {
                     byte[] input = jsonInputString.getBytes(StandardCharsets.UTF_8);
@@ -112,10 +121,16 @@ public class ApiService {
                 }
 
                 int code = conn.getResponseCode();
-                System.out.println("✅ POST Response Code: " + code);
+                System.out.println("POST Response Code: " + code + " - " + conn.getResponseMessage());
+
+                if (code != 200) {
+                    System.err.println("POST Failed - HTTP " + code + " for endpoint: " + endpoint);
+                }
                 return code == 200;
 
             } catch (Exception e) {
+                System.err.println("POST Request Failed - " + e.getClass().getSimpleName() + ": " + e.getMessage());
+                System.err.println("Endpoint: " + endpoint);
                 e.printStackTrace();
                 return false;
             } finally {
@@ -134,6 +149,8 @@ public class ApiService {
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
                 conn.setDoOutput(true);
+                conn.setConnectTimeout(10000);  // 10 seconds for connection
+                conn.setReadTimeout(30000);     // 30 seconds for response
 
                 try (OutputStream os = conn.getOutputStream()) {
                     byte[] input = jsonInputString.getBytes(StandardCharsets.UTF_8);
@@ -141,6 +158,8 @@ public class ApiService {
                 }
 
                 int code = conn.getResponseCode();
+                System.out.println("POST Response Code: " + code + " - " + conn.getResponseMessage());
+
                 if (code == 200) {
                     BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
                     StringBuilder response = new StringBuilder();
@@ -151,10 +170,14 @@ public class ApiService {
                     reader.close();
                     return mapper.readTree(response.toString());
                 } else {
-                    return mapper.createObjectNode().put("error", "Server returned code: " + code);
+                    System.err.println("POST Failed - HTTP " + code + " for endpoint: " + endpoint);
+                    return mapper.createObjectNode().put("error", code).put("message", conn.getResponseMessage());
                 }
             } catch (Exception e) {
-                return mapper.createObjectNode().put("error", e.getMessage());
+                System.err.println("POST Request Failed - " + e.getClass().getSimpleName() + ": " + e.getMessage());
+                System.err.println("Endpoint: " + endpoint);
+                e.printStackTrace();
+                return mapper.createObjectNode().put("error", "Request failed").put("message", e.getMessage());
             } finally {
                 if (conn != null) conn.disconnect();
             }
