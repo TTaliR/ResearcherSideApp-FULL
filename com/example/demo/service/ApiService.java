@@ -15,6 +15,10 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
+// ApiService: Responsible for all HTTP communication with the backend webhook API.
+// - All network calls are executed asynchronously (CompletableFuture) so callers must handle results off the FX thread.
+// - JSON parsing is done with Jackson's ObjectMapper.
+// - Responses may be raw arrays, wrapped in {data: [...]}, {payload: [...]}, or single objects; use extractArray() to normalize.
 public class ApiService {
 
     //should be replaced with ngrok link
@@ -44,6 +48,13 @@ public class ApiService {
     public ObjectMapper getMapper() { return mapper; }
 
     // --- GET Request ---
+    /**
+     * Perform an asynchronous HTTP GET.
+     * - endpoint: endpoint path (uses BASE_URL internally)
+     * - params: optional query parameters (encoded)
+     * Returns CompletableFuture<JsonNode> holding parsed JSON. If the API responds with an error, the returned JsonNode will have an "error" field.
+     * Note: This method runs off the JavaFX thread; call Platform.runLater(...) when updating UI.
+     */
     public CompletableFuture<JsonNode> get(String endpoint, Map<String, String> params) {
         return CompletableFuture.supplyAsync(() -> {
             HttpURLConnection conn = null;
@@ -99,6 +110,11 @@ public class ApiService {
     }
 
     // --- POST Request ---
+    /**
+     * Asynchronous POST that returns success boolean.
+     * Use when you only need to know whether the request succeeded (HTTP 200).
+     * Runs off the UI thread.
+     */
     public CompletableFuture<Boolean> post(String endpoint, Object data) {
         return CompletableFuture.supplyAsync(() -> {
             HttpURLConnection conn = null;
@@ -139,6 +155,11 @@ public class ApiService {
         });
     }
 
+    /**
+     * Asynchronous POST that returns parsed JSON response.
+     * Use when the endpoint returns JSON you need to consume.
+     * Returns a JsonNode containing the response or an object with an "error" field on failure.
+     */
     public CompletableFuture<JsonNode> postWithResponse(String endpoint, Object data) {
         return CompletableFuture.supplyAsync(() -> {
             HttpURLConnection conn = null;
@@ -184,6 +205,7 @@ public class ApiService {
         });
     }
 
+    // Helper to URL-encode parameter keys/values
     private String encode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
@@ -193,8 +215,14 @@ public class ApiService {
     }
 
     /**
-     * Extracts array from response that may be wrapped in "data", "payload", or be a raw array
-     * Returns null if response contains an error or cannot extract array
+     * Normalizes multiple possible API response shapes into a Json array:
+     * - raw array -> returned as-is
+     * - { "data": [...] } -> returns data array
+     * - { "payload": [...] } -> returns payload array
+     * - single object (e.g. contains userid or sensorid) -> wrapped into a single-element array
+     * Returns null if response contains an "error" field or shape is unrecognized.
+     *
+     * Important: callers should check for null before iterating.
      */
     public JsonNode extractArray(JsonNode response) {
         if (response == null) {
@@ -235,7 +263,8 @@ public class ApiService {
     }
 
     /**
-     * Get sensor types with caching to avoid repeated API calls
+     * Fetch sensor types and cache them locally to avoid repeated network calls.
+     * Returns a CompletableFuture<Map<String,Integer>> mapping sensor name -> sensor id.
      */
     public CompletableFuture<Map<String, Integer>> getSensorTypes() {
         return CompletableFuture.supplyAsync(() -> {
@@ -269,7 +298,8 @@ public class ApiService {
     }
 
     /**
-     * Get sensor ID by name with caching
+     * Convenience wrapper that returns sensor ID by name using the cached map.
+     * Returns -1 when not found.
      */
     public CompletableFuture<Integer> getSensorIdByName(String name) {
         return getSensorTypes().thenApply(sensorMap -> sensorMap.getOrDefault(name, -1));

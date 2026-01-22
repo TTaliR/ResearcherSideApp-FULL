@@ -32,6 +32,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
+// visPageController: Controller for the visualization page.
+// - Fetches user list, sensor types and sensor data, then renders a D3 visualization inside a WebView.
+// - All network calls are async; UI updates must be done on the JavaFX thread via Platform.runLater(...).
+// - This controller also exposes PDF generation helpers that rely on PdfService.
 public class visPageController {
    private final ObservableList<User> userData = FXCollections.observableArrayList();
    @FXML
@@ -61,6 +65,8 @@ public class visPageController {
 
    @FXML
    private void initialize() {
+      // initialize() runs on the JavaFX thread during FXML load.
+      // It performs lightweight setup and triggers the initial load of users (async).
       this.loadUserData();
       this.populateUseCaseSelector();
       this.populateUserSelector();
@@ -105,6 +111,8 @@ public class visPageController {
    }
 
    private void loadUserData() {
+      // loadUserData uses ApiService.get(...) which returns a CompletableFuture.
+      // The response handling below executes off the FX thread; when we need to mutate UI controls we call Platform.runLater.
       this.userData.clear();
 
       ApiService.getInstance().get(ApiService.EP_GET_USERS, null)
@@ -162,6 +170,8 @@ public class visPageController {
    }
 
    private void populateUserSelector() {
+      // Simple helper to populate the ComboBox from the cached userData list.
+      // This is expected to be called on the FX thread.
       this.userSelector.getItems().clear();
 
       for (User u : this.userData) {
@@ -175,6 +185,7 @@ public class visPageController {
 
    @FXML
    private void handleBackButton(ActionEvent event) {
+      // Loads the previous scene. Runs on the FX thread (triggered by button press).
       try {
          FXMLLoader loader = new FXMLLoader(this.getClass().getResource("/com/example/demo/view/ResearcherInterface.fxml"));
          Parent root = (Parent)loader.load();
@@ -187,6 +198,13 @@ public class visPageController {
    }
 
    public void updateChart() {
+      // updateChart runs on the FX thread (called from UI events).
+      // High-level flow:
+      // 1. Parse selections and lookup sensor ID (async).
+      // 2. Build params and fetch sensor data (async).
+      // 3. Normalize response with ApiService.extractArray().
+      // 4. Escape JSON and inject into the HTML template loaded from resources.
+      // 5. All UI updates (webView.loadContent) are wrapped in Platform.runLater.
       String userSelection = userSelector.getValue();
       String useCase = useCaseSelector.getValue();
       String timeRange = timeRangeSelector.getValue();
@@ -360,6 +378,8 @@ public class visPageController {
 
    // Helper to load the HTML template from the feedbackGraph.html file
    private String loadHtmlTemplate() {
+      // Reads resource feedbackGraph.html and returns as string.
+      // Keep this method synchronous: it is fast (reads a bundled resource).
       try {
          InputStream inputStream = this.getClass().getResourceAsStream("/com/example/demo/feedbackGraph.html");
          if (inputStream == null) {
@@ -382,6 +402,8 @@ public class visPageController {
 
    // Helper to make sure the WebView exists in the scene
    private void ensureWebViewInitialized() {
+      // Create and anchor the WebView into chartAnchor if absent.
+      // This method modifies JavaFX scene graph and must run on the FX thread (it is invoked via Platform.runLater where necessary).
       if (this.webView == null) {
          this.webView = new WebView();
          this.webView.setPrefHeight(600.0);
@@ -396,6 +418,8 @@ public class visPageController {
    }
 
    public void generateDailyHeartRatePdfForAllUsers() {
+      // Iterates over cached userData and requests daily heart rate data then delegates to PdfService.
+      // Note: PdfService methods may block briefly while writing files; they run from the completable-stage so UI thread will not be blocked.
       LocalDate today = LocalDate.now();
 
       // Get HeartRate sensor ID once
@@ -440,6 +464,8 @@ public class visPageController {
 
    @FXML
    private void generatePdfLog() {
+      // Triggered by UI action. Validates selections, obtains sensorID, fetches data, then calls PdfService.generateSensorDataReport.
+      // All operations that update UI are executed via Platform.runLater.
       String userSelection = this.userSelector.getValue();
       String useCase = this.useCaseSelector.getValue();
       String timeRange = this.timeRangeSelector.getValue();
@@ -538,7 +564,8 @@ public class visPageController {
    }
 
    /**
-    * Helper method to show error alerts to the user
+    * Helper method to show error alerts to the user.
+    * Always runs on the FX thread using Platform.runLater to be safe when called from background threads.
     */
    private void showErrorAlert(String title, String message) {
       Platform.runLater(() -> {

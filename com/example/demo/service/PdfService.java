@@ -17,6 +17,10 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
+// PdfService: Responsible for generating PDF reports from sensor data.
+// - Receives JsonNode responses from ApiService; responses may be wrapped. extractDataArray() normalizes this.
+// - Methods write files to the current working directory and attempt to open them via Desktop when possible.
+// - Extensive logging is present to help diagnose mismatched API shapes during PDF generation.
 public class PdfService {
 
     public static void generateSensorReport(int userId, String sensorType, String timeRange, JsonNode data) throws Exception {
@@ -244,12 +248,15 @@ public class PdfService {
         return new File(fileName).getAbsolutePath();
     }
 
+    // Small helper to safely read text fields for table cells.
     private static String getText(JsonNode node, String field) {
         return node.hasNonNull(field) ? node.get(field).asText() : "-";
     }
 
     /**
-     * Extract data array from response that may be wrapped in "data", "payload", or be a raw array
+     * extractDataArray:
+     * - Mirrors ApiService.extractArray but with additional debug logging useful during PDF generation.
+     * - Returns null when format cannot be recognized or when API provided an error object.
      */
     private static JsonNode extractDataArray(JsonNode response) {
         System.out.println("===== extractDataArray DEBUG =====");
@@ -299,6 +306,10 @@ public class PdfService {
         return null;
     }
 
+    /**
+     * openFile: attempts to open the generated file using the Desktop API when supported.
+     * - Logs helpful messages rather than throwing on platforms where Desktop is unsupported.
+     */
     private static void openFile(String filePath) {
         try {
             File file = new File(filePath);
@@ -307,9 +318,9 @@ public class PdfService {
                     Desktop desktop = Desktop.getDesktop();
                     if (desktop.isSupported(Desktop.Action.OPEN)) {
                         desktop.open(file);
-                    } else {
+                      } else {
                         System.out.println("INFO: Desktop OPEN action is not supported on this system");
-                    }
+                      }
                 } else {
                     System.out.println("INFO: Desktop is not supported on this system");
                 }
