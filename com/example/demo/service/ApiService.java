@@ -194,18 +194,43 @@ public class ApiService {
 
     /**
      * Extracts array from response that may be wrapped in "data", "payload", or be a raw array
+     * Returns null if response contains an error or cannot extract array
      */
     public JsonNode extractArray(JsonNode response) {
+        if (response == null) {
+            System.err.println("WARNING: extractArray called with null response");
+            return null;
+        }
+
+        // Check for API error in response first
+        if (response.has("error")) {
+            int errorCode = response.has("error") ? response.get("error").asInt() : 0;
+            String errorMsg = response.has("message") ? response.get("message").asText() : "Unknown error";
+            System.err.println("ERROR: Response contains error - Code: " + errorCode + ", Message: " + errorMsg);
+            return null;
+        }
+
+        // If already an array, return as-is
         if (response.isArray()) {
             return response;
-        } else if (response.has("data") && response.get("data").isArray()) {
+        }
+
+        // Try to extract from "data" wrapper
+        if (response.has("data") && response.get("data").isArray()) {
             return response.get("data");
-        } else if (response.has("payload") && response.get("payload").isArray()) {
+        }
+
+        // Try to extract from "payload" wrapper
+        if (response.has("payload") && response.get("payload").isArray()) {
             return response.get("payload");
-        } else if (response.has("userid") || response.has("sensorid")) {
-            // Single object, wrap in array
+        }
+
+        // Single object, wrap in array
+        if (response.has("userid") || response.has("sensorid")) {
             return mapper.createArrayNode().add(response);
         }
+
+        System.err.println("WARNING: Could not extract array from response - format not recognized");
         return null;
     }
 

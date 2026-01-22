@@ -260,6 +260,12 @@ public class PdfService {
             return null;
         }
 
+        // Check for API error in response
+        if (response.has("error")) {
+            System.out.println("ERROR field found in response: " + response.get("error"));
+            return null;
+        }
+
         System.out.println("Response toString (first 300 chars): " + response.toString().substring(0, Math.min(300, response.toString().length())));
 
         // Check if it's already an array
@@ -296,8 +302,19 @@ public class PdfService {
     private static void openFile(String filePath) {
         try {
             File file = new File(filePath);
-            if (Desktop.isDesktopSupported() && file.exists()) {
-                Desktop.getDesktop().open(file);
+            if (file.exists()) {
+                if (Desktop.isDesktopSupported()) {
+                    Desktop desktop = Desktop.getDesktop();
+                    if (desktop.isSupported(Desktop.Action.OPEN)) {
+                        desktop.open(file);
+                    } else {
+                        System.out.println("INFO: Desktop OPEN action is not supported on this system");
+                    }
+                } else {
+                    System.out.println("INFO: Desktop is not supported on this system");
+                }
+            } else {
+                System.err.println("ERROR: PDF file not found: " + filePath);
             }
         } catch (Exception e) {
             System.err.println("Could not open PDF automatically: " + e.getMessage());

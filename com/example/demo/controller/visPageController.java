@@ -67,11 +67,18 @@ public class visPageController {
       Tooltip.install(this.backButton, new Tooltip("Back to Main Menu"));
       if (this.sunIcon != null) {
          try {
-            Image sunImage = new Image(Objects.requireNonNull(this.getClass().getResourceAsStream("/com/example/demo/images/sun.png")));
-            this.sunIcon.setImage(sunImage);
-            this.sunIcon.setVisible(false);
+            InputStream sunImageStream = this.getClass().getResourceAsStream("/com/example/demo/images/sun.png");
+            if (sunImageStream != null) {
+               Image sunImage = new Image(sunImageStream);
+               this.sunIcon.setImage(sunImage);
+               this.sunIcon.setVisible(false);
+            } else {
+               System.err.println("WARNING: sun.png resource not found at /com/example/demo/images/sun.png");
+               this.sunIcon.setVisible(false);
+            }
          } catch (Exception var2) {
-            System.err.println("Could not load sun icon: " + var2.getMessage());
+            System.err.println("ERROR: Could not load sun icon: " + var2.getMessage());
+            this.sunIcon.setVisible(false);
          }
       }
 
@@ -197,6 +204,15 @@ public class visPageController {
             .thenAccept(sensorID -> {
                if (sensorID == -1) {
                   System.err.println("ERROR: Could not find ID for sensor: " + useCase);
+                  Platform.runLater(() -> {
+                     ensureWebViewInitialized();
+                     webView.getEngine().loadContent(
+                        "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#d32f2f;'>" +
+                           "<h3>Error: Sensor Not Found</h3>" +
+                           "<p>Could not find sensor: " + useCase + "</p>" +
+                           "</body></html>"
+                     );
+                  });
                   return;
                }
 
@@ -230,8 +246,22 @@ public class visPageController {
                         // Extract array from potentially wrapped response
                         JsonNode dataArray = ApiService.getInstance().extractArray(response);
 
-                        // Check for empty response
-                        if (dataArray == null || dataArray.size() == 0) {
+                        // Check for null or empty response
+                        if (dataArray == null) {
+                           System.err.println("ERROR: Could not extract array from API response - unexpected format");
+                           Platform.runLater(() -> {
+                              ensureWebViewInitialized();
+                              webView.getEngine().loadContent(
+                                 "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#d32f2f;'>" +
+                                    "<h3>Error: Invalid Data Format</h3>" +
+                                    "<p>Server returned unexpected data format</p>" +
+                                    "</body></html>"
+                              );
+                           });
+                           return;
+                        }
+
+                        if (dataArray.size() == 0) {
                            System.out.println("INFO: No data available for user " + selectedUserID + " and sensor " + useCase);
                            Platform.runLater(() -> {
                               ensureWebViewInitialized();
@@ -254,6 +284,15 @@ public class visPageController {
                         String htmlTemplate = loadHtmlTemplate();
                         if (htmlTemplate == null) {
                            System.err.println("ERROR: Failed to load HTML template");
+                           Platform.runLater(() -> {
+                              ensureWebViewInitialized();
+                              webView.getEngine().loadContent(
+                                 "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#d32f2f;'>" +
+                                    "<h3>Error: Template Not Found</h3>" +
+                                    "<p>Could not load visualization template</p>" +
+                                    "</body></html>"
+                              );
+                           });
                            return;
                         }
 
@@ -271,17 +310,44 @@ public class visPageController {
                      } catch (Exception e) {
                         System.err.println("ERROR: Failed to process chart data: " + e.getMessage());
                         e.printStackTrace();
+                        Platform.runLater(() -> {
+                           ensureWebViewInitialized();
+                           webView.getEngine().loadContent(
+                              "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#d32f2f;'>" +
+                                 "<h3>Error: Processing Failed</h3>" +
+                                 "<p>" + e.getMessage() + "</p>" +
+                                 "</body></html>"
+                           );
+                        });
                      }
                   })
                   .exceptionally(e -> {
                      System.err.println("ERROR: Failed to fetch sensor data: " + e.getMessage());
                      e.printStackTrace();
+                     Platform.runLater(() -> {
+                        ensureWebViewInitialized();
+                        webView.getEngine().loadContent(
+                           "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#d32f2f;'>" +
+                              "<h3>Error: Failed to fetch data</h3>" +
+                              "<p>" + e.getMessage() + "</p>" +
+                              "</body></html>"
+                        );
+                     });
                      return null;
                   });
             })
             .exceptionally(e -> {
                System.err.println("ERROR: Failed to get sensor ID: " + e.getMessage());
                e.printStackTrace();
+               Platform.runLater(() -> {
+                  ensureWebViewInitialized();
+                  webView.getEngine().loadContent(
+                     "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#d32f2f;'>" +
+                        "<h3>Error: Sensor Lookup Failed</h3>" +
+                        "<p>" + e.getMessage() + "</p>" +
+                        "</body></html>"
+                  );
+               });
                return null;
             });
       } catch (NumberFormatException nfe) {
@@ -417,21 +483,26 @@ public class visPageController {
                            alert.setTitle("PDF Generated");
                            alert.setHeaderText("PDF Report Created Successfully");
                            alert.setContentText("The report has been saved to:\n" + fullPath);
-                           Hyperlink link = new Hyperlink("Open PDF");
-                           link.setOnAction(e -> {
-                              try {
-                                 if (Desktop.isDesktopSupported()) {
-                                    Desktop.getDesktop().open(pdfFile);
-                                 } else {
-                                    showErrorAlert("Cannot Open File", "Desktop is not supported on this system");
-                                 }
-                              } catch (Exception ex) {
-                                 System.out.println("ERROR: Cannot open PDF: " + ex.getMessage());
-                                 showErrorAlert("File Error", "Cannot open PDF: " + ex.getMessage());
-                              }
-                           });
+
                            VBox content = new VBox(10.0);
-                           content.getChildren().addAll(new Label("The report has been saved to:"), new Label(fullPath), link);
+                           content.getChildren().addAll(new Label("The report has been saved to:"), new Label(fullPath));
+
+                           // Only add open button if Desktop is supported
+                           if (Desktop.isDesktopSupported()) {
+                              Hyperlink link = new Hyperlink("Open PDF");
+                              link.setOnAction(e -> {
+                                 try {
+                                    Desktop.getDesktop().open(pdfFile);
+                                 } catch (Exception ex) {
+                                    System.out.println("ERROR: Cannot open PDF: " + ex.getMessage());
+                                    showErrorAlert("File Error", "Cannot open PDF: " + ex.getMessage());
+                                 }
+                              });
+                              content.getChildren().add(link);
+                           } else {
+                              content.getChildren().add(new Label("(Desktop file open not supported on this system)"));
+                           }
+
                            alert.getDialogPane().setContent(content);
                            alert.showAndWait();
                         });
