@@ -192,7 +192,9 @@ const xAxisG = g.append("g")
 
     // Group time-series points into per-minute buckets to avoid overplotting
     // reducedData will contain one representative per minute (preferentially an alert)
-    const bucketedData = d3.groups(data, d => d3.timeMinute(d.parsedTime));
+    // Filter to only include points with pulses > 0
+    const filteredData = data.filter(d => d.pulses > 0);
+    const bucketedData = d3.groups(filteredData, d => d3.timeMinute(d.parsedTime));
     const reducedData = bucketedData.map(([minute, group]) =>
       group.find(d => d.alert_type) || group[0]
     );

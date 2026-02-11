@@ -22,8 +22,8 @@ import java.util.stream.Collectors;
 public class ApiService {
 
     //should be replaced with ngrok link
-    private static final String BASE_URL = "http://localhost:5678/webhook";
-    //private static final String BASE_URL = "https://marcella-unguerdoned-ayanna.ngrok-free.dev/webhook";  //tali
+    // private static final String BASE_URL = "http://localhost:5678/webhook";
+    private static final String BASE_URL = "https://marcella-unguerdoned-ayanna.ngrok-free.dev/webhook";  //tali
     //private static final String BASE_URL = "https://vacantly-holmic-etta.ngrok-free.dev/";  //liran
     public static final String EP_GET_USERS = "/get-users";
     public static final String EP_GET_SENSOR_TYPES = "/get-sensor-types";

@@ -59,6 +59,10 @@ public class visPageController {
    @FXML
    private Button dailyHeartPdfBtn;
    @FXML
+   private Button refreshGraphButton;
+   @FXML
+   private Label loadingLabel;
+   @FXML
    private Button generatePdfButton;
    private boolean isSunPositionSelected = false;
    private WebView webView;
@@ -197,6 +201,12 @@ public class visPageController {
       }
    }
 
+   @FXML
+   private void refreshGraph(ActionEvent event) {
+      // Refresh graph button handler - simply calls updateChart
+      this.updateChart();
+   }
+
    public void updateChart() {
       // updateChart runs on the FX thread (called from UI events).
       // High-level flow:
@@ -214,6 +224,10 @@ public class visPageController {
          return;
       }
 
+      // Show loading feedback
+      loadingLabel.setVisible(true);
+      loadingLabel.setManaged(true);
+
       try {
          int selectedUserID = Integer.parseInt(userSelection.split(" ")[0]);
 
@@ -230,6 +244,7 @@ public class visPageController {
                            "<p>Could not find sensor: " + useCase + "</p>" +
                            "</body></html>"
                      );
+                     hideLoadingLabel();
                   });
                   return;
                }
@@ -257,6 +272,7 @@ public class visPageController {
                                     "<p>API Error " + errorCode + ": " + errorMsg + "</p>" +
                                     "</body></html>"
                               );
+                              hideLoadingLabel();
                            });
                            return;
                         }
@@ -275,6 +291,7 @@ public class visPageController {
                                     "<p>Server returned unexpected data format</p>" +
                                     "</body></html>"
                               );
+                              hideLoadingLabel();
                            });
                            return;
                         }
@@ -288,6 +305,7 @@ public class visPageController {
                                     "<h3>No data available for this user and sensor type.</h3>" +
                                     "</body></html>"
                               );
+                              hideLoadingLabel();
                            });
                            return;
                         }
@@ -310,6 +328,7 @@ public class visPageController {
                                     "<p>Could not load visualization template</p>" +
                                     "</body></html>"
                               );
+                              hideLoadingLabel();
                            });
                            return;
                         }
@@ -323,6 +342,7 @@ public class visPageController {
                            ensureWebViewInitialized();
                            System.out.println("Loading D3 Chart into WebView...");
                            webView.getEngine().loadContent(html);
+                           hideLoadingLabel();
                         });
 
                      } catch (Exception e) {
@@ -336,6 +356,7 @@ public class visPageController {
                                  "<p>" + e.getMessage() + "</p>" +
                                  "</body></html>"
                            );
+                           hideLoadingLabel();
                         });
                      }
                   })
@@ -350,6 +371,7 @@ public class visPageController {
                               "<p>" + e.getMessage() + "</p>" +
                               "</body></html>"
                         );
+                        hideLoadingLabel();
                      });
                      return null;
                   });
@@ -365,6 +387,7 @@ public class visPageController {
                         "<p>" + e.getMessage() + "</p>" +
                         "</body></html>"
                   );
+                  hideLoadingLabel();
                });
                return null;
             });
@@ -374,6 +397,12 @@ public class visPageController {
          System.err.println("ERROR: Unexpected error in updateChart: " + e.getMessage());
          e.printStackTrace();
       }
+   }
+
+   // Helper to hide the loading label
+   private void hideLoadingLabel() {
+      loadingLabel.setVisible(false);
+      loadingLabel.setManaged(false);
    }
 
    // Helper to load the HTML template from the feedbackGraph.html file
