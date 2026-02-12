@@ -40,7 +40,7 @@
     /* The svg will size to the viewport container */
     svg {
       width: 100%;
-      height: 600px;
+      height: 650px;
     }
 
     /* Modern axis/grid styles */
@@ -66,12 +66,73 @@
     .grid path {
       stroke: none;
     }
+
+    /* Rotated x-axis labels to prevent overlap */
+    .x-axis text {
+      text-anchor: end;
+      transform: rotate(-45deg);
+      transform-origin: center;
+    }
+
+    /* No data message styling */
+    .no-alerts-message {
+      text-anchor: middle;
+      fill: #666;
+      font-size: 16px;
+      font-style: italic;
+    }
+
+    /* Zoom hint styling */
+    .zoom-hint {
+      text-align: center;
+      color: #888;
+      font-size: 12px;
+      margin-top: 5px;
+    }
+
+    /* Export button styling */
+    .export-btn {
+      display: block;
+      margin: 10px auto;
+      padding: 10px 20px;
+      background-color: #4682B4;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background-color 0.2s ease, transform 0.1s ease;
+    }
+
+    .export-btn:hover {
+      background-color: #3a6d96;
+      transform: translateY(-1px);
+    }
+
+    .export-btn:active {
+      transform: translateY(0);
+    }
+
+    .export-btn:disabled {
+      background-color: #aaa;
+      cursor: not-allowed;
+      transform: none;
+    }
   </style>
 </head>
 <body>
   <h2>Sensor Feedback Over Time</h2>
   <!-- meta-info: shows which user and sensor the chart is for -->
   <h3 id="meta-info" style="text-align:center; margin-top: 0; font-weight: normal; color: #555;"></h3>
+
+  <!-- data stats info -->
+  <p id="data-stats" style="text-align:center; margin: 5px 0; font-size: 13px; color: #777;"></p>
+
+  <!-- zoom hint for users -->
+  <p class="zoom-hint">Tip: Use mouse scroll to zoom in/out on the timeline, drag to pan</p>
+
+  <!-- Export button -->
+  <button id="exportBtn" class="export-btn">Save as PNG</button>
 
   <!-- main drawing surface -->
   <svg></svg>
@@ -102,11 +163,23 @@ console.log(data.map(d => d.time));
     // Parse timestamps from ISO string to Date objects (UTC)
 const parseTime = d3.utcParse("%Y-%m-%dT%H:%M:%S.%LZ");
 const formatTime = d3.timeFormat("%Y-%m-%d %H:%M");
+
+// Multi-scale time formatter - adapts to zoom level
+const multiFormat = (date) => {
+  if (d3.timeSecond(date) < date) return d3.timeFormat(".%L")(date);
+  if (d3.timeMinute(date) < date) return d3.timeFormat(":%S")(date);
+  if (d3.timeHour(date) < date) return d3.timeFormat("%H:%M")(date);
+  if (d3.timeDay(date) < date) return d3.timeFormat("%H:%M")(date);
+  if (d3.timeMonth(date) < date) return d3.timeFormat("%b %d")(date);
+  if (d3.timeYear(date) < date) return d3.timeFormat("%B")(date);
+  return d3.timeFormat("%Y")(date);
+};
+
     data.forEach(d => d.parsedTime = parseTime(d.time));
 
     // Prepare SVG + margins and compute inner drawing width/height
     const svg = d3.select("svg");
-const margin = { top: 40, right: 200, bottom: 60, left: 100 };
+const margin = { top: 40, right: 200, bottom: 100, left: 100 };
     const width = svg.node().clientWidth - margin.left - margin.right;
     const height = svg.node().clientHeight - margin.top - margin.bottom;
 
@@ -167,13 +240,32 @@ const dataLayer = g.append("g")
 
     const tooltip = d3.select(".tooltip");
 
-    // X axis group (kept separate so zoom can update easily)
-const xAxis = d3.axisBottom(x).ticks(6).tickFormat(formatTime);
+    // Calculate appropriate number of ticks based on width
+    const tickCount = Math.max(4, Math.min(10, Math.floor(width / 120)));
+
+    // X axis group with adaptive formatting
+const xAxis = d3.axisBottom(x)
+  .ticks(tickCount)
+  .tickFormat(multiFormat);
 
 const xAxisG = g.append("g")
   .attr("class", "axis x-axis")
   .attr("transform", `translate(0,${height})`)
   .call(xAxis);
+
+// Rotate x-axis labels to prevent overlap
+xAxisG.selectAll("text")
+  .attr("transform", "rotate(-45)")
+  .style("text-anchor", "end")
+  .attr("dx", "-0.8em")
+  .attr("dy", "0.15em");
+
+// Show data statistics
+const alertCount = data.filter(d => d.alert_type).length;
+const timeRange = d3.extent(data, d => d.parsedTime);
+const statsText = `${data.length} data points | ${alertCount} alerts | ` +
+  `Range: ${d3.timeFormat("%b %d, %Y")(timeRange[0])} – ${d3.timeFormat("%b %d, %Y")(timeRange[1])}`;
+document.getElementById("data-stats").textContent = statsText;
 
     // Y axis + gridlines
     g.append("g")
@@ -238,7 +330,29 @@ dataLayer.selectAll("circle")
     // Re-select circles to add interactive hover handlers (tooltip + scale up)
 dataLayer.selectAll("circle")
       .on("mouseover", function (event, d) {
-        // Show tooltip with key details; position near cursor
+        // Calculate tooltip position with edge-awareness
+        const tooltipWidth = 180;
+        const tooltipHeight = 120;
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+
+        let leftPos = event.pageX + 15;
+        let topPos = event.pageY - 30;
+
+        // Flip to left side if too close to right edge
+        if (leftPos + tooltipWidth > viewportWidth - 20) {
+          leftPos = event.pageX - tooltipWidth - 15;
+        }
+        // Flip below if too close to top
+        if (topPos < 10) {
+          topPos = event.pageY + 20;
+        }
+        // Adjust if too close to bottom
+        if (topPos + tooltipHeight > viewportHeight - 10) {
+          topPos = viewportHeight - tooltipHeight - 10;
+        }
+
+        // Show tooltip with key details
         tooltip
         .style("transform", "translateY(-10px)")
         .transition()
@@ -253,8 +367,8 @@ dataLayer.selectAll("circle")
             <strong>Duration:</strong> ${d.duration || 0} ms<br>
             <strong>Interval:</strong> ${d.interval || 0} ms`
         )
-          .style("left", (event.pageX + 10) + "px")
-          .style("top", (event.pageY - 30) + "px");
+          .style("left", leftPos + "px")
+          .style("top", topPos + "px");
 
         // Highlight hovered circle (gentle scale)
         d3.select(this)
@@ -270,6 +384,16 @@ dataLayer.selectAll("circle")
           .duration(200)
         .attr("r", radius(d.pulses));
       });
+
+    // Show message if data exists but no alerts to display
+    const alertsToShow = reducedData.filter(d => d.alert_type);
+    if (data.length > 0 && alertsToShow.length === 0) {
+      dataLayer.append("text")
+        .attr("class", "no-alerts-message")
+        .attr("x", width / 2)
+        .attr("y", height / 2)
+        .text("No feedback alerts in this time range. Only the data line is shown.");
+    }
 
     // Legend: explain color (intensity) and size (pulses)
     const legend = svg.append("g")
@@ -339,8 +463,16 @@ function zoomed(event) {
   const transform = event.transform;
   const zx = transform.rescaleX(x);
 
-  // Update the X axis with the transformed scale
-  xAxisG.call(xAxis.scale(zx));
+  // Update the X axis with the transformed scale and adaptive formatting
+  const zoomedTickCount = Math.max(4, Math.min(12, Math.floor(width / 100)));
+  xAxisG.call(d3.axisBottom(zx).ticks(zoomedTickCount).tickFormat(multiFormat));
+
+  // Re-apply rotation to x-axis labels after zoom update
+  xAxisG.selectAll("text")
+    .attr("transform", "rotate(-45)")
+    .style("text-anchor", "end")
+    .attr("dx", "-0.8em")
+    .attr("dy", "0.15em");
 
   // Recompute the line path using the rescaled x
   const lineWithZoom = d3.line()
@@ -354,6 +486,112 @@ function zoomed(event) {
   dataLayer.selectAll("circle")
     .attr("cx", d => zx(d.parsedTime));
 }
+
+// ==================== EXPORT TO PNG ====================
+/**
+ * Exports the current SVG chart to a PNG image file.
+ * Opens a new window with the image and instructions to save it.
+ */
+function exportToPng() {
+  const exportBtn = document.getElementById('exportBtn');
+  const originalText = exportBtn.textContent;
+
+  // Show loading state
+  exportBtn.disabled = true;
+  exportBtn.textContent = 'Generating...';
+
+  try {
+    const svgElement = document.querySelector('svg');
+    const svgRect = svgElement.getBoundingClientRect();
+
+    // Clone SVG to avoid modifying the original
+    const svgClone = svgElement.cloneNode(true);
+
+    // Set explicit dimensions on the clone
+    svgClone.setAttribute('width', svgRect.width);
+    svgClone.setAttribute('height', svgRect.height);
+
+    // Add white background to SVG
+    const bgRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bgRect.setAttribute('width', '100%');
+    bgRect.setAttribute('height', '100%');
+    bgRect.setAttribute('fill', 'white');
+    svgClone.insertBefore(bgRect, svgClone.firstChild);
+
+    // Serialize SVG to string
+    const serializer = new XMLSerializer();
+    let svgString = serializer.serializeToString(svgClone);
+
+    // Encode SVG for use in image source
+    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+
+    // Create canvas and draw SVG onto it
+    const canvas = document.createElement('canvas');
+    const scale = 2; // Higher resolution for better quality
+    canvas.width = svgRect.width * scale;
+    canvas.height = svgRect.height * scale;
+
+    const ctx = canvas.getContext('2d');
+    ctx.scale(scale, scale);
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const img = new Image();
+
+    img.onload = function() {
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+
+      // Generate filename with timestamp
+      const now = new Date();
+      const timestamp = now.toISOString().slice(0, 19).replace(/[:-]/g, '');
+      const filename = `sensor_chart_user${userId}_${sensorType}_${timestamp}.png`;
+
+      // Get base64 data URL
+      const dataUrl = canvas.toDataURL('image/png');
+
+      // Call Java bridge to save file (JavaFX WebView)
+      if (typeof javaExportBridge !== 'undefined' && javaExportBridge !== null) {
+        try {
+          javaExportBridge.saveImage(dataUrl, filename);
+        } catch (e) {
+          console.error('Java bridge error:', e);
+          alert('Export failed. Please try again.');
+        }
+      } else {
+        // Fallback: show alert with instructions
+        alert('Export not available. The Java export bridge is not initialized.');
+      }
+
+      exportBtn.disabled = false;
+      exportBtn.textContent = originalText;
+    };
+
+    img.onerror = function() {
+      console.error('Failed to load SVG for export');
+      URL.revokeObjectURL(url);
+      exportBtn.disabled = false;
+      exportBtn.textContent = 'Export failed - try again';
+      setTimeout(() => {
+        exportBtn.textContent = originalText;
+      }, 2000);
+    };
+
+    img.src = url;
+
+  } catch (error) {
+    console.error('Export error:', error);
+    exportBtn.disabled = false;
+    exportBtn.textContent = 'Export failed';
+    setTimeout(() => {
+      exportBtn.textContent = originalText;
+    }, 2000);
+  }
+}
+
+// Attach export button click handler
+document.getElementById('exportBtn').addEventListener('click', exportToPng);
   </script>
 </body>
 </html>

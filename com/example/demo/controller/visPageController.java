@@ -10,6 +10,7 @@ import javafx.collections.ObservableList;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
@@ -18,9 +19,11 @@ import javafx.scene.control.*;
 import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.AnchorPane;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
 import javafx.stage.Stage;
@@ -66,6 +69,8 @@ public class visPageController {
    private Button generatePdfButton;
    private boolean isSunPositionSelected = false;
    private WebView webView;
+   private StackPane loadingOverlay;
+   private ProgressIndicator progressIndicator;
 
    @FXML
    private void initialize() {
@@ -112,6 +117,55 @@ public class visPageController {
       if (this.generatePdfButton != null) {
          this.generatePdfButton.setOnAction(ex -> this.generatePdfLog());
       }
+
+      // Disable action buttons until valid selections are made
+      updateButtonStates();
+      this.userSelector.valueProperty().addListener((obs, oldVal, newVal) -> updateButtonStates());
+      this.useCaseSelector.valueProperty().addListener((obs, oldVal, newVal) -> updateButtonStates());
+
+      // Initialize loading overlay
+      initializeLoadingOverlay();
+   }
+
+   /**
+    * Updates the enabled/disabled state of action buttons based on current selections.
+    */
+   private void updateButtonStates() {
+      boolean hasValidSelections = userSelector.getValue() != null && useCaseSelector.getValue() != null;
+      if (refreshGraphButton != null) {
+         refreshGraphButton.setDisable(!hasValidSelections);
+      }
+      if (generatePdfButton != null) {
+         generatePdfButton.setDisable(!hasValidSelections);
+      }
+   }
+
+   /**
+    * Creates a loading overlay with a progress indicator for visual feedback during async operations.
+    */
+   private void initializeLoadingOverlay() {
+      progressIndicator = new ProgressIndicator();
+      progressIndicator.setMaxSize(80, 80);
+
+      Label loadingText = new Label("Loading chart data...");
+      loadingText.setStyle("-fx-font-size: 14; -fx-text-fill: #1976d2; -fx-font-weight: bold;");
+
+      VBox loadingContent = new VBox(15);
+      loadingContent.setAlignment(Pos.CENTER);
+      loadingContent.getChildren().addAll(progressIndicator, loadingText);
+
+      loadingOverlay = new StackPane();
+      loadingOverlay.setStyle("-fx-background-color: rgba(255, 255, 255, 0.85);");
+      loadingOverlay.getChildren().add(loadingContent);
+      loadingOverlay.setVisible(false);
+      loadingOverlay.setManaged(false);
+
+      // Add overlay to chartAnchor
+      AnchorPane.setTopAnchor(loadingOverlay, 0.0);
+      AnchorPane.setBottomAnchor(loadingOverlay, 0.0);
+      AnchorPane.setLeftAnchor(loadingOverlay, 0.0);
+      AnchorPane.setRightAnchor(loadingOverlay, 0.0);
+      this.chartAnchor.getChildren().add(loadingOverlay);
    }
 
    private void loadUserData() {
@@ -219,14 +273,16 @@ public class visPageController {
       String useCase = useCaseSelector.getValue();
       String timeRange = timeRangeSelector.getValue();
 
-      if (userSelection == null || useCase == null || timeRange == null) {
-         System.out.println("ERROR: Please select user, use case, and time range.");
+      if (userSelection == null && useCase == null && timeRange == null) {
+         System.out.println("INFO: Selections incomplete - user: " + userSelection + ", useCase: " + useCase + ", timeRange: " + timeRange);
+         if (userSelection == null || useCase == null) {
+            showInfoAlert("Selection Required", "Please select a user and use case to view the chart.");
+         }
          return;
       }
 
       // Show loading feedback
-      loadingLabel.setVisible(true);
-      loadingLabel.setManaged(true);
+      showLoadingOverlay(true);
 
       try {
          int selectedUserID = Integer.parseInt(userSelection.split(" ")[0]);
@@ -236,16 +292,7 @@ public class visPageController {
             .thenAccept(sensorID -> {
                if (sensorID == -1) {
                   System.err.println("ERROR: Could not find ID for sensor: " + useCase);
-                  Platform.runLater(() -> {
-                     ensureWebViewInitialized();
-                     webView.getEngine().loadContent(
-                        "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#d32f2f;'>" +
-                           "<h3>Error: Sensor Not Found</h3>" +
-                           "<p>Could not find sensor: " + useCase + "</p>" +
-                           "</body></html>"
-                     );
-                     hideLoadingLabel();
-                  });
+                  showWebViewError("Sensor Not Found", "Could not find sensor: " + useCase, true);
                   return;
                }
 
@@ -264,16 +311,7 @@ public class visPageController {
                            int errorCode = response.get("error").asInt();
                            String errorMsg = response.has("message") ? response.get("message").asText() : "Unknown error";
                            System.err.println("ERROR: API returned error " + errorCode + ": " + errorMsg);
-                           Platform.runLater(() -> {
-                              ensureWebViewInitialized();
-                              webView.getEngine().loadContent(
-                                 "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#d32f2f;'>" +
-                                    "<h3>Error: Failed to load data</h3>" +
-                                    "<p>API Error " + errorCode + ": " + errorMsg + "</p>" +
-                                    "</body></html>"
-                              );
-                              hideLoadingLabel();
-                           });
+                           showWebViewError("Failed to Load Data", "API Error " + errorCode + ": " + errorMsg, true);
                            return;
                         }
 
@@ -283,30 +321,13 @@ public class visPageController {
                         // Check for null or empty response
                         if (dataArray == null) {
                            System.err.println("ERROR: Could not extract array from API response - unexpected format");
-                           Platform.runLater(() -> {
-                              ensureWebViewInitialized();
-                              webView.getEngine().loadContent(
-                                 "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#d32f2f;'>" +
-                                    "<h3>Error: Invalid Data Format</h3>" +
-                                    "<p>Server returned unexpected data format</p>" +
-                                    "</body></html>"
-                              );
-                              hideLoadingLabel();
-                           });
+                           showWebViewError("Invalid Data Format", "Server returned unexpected data format", true);
                            return;
                         }
 
                         if (dataArray.size() == 0) {
                            System.out.println("INFO: No data available for user " + selectedUserID + " and sensor " + useCase);
-                           Platform.runLater(() -> {
-                              ensureWebViewInitialized();
-                              webView.getEngine().loadContent(
-                                 "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#555;'>" +
-                                    "<h3>No data available for this user and sensor type.</h3>" +
-                                    "</body></html>"
-                              );
-                              hideLoadingLabel();
-                           });
+                           showWebViewError("No Data Available", "No data available for this user and sensor type.", false);
                            return;
                         }
 
@@ -320,16 +341,7 @@ public class visPageController {
                         String htmlTemplate = loadHtmlTemplate();
                         if (htmlTemplate == null) {
                            System.err.println("ERROR: Failed to load HTML template");
-                           Platform.runLater(() -> {
-                              ensureWebViewInitialized();
-                              webView.getEngine().loadContent(
-                                 "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#d32f2f;'>" +
-                                    "<h3>Error: Template Not Found</h3>" +
-                                    "<p>Could not load visualization template</p>" +
-                                    "</body></html>"
-                              );
-                              hideLoadingLabel();
-                           });
+                           showWebViewError("Template Not Found", "Could not load visualization template", true);
                            return;
                         }
 
@@ -342,53 +354,26 @@ public class visPageController {
                            ensureWebViewInitialized();
                            System.out.println("Loading D3 Chart into WebView...");
                            webView.getEngine().loadContent(html);
-                           hideLoadingLabel();
+                           showLoadingOverlay(false);
                         });
 
                      } catch (Exception e) {
                         System.err.println("ERROR: Failed to process chart data: " + e.getMessage());
                         e.printStackTrace();
-                        Platform.runLater(() -> {
-                           ensureWebViewInitialized();
-                           webView.getEngine().loadContent(
-                              "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#d32f2f;'>" +
-                                 "<h3>Error: Processing Failed</h3>" +
-                                 "<p>" + e.getMessage() + "</p>" +
-                                 "</body></html>"
-                           );
-                           hideLoadingLabel();
-                        });
+                        showWebViewError("Processing Failed", e.getMessage(), true);
                      }
                   })
                   .exceptionally(e -> {
                      System.err.println("ERROR: Failed to fetch sensor data: " + e.getMessage());
                      e.printStackTrace();
-                     Platform.runLater(() -> {
-                        ensureWebViewInitialized();
-                        webView.getEngine().loadContent(
-                           "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#d32f2f;'>" +
-                              "<h3>Error: Failed to fetch data</h3>" +
-                              "<p>" + e.getMessage() + "</p>" +
-                              "</body></html>"
-                        );
-                        hideLoadingLabel();
-                     });
+                     showWebViewError("Failed to Fetch Data", e.getMessage(), true);
                      return null;
                   });
             })
             .exceptionally(e -> {
                System.err.println("ERROR: Failed to get sensor ID: " + e.getMessage());
                e.printStackTrace();
-               Platform.runLater(() -> {
-                  ensureWebViewInitialized();
-                  webView.getEngine().loadContent(
-                     "<html><body style='font-family:sans-serif; text-align:center; padding-top:50px; color:#d32f2f;'>" +
-                        "<h3>Error: Sensor Lookup Failed</h3>" +
-                        "<p>" + e.getMessage() + "</p>" +
-                        "</body></html>"
-                  );
-                  hideLoadingLabel();
-               });
+               showWebViewError("Sensor Lookup Failed", e.getMessage(), true);
                return null;
             });
       } catch (NumberFormatException nfe) {
@@ -399,10 +384,21 @@ public class visPageController {
       }
    }
 
-   // Helper to hide the loading label
-   private void hideLoadingLabel() {
-      loadingLabel.setVisible(false);
-      loadingLabel.setManaged(false);
+   // Helper to show/hide the loading overlay
+   private void showLoadingOverlay(boolean show) {
+      if (loadingOverlay != null) {
+         loadingOverlay.setVisible(show);
+         loadingOverlay.setManaged(show);
+         // Ensure overlay is on top
+         if (show) {
+            loadingOverlay.toFront();
+         }
+      }
+      // Also update the legacy loading label for backwards compatibility
+      if (loadingLabel != null) {
+         loadingLabel.setVisible(show);
+         loadingLabel.setManaged(show);
+      }
    }
 
    // Helper to load the HTML template from the feedbackGraph.html file
@@ -443,6 +439,83 @@ public class visPageController {
          AnchorPane.setRightAnchor(this.webView, 0.0);
          this.chartAnchor.getChildren().clear();
          this.chartAnchor.getChildren().add(this.webView);
+
+         // Re-add loading overlay on top of WebView so it can show over the chart
+         if (this.loadingOverlay != null) {
+            AnchorPane.setTopAnchor(loadingOverlay, 0.0);
+            AnchorPane.setBottomAnchor(loadingOverlay, 0.0);
+            AnchorPane.setLeftAnchor(loadingOverlay, 0.0);
+            AnchorPane.setRightAnchor(loadingOverlay, 0.0);
+            this.chartAnchor.getChildren().add(this.loadingOverlay);
+         }
+
+         // Set up JavaScript-to-Java bridge for image export when page loads
+         final WebView wv = this.webView;
+         final ExportBridge bridge = this.exportBridge;
+         this.webView.getEngine().getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
+            if (newState == javafx.concurrent.Worker.State.SUCCEEDED) {
+               setupJavaScriptBridge(wv, bridge);
+            }
+         });
+      }
+   }
+
+   /**
+    * Sets up the JavaScript-to-Java bridge for export functionality.
+    * Uses deprecated JSObject API which is still functional.
+    */
+   @SuppressWarnings("removal")
+   private void setupJavaScriptBridge(WebView wv, ExportBridge bridge) {
+      try {
+         netscape.javascript.JSObject window = (netscape.javascript.JSObject) wv.getEngine().executeScript("window");
+         window.setMember("javaExportBridge", bridge);
+         System.out.println("Export bridge registered successfully");
+      } catch (Exception e) {
+         System.err.println("Warning: Could not set up export bridge: " + e.getMessage());
+      }
+   }
+
+   /**
+    * Inner class to hold export bridge instance for JavaScript callback.
+    */
+   private final ExportBridge exportBridge = new ExportBridge();
+
+   /**
+    * Java bridge class for exporting images from JavaScript.
+    */
+   public class ExportBridge {
+      public void saveImage(String dataUrl, String filename) {
+         Platform.runLater(() -> {
+            try {
+               javafx.stage.FileChooser fileChooser = new javafx.stage.FileChooser();
+               fileChooser.setTitle("Save Chart Image");
+               fileChooser.setInitialFileName(filename);
+               fileChooser.getExtensionFilters().add(
+                  new javafx.stage.FileChooser.ExtensionFilter("PNG Image", "*.png")
+               );
+
+               javafx.stage.Window ownerWindow = chartAnchor.getScene().getWindow();
+               java.io.File file = fileChooser.showSaveDialog(ownerWindow);
+
+               if (file != null) {
+                  String base64Data = dataUrl.substring(dataUrl.indexOf(",") + 1);
+                  byte[] imageBytes = java.util.Base64.getDecoder().decode(base64Data);
+
+                  try (java.io.FileOutputStream fos = new java.io.FileOutputStream(file)) {
+                     fos.write(imageBytes);
+                  }
+
+                  Alert alert = new Alert(AlertType.INFORMATION);
+                  alert.setTitle("Export Successful");
+                  alert.setHeaderText("Chart Exported!");
+                  alert.setContentText("Saved to: " + file.getAbsolutePath());
+                  alert.showAndWait();
+               }
+            } catch (Exception e) {
+               System.err.println("Export error: " + e.getMessage());
+               showErrorAlert("Export Failed", "Could not save: " + e.getMessage());
+            }
+         });
       }
    }
 
@@ -605,4 +678,57 @@ public class visPageController {
          alert.showAndWait();
       });
    }
+
+   /**
+    * Helper method to show informational alerts to the user.
+    * Always runs on the FX thread using Platform.runLater to be safe when called from background threads.
+    */
+   private void showInfoAlert(String title, String message) {
+      Platform.runLater(() -> {
+         Alert alert = new Alert(AlertType.INFORMATION);
+         alert.setTitle(title);
+         alert.setHeaderText(title);
+         alert.setContentText(message);
+         alert.showAndWait();
+      });
+   }
+
+   /**
+    * Helper method to display error messages in the WebView with consistent styling.
+    * Centralizes the error HTML generation to avoid repetition and ensure consistency.
+    *
+    * @param title   The error title to display
+    * @param message The error message/details
+    * @param isError If true, uses red error styling; otherwise uses neutral gray
+    */
+   private void showWebViewError(String title, String message, boolean isError) {
+      Platform.runLater(() -> {
+         ensureWebViewInitialized();
+         String color = isError ? "#d32f2f" : "#555";
+         String icon = isError ? "❌" : "ℹ️";
+         webView.getEngine().loadContent(
+            "<html><body style='font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif; " +
+            "text-align: center; padding-top: 80px; color: " + color + "; background: #fafafa;'>" +
+            "<div style='font-size: 48px; margin-bottom: 20px;'>" + icon + "</div>" +
+            "<h3 style='margin: 0 0 10px 0;'>" + escapeHtml(title) + "</h3>" +
+            "<p style='color: #666; max-width: 400px; margin: 0 auto;'>" + escapeHtml(message) + "</p>" +
+            "</body></html>"
+         );
+         showLoadingOverlay(false);
+      });
+   }
+
+   /**
+    * Helper method to escape HTML special characters to prevent injection.
+    */
+   private String escapeHtml(String text) {
+      if (text == null) return "";
+      return text
+         .replace("&", "&amp;")
+         .replace("<", "&lt;")
+         .replace(">", "&gt;")
+         .replace("\"", "&quot;")
+         .replace("'", "&#39;");
+   }
 }
+
