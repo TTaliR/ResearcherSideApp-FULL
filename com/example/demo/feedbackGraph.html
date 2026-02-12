@@ -204,7 +204,7 @@ const dataLayer = g.append("g")
     // X scale (time) and Y scale (value)
     const x = d3.scaleTime()
       .domain(d3.extent(data, d => d.parsedTime))
-      .range([20, width]);
+      .range([0, width]);
 
     const y = d3.scaleLinear()
     .domain([
@@ -449,7 +449,7 @@ pulseValues.forEach((v, i) => {
     // Zoom behavior: allows pan + zoom on x-axis while keeping y fixed
 const zoom = d3.zoom()
   .scaleExtent([1, 100]) // min/max zoom scales
-  .translateExtent([[0, 0], [width, height]]) // allowed panning bounds
+  .translateExtent([[-width, 0], [2 * width, height]]) // allow panning beyond initial bounds
   .extent([[0, 0], [width, height]])
   .on("zoom", zoomed);
 
@@ -480,7 +480,12 @@ function zoomed(event) {
     .y(d => y(d.value))
     .curve(d3.curveMonotoneX);
 
-  linePath.datum(data).attr("d", lineWithZoom);
+  // Remove the stroke-dasharray animation when zooming to prevent line disappearing
+  linePath
+    .attr("stroke-dasharray", null)
+    .attr("stroke-dashoffset", null)
+    .datum(data)
+    .attr("d", lineWithZoom);
 
   // Move circles horizontally according to zoom/pan
   dataLayer.selectAll("circle")

@@ -353,8 +353,22 @@ public class visPageController {
                         Platform.runLater(() -> {
                            ensureWebViewInitialized();
                            System.out.println("Loading D3 Chart into WebView...");
+
+                           // Hide loading overlay only after WebView finishes loading
+                           webView.getEngine().getLoadWorker().stateProperty().addListener(
+                              (obs, oldState, newState) -> {
+                                 if (newState == javafx.concurrent.Worker.State.SUCCEEDED) {
+                                    // Add small delay to allow D3 to render
+                                    javafx.animation.PauseTransition pause = new javafx.animation.PauseTransition(javafx.util.Duration.millis(500));
+                                    pause.setOnFinished(event -> showLoadingOverlay(false));
+                                    pause.play();
+                                 } else if (newState == javafx.concurrent.Worker.State.FAILED) {
+                                    showLoadingOverlay(false);
+                                 }
+                              }
+                           );
+
                            webView.getEngine().loadContent(html);
-                           showLoadingOverlay(false);
                         });
 
                      } catch (Exception e) {
