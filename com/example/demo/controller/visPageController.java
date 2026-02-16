@@ -18,6 +18,7 @@ import javafx.scene.chart.LineChart;
 import javafx.scene.control.*;
 import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Button;
+import javafx.scene.control.DatePicker;
 import javafx.scene.control.Label;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.image.Image;
@@ -41,6 +42,8 @@ import java.util.Objects;
 // - This controller also exposes PDF generation helpers that rely on PdfService.
 public class visPageController {
    private final ObservableList<User> userData = FXCollections.observableArrayList();
+   // Map to store use case descriptions for tooltips (name -> description)
+   private final Map<String, String> useCaseDescriptions = new HashMap<>();
    @FXML
    private AnchorPane chartAnchor;
    @FXML
@@ -64,9 +67,17 @@ public class visPageController {
    @FXML
    private Button refreshGraphButton;
    @FXML
-   private Label loadingLabel;
-   @FXML
    private Button generatePdfButton;
+   @FXML
+   private DatePicker startDatePicker;
+   @FXML
+   private DatePicker endDatePicker;
+   @FXML
+   private Label startDateLabel;
+   @FXML
+   private Label endDateLabel;
+   @FXML
+   private Label useCaseDescriptionLabel;
    private boolean isSunPositionSelected = false;
    private WebView webView;
    private StackPane loadingOverlay;
@@ -109,11 +120,26 @@ public class visPageController {
       this.useCaseSelector.setOnAction(_ -> {
          String selected = this.useCaseSelector.getValue();
          this.isSunPositionSelected = "SunAzimuth".equals(selected);
+         updateUseCaseDescription(selected);
          this.updateChart();
       });
-      this.timeRangeSelector.getItems().addAll("Last 24 Hours", "Last 7 Days", "Last 30 Days", "All Time");
+      this.timeRangeSelector.getItems().addAll("Last 24 Hours", "Last 7 Days", "Last 30 Days", "All Time", "Custom Date Range");
       this.timeRangeSelector.setValue("Last 24 Hours");
-      this.timeRangeSelector.setOnAction(ex -> this.updateChart());
+      this.timeRangeSelector.setOnAction(ex -> {
+         toggleDatePickerVisibility();
+         this.updateChart();
+      });
+
+      // Initialize date pickers with sensible defaults
+      if (this.startDatePicker != null) {
+         this.startDatePicker.setValue(LocalDate.now().minusDays(7));
+         this.startDatePicker.setOnAction(e -> this.updateChart());
+      }
+      if (this.endDatePicker != null) {
+         this.endDatePicker.setValue(LocalDate.now());
+         this.endDatePicker.setOnAction(e -> this.updateChart());
+      }
+
       if (this.generatePdfButton != null) {
          this.generatePdfButton.setOnAction(ex -> this.generatePdfLog());
       }
@@ -137,6 +163,69 @@ public class visPageController {
       }
       if (generatePdfButton != null) {
          generatePdfButton.setDisable(!hasValidSelections);
+      }
+   }
+
+   /**
+    * Toggles visibility of date picker controls based on time range selection.
+    * When "Custom Date Range" is selected, shows start and end date pickers.
+    * Otherwise, hides them to keep the UI clean.
+    */
+   private void toggleDatePickerVisibility() {
+      boolean isCustomRange = "Custom Date Range".equals(timeRangeSelector.getValue());
+
+      // Toggle start date picker
+      if (startDateLabel != null) {
+         startDateLabel.setVisible(isCustomRange);
+         startDateLabel.setManaged(isCustomRange);
+      }
+      if (startDatePicker != null) {
+         startDatePicker.setVisible(isCustomRange);
+         startDatePicker.setManaged(isCustomRange);
+         // Set default value if null
+         if (isCustomRange && startDatePicker.getValue() == null) {
+            startDatePicker.setValue(LocalDate.now().minusDays(7));
+         }
+      }
+
+      // Toggle end date picker
+      if (endDateLabel != null) {
+         endDateLabel.setVisible(isCustomRange);
+         endDateLabel.setManaged(isCustomRange);
+      }
+      if (endDatePicker != null) {
+         endDatePicker.setVisible(isCustomRange);
+         endDatePicker.setManaged(isCustomRange);
+         // Set default value if null
+         if (isCustomRange && endDatePicker.getValue() == null) {
+            endDatePicker.setValue(LocalDate.now());
+         }
+      }
+   }
+
+   /**
+    * Updates the use case description label based on the selected use case.
+    * Shows a brief description to help users understand what each use case monitors.
+    */
+   private void updateUseCaseDescription(String selectedUseCase) {
+      if (useCaseDescriptionLabel == null) {
+         return;
+      }
+
+      if (selectedUseCase == null || selectedUseCase.isEmpty()) {
+         useCaseDescriptionLabel.setVisible(false);
+         useCaseDescriptionLabel.setManaged(false);
+         return;
+      }
+
+      String description = useCaseDescriptions.get(selectedUseCase);
+      if (description != null && !description.isEmpty()) {
+         useCaseDescriptionLabel.setText("ℹ " + description);
+         useCaseDescriptionLabel.setVisible(true);
+         useCaseDescriptionLabel.setManaged(true);
+      } else {
+         useCaseDescriptionLabel.setVisible(false);
+         useCaseDescriptionLabel.setManaged(false);
       }
    }
 
@@ -238,7 +327,82 @@ public class visPageController {
    }
 
    private void populateUseCaseSelector() {
-      this.useCaseSelector.getItems().addAll(new String[]{"HeartRate", "SunAzimuth", "MoonAzimuth"});
+      // Fetch use cases from API asynchronously
+      ApiService.getInstance().get(ApiService.EP_GET_USECASES, null)
+         .thenAccept(response -> {
+            try {
+               JsonNode useCasesArray = ApiService.getInstance().extractArray(response);
+
+               if (useCasesArray == null || useCasesArray.isEmpty()) {
+                  System.err.println("WARNING: No use cases returned from API, using defaults");
+                  Platform.runLater(() -> {
+                     this.useCaseSelector.getItems().addAll("HeartRate", "SunAzimuth", "MoonAzimuth");
+                  });
+                  return;
+               }
+
+               Platform.runLater(() -> {
+                  this.useCaseSelector.getItems().clear();
+                  this.useCaseDescriptions.clear();
+
+                  for (JsonNode useCaseNode : useCasesArray) {
+                     String name = useCaseNode.has("name") ? useCaseNode.get("name").asText() : "";
+                     String description = useCaseNode.has("description") ? useCaseNode.get("description").asText() : "";
+
+                     if (!name.isEmpty()) {
+                        this.useCaseSelector.getItems().add(name);
+                        this.useCaseDescriptions.put(name, description);
+                     }
+                  }
+
+                  // Set up custom cell factory for tooltips in dropdown
+                  this.useCaseSelector.setCellFactory(listView -> new ListCell<String>() {
+                     @Override
+                     protected void updateItem(String item, boolean empty) {
+                        super.updateItem(item, empty);
+                        if (empty || item == null) {
+                           setText(null);
+                           setTooltip(null);
+                        } else {
+                           setText(item);
+                           String desc = useCaseDescriptions.get(item);
+                           if (desc != null && !desc.isEmpty()) {
+                              setTooltip(new Tooltip(desc));
+                           }
+                        }
+                     }
+                  });
+
+                  // Set up button cell to show tooltip on the selected item
+                  this.useCaseSelector.setButtonCell(new ListCell<String>() {
+                     @Override
+                     protected void updateItem(String item, boolean empty) {
+                        super.updateItem(item, empty);
+                        if (empty || item == null) {
+                           setText(null);
+                        } else {
+                           setText(item);
+                        }
+                     }
+                  });
+
+                  System.out.println("Loaded " + useCaseDescriptions.size() + " use cases from API");
+               });
+
+            } catch (Exception e) {
+               System.err.println("ERROR: Failed to parse use cases response: " + e.getMessage());
+               Platform.runLater(() -> {
+                  this.useCaseSelector.getItems().addAll("HeartRate", "SunAzimuth", "MoonAzimuth");
+               });
+            }
+         })
+         .exceptionally(e -> {
+            System.err.println("ERROR: Failed to fetch use cases: " + e.getMessage());
+            Platform.runLater(() -> {
+               this.useCaseSelector.getItems().addAll("HeartRate", "SunAzimuth", "MoonAzimuth");
+            });
+            return null;
+         });
    }
 
    @FXML
@@ -297,10 +461,22 @@ public class visPageController {
                }
 
                // Build query params
-               Map<String, String> params = new HashMap<>();
-               params.put("range", timeRange);
-               params.put("alert_type", String.valueOf(sensorID));
-               params.put("userid", String.valueOf(selectedUserID));
+                Map<String, String> params = new HashMap<>();
+                params.put("alert_type", String.valueOf(sensorID));
+                params.put("userid", String.valueOf(selectedUserID));
+
+                // Handle custom date range vs preset ranges
+                if ("Custom Date Range".equals(timeRange)) {
+                   params.put("range", "custom");
+                   if (startDatePicker != null && startDatePicker.getValue() != null) {
+                      params.put("start_date", startDatePicker.getValue().toString());
+                   }
+                   if (endDatePicker != null && endDatePicker.getValue() != null) {
+                      params.put("end_date", endDatePicker.getValue().toString());
+                   }
+                } else {
+                   params.put("range", timeRange);
+                }
 
                // Fetch sensor data
                ApiService.getInstance().get(ApiService.EP_SENSOR_DATA, params)
@@ -407,11 +583,6 @@ public class visPageController {
          if (show) {
             loadingOverlay.toFront();
          }
-      }
-      // Also update the legacy loading label for backwards compatibility
-      if (loadingLabel != null) {
-         loadingLabel.setVisible(show);
-         loadingLabel.setManaged(show);
       }
    }
 
@@ -605,9 +776,21 @@ public class visPageController {
                }
 
                Map<String, String> params = new HashMap<>();
-               params.put("userid", String.valueOf(userID));
-               params.put("alert_type", String.valueOf(sensorID));
-               params.put("range", timeRange);
+                params.put("userid", String.valueOf(userID));
+                params.put("alert_type", String.valueOf(sensorID));
+
+                // Handle custom date range vs preset ranges
+                if ("Custom Date Range".equals(timeRange)) {
+                   params.put("range", "custom");
+                   if (startDatePicker != null && startDatePicker.getValue() != null) {
+                      params.put("start_date", startDatePicker.getValue().toString());
+                   }
+                   if (endDatePicker != null && endDatePicker.getValue() != null) {
+                      params.put("end_date", endDatePicker.getValue().toString());
+                   }
+                } else {
+                   params.put("range", timeRange);
+                }
 
                ApiService.getInstance().get(ApiService.EP_SENSOR_DATA, params)
                   .thenAccept(response -> {
