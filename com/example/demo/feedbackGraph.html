@@ -332,7 +332,7 @@ dataLayer.selectAll("circle")
       .on("mouseover", function (event, d) {
         // Calculate tooltip position with edge-awareness
         const tooltipWidth = 180;
-        const tooltipHeight = 120;
+        const tooltipHeight = 140;
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
 
@@ -365,7 +365,8 @@ dataLayer.selectAll("circle")
             <strong>Intensity:</strong> ${d.intensity}<br>
             <strong>Pulses:</strong> ${d.pulses}<br>
             <strong>Duration:</strong> ${d.duration || 0} ms<br>
-            <strong>Interval:</strong> ${d.interval || 0} ms`
+            <strong>Interval:</strong> ${d.interval || 0} ms<br>
+            <strong>Reason:</strong> ${d.reason || "N/A"}`
         )
           .style("left", leftPos + "px")
           .style("top", topPos + "px");

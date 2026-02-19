@@ -28,7 +28,7 @@ import java.util.List;
 public class ExportService {
 
     // CSV headers matching the sensor data fields
-    private static final String[] HEADERS = {"Time", "Value", "Alert Type", "Alert Given", "Pulses", "Intensity", "Duration (ms)", "Interval (ms)"};
+    private static final String[] HEADERS = {"Time", "Value", "Alert Type", "Alert Given", "Pulses", "Intensity", "Duration (ms)", "Interval (ms)", "Reason"};
 
     // UTF-8 BOM for Excel compatibility
     private static final byte[] UTF8_BOM = {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF};
@@ -45,9 +45,10 @@ public class ExportService {
         public final String intensity;
         public final String duration;
         public final String interval;
+        public final String reason;
 
         public SensorRecord(String time, String value, String alert_type, String pulses,
-                            String intensity, String duration, String interval) {
+                            String intensity, String duration, String interval, String reason) {
             this.time = time;
             this.value = value;
             this.alert_type = alert_type;
@@ -55,6 +56,7 @@ public class ExportService {
             this.intensity = intensity;
             this.duration = duration;
             this.interval = interval;
+            this.reason = reason;
 
             alert_given = getAlert_given(pulses);
         }
@@ -148,7 +150,8 @@ public class ExportService {
                 escapeCsvValue(record.pulses),
                 escapeCsvValue(record.intensity),
                 escapeCsvValue(record.duration),
-                escapeCsvValue(record.interval)
+                escapeCsvValue(record.interval),
+                escapeCsvValue(record.reason)
         );
     }
 
@@ -244,6 +247,7 @@ public class ExportService {
                 table.addCell(new Paragraph(record.intensity, normalFont));
                 table.addCell(new Paragraph(record.duration, normalFont));
                 table.addCell(new Paragraph(record.interval, normalFont));
+                table.addCell(new Paragraph(record.reason, normalFont));
             }
 
             document.add(table);
@@ -281,7 +285,7 @@ public class ExportService {
         document.add(new Paragraph("Date: " + date.format(dateOnly)));
         document.add(new Paragraph(" "));
 
-        String[] hrHeaders = {"Time", "Heart Rate (BPM)", "Alert Type", "Alert Given", "Pulses", "Intensity", "Duration", "Max Value"};
+        String[] hrHeaders = {"Time", "Heart Rate (BPM)", "Alert Type", "Alert Given", "Pulses", "Intensity", "Duration", "Max Value", "Reason"};
         PdfPTable table = new PdfPTable(hrHeaders.length);
         table.setWidthPercentage(100.0F);
 
@@ -319,6 +323,7 @@ public class ExportService {
                                 table.addCell(node.has("intensity") ? String.valueOf(node.get("intensity").asInt()) : "N/A");
                                 table.addCell(node.has("duration") ? String.valueOf(node.get("duration").asInt()) : "N/A");
                                 table.addCell(node.has("maxvalue") ? String.valueOf(node.get("maxvalue").asInt()) : "N/A");
+                                table.addCell(node.hasNonNull("reason") ? node.get("reason").asText() : "N/A");
                                 count++;
                             }
                         }
@@ -378,8 +383,9 @@ public class ExportService {
                     String intensity = node.hasNonNull("intensity") ? String.valueOf(node.get("intensity").asInt()) : "N/A";
                     String duration = node.hasNonNull("duration") ? String.valueOf(node.get("duration").asInt()) : "N/A";
                     String interval = node.hasNonNull("interval") ? String.valueOf(node.get("interval").asInt()) : "N/A";
+                    String reason = node.hasNonNull("reason") ? node.get("reason").asText() : "N/A";
 
-                    records.add(new SensorRecord(time, value, alert_type, pulses, intensity, duration, interval));
+                    records.add(new SensorRecord(time, value, alert_type, pulses, intensity, duration, interval, reason));
                 } catch (Exception e) {
                     System.err.println("Error extracting record: " + e.getMessage());
                 }
