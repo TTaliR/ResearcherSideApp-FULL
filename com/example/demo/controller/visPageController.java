@@ -2,7 +2,7 @@ package com.example.demo.controller;
 
 import com.example.demo.model.User;
 import com.example.demo.service.ApiService;
-import com.example.demo.service.PdfService;
+import com.example.demo.service.ExportService;
 import com.fasterxml.jackson.databind.JsonNode;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -27,6 +27,7 @@ import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
+import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import java.awt.*;
@@ -39,7 +40,7 @@ import java.util.Objects;
 // visPageController: Controller for the visualization page.
 // - Fetches user list, sensor types and sensor data, then renders a D3 visualization inside a WebView.
 // - All network calls are async; UI updates must be done on the JavaFX thread via Platform.runLater(...).
-// - This controller also exposes PDF generation helpers that rely on PdfService.
+// - This controller also exposes export helpers (PDF, CSV) that rely on ExportService.
 public class visPageController {
    private final ObservableList<User> userData = FXCollections.observableArrayList();
    // Map to store use case descriptions for tooltips (name -> description)
@@ -68,6 +69,8 @@ public class visPageController {
    private Button refreshGraphButton;
    @FXML
    private Button generatePdfButton;
+   @FXML
+   private Button exportCsvButton;
    @FXML
    private DatePicker startDatePicker;
    @FXML
@@ -163,6 +166,9 @@ public class visPageController {
       }
       if (generatePdfButton != null) {
          generatePdfButton.setDisable(!hasValidSelections);
+      }
+      if (exportCsvButton != null) {
+         exportCsvButton.setDisable(!hasValidSelections);
       }
    }
 
@@ -705,8 +711,8 @@ public class visPageController {
    }
 
    public void generateDailyHeartRatePdfForAllUsers() {
-      // Iterates over cached userData and requests daily heart rate data then delegates to PdfService.
-      // Note: PdfService methods may block briefly while writing files; they run from the completable-stage so UI thread will not be blocked.
+      // Iterates over cached userData and requests daily heart rate data then delegates to ExportService.
+      // Note: ExportService methods may block briefly while writing files; they run from the completable-stage so UI thread will not be blocked.
       LocalDate today = LocalDate.now();
 
       // Get HeartRate sensor ID once
@@ -728,8 +734,13 @@ public class visPageController {
                ApiService.getInstance().get(ApiService.EP_SENSOR_DATA, params)
                   .thenAccept(response -> {
                      try {
-                        // Delegate to PdfService (will handle unwrapping internally)
-                        String filePath = PdfService.generateDailyHeartRateReport(userID, today, response, heartRateSensorId);
+                        // Generate filename for daily HR report
+                        String fileName = "HeartRateLog_User" + userID + "_" + today.toString() + ".pdf";
+                        File outputFile = new File(ExportService.getDefaultExportDirectory(), fileName);
+
+                        // Delegate to ExportService (will handle unwrapping internally)
+                        String filePath = ExportService.generateDailyHeartRatePdf(
+                           outputFile.getAbsolutePath(), userID, today, response, heartRateSensorId);
                         System.out.println("PDF saved: " + filePath);
 
                      } catch (Exception e) {
@@ -748,11 +759,154 @@ public class visPageController {
          });
    }
 
+   @FXML
+   private void generateCsvExport() {
+      // Triggered by UI action. Validates selections, shows FileChooser, fetches data, then exports to CSV.
+      String userSelection = this.userSelector.getValue();
+      String useCase = this.useCaseSelector.getValue();
+      String timeRange = this.timeRangeSelector.getValue();
+
+      if (userSelection == null || useCase == null || timeRange == null) {
+         showErrorAlert("Missing Selection", "Please select a user, use case, and time range.");
+         System.out.println("ERROR: Missing required selections for CSV export");
+         return;
+      }
+
+      try {
+         int userID = Integer.parseInt(userSelection.split(" ")[0]);
+
+         // Show FileChooser to let user select save location
+         FileChooser fileChooser = new FileChooser();
+         fileChooser.setTitle("Save CSV Export");
+         fileChooser.setInitialDirectory(ExportService.getDefaultExportDirectory());
+         fileChooser.setInitialFileName(ExportService.generateDefaultFilename(userID, useCase, "csv"));
+         fileChooser.getExtensionFilters().add(
+            new FileChooser.ExtensionFilter("CSV Files", "*.csv")
+         );
+
+         // Get the current stage from any FXML element
+         Stage stage = (Stage) userSelector.getScene().getWindow();
+         File selectedFile = fileChooser.showSaveDialog(stage);
+
+         if (selectedFile == null) {
+            System.out.println("CSV export cancelled by user");
+            return;
+         }
+
+         final String filePath = selectedFile.getAbsolutePath();
+
+         // Get sensor ID and fetch data asynchronously
+         ApiService.getInstance().getSensorIdByName(useCase)
+            .thenAccept(sensorID -> {
+               if (sensorID == -1) {
+                  showErrorAlert("Sensor Not Found", "Could not find sensor type: " + useCase);
+                  System.err.println("ERROR: Could not find sensor: " + useCase);
+                  return;
+               }
+
+               Map<String, String> params = new HashMap<>();
+               params.put("userid", String.valueOf(userID));
+               params.put("alert_type", String.valueOf(sensorID));
+
+               // Handle custom date range vs preset ranges
+               if ("Custom Date Range".equals(timeRange)) {
+                  params.put("range", "custom");
+                  if (startDatePicker != null && startDatePicker.getValue() != null) {
+                     params.put("start_date", startDatePicker.getValue().toString());
+                  }
+                  if (endDatePicker != null && endDatePicker.getValue() != null) {
+                     params.put("end_date", endDatePicker.getValue().toString());
+                  }
+               } else {
+                  params.put("range", timeRange);
+               }
+
+               ApiService.getInstance().get(ApiService.EP_SENSOR_DATA, params)
+                  .thenAccept(response -> {
+                     try {
+                        System.out.println("DEBUG: generateCsvExport received response: " + response.getNodeType());
+
+                        // Generate CSV using ExportService
+                        String fullPath = ExportService.generateCsv(filePath, userID, useCase, timeRange, response);
+                        System.out.println("CSV generated: " + fullPath);
+
+                        // Show success alert with file open link
+                        Platform.runLater(() -> {
+                           File csvFile = new File(fullPath);
+                           Alert alert = new Alert(AlertType.INFORMATION);
+                           alert.setTitle("CSV Exported");
+                           alert.setHeaderText("CSV Export Successful");
+
+                           VBox content = new VBox(10.0);
+                           content.getChildren().addAll(
+                              new Label("The CSV file has been saved to:"),
+                              new Label(fullPath)
+                           );
+
+                           // Only add open button if Desktop is supported
+                           if (Desktop.isDesktopSupported()) {
+                              Hyperlink link = new Hyperlink("Open CSV File");
+                              link.setOnAction(e -> {
+                                 try {
+                                    Desktop.getDesktop().open(csvFile);
+                                 } catch (Exception ex) {
+                                    System.out.println("ERROR: Cannot open CSV: " + ex.getMessage());
+                                    showErrorAlert("File Error", "Cannot open CSV: " + ex.getMessage());
+                                 }
+                              });
+                              content.getChildren().add(link);
+
+                              Hyperlink folderLink = new Hyperlink("Open Containing Folder");
+                              folderLink.setOnAction(e -> {
+                                 try {
+                                    Desktop.getDesktop().open(csvFile.getParentFile());
+                                 } catch (Exception ex) {
+                                    System.out.println("ERROR: Cannot open folder: " + ex.getMessage());
+                                 }
+                              });
+                              content.getChildren().add(folderLink);
+                           } else {
+                              content.getChildren().add(new Label("(Desktop file open not supported on this system)"));
+                           }
+
+                           alert.getDialogPane().setContent(content);
+                           alert.showAndWait();
+                        });
+
+                     } catch (IllegalArgumentException iae) {
+                        System.err.println("ERROR: Invalid input - " + iae.getMessage());
+                        showErrorAlert("Invalid Input", iae.getMessage());
+                     } catch (Exception e) {
+                        System.err.println("ERROR: Failed to generate CSV: " + e.getMessage());
+                        e.printStackTrace();
+                        showErrorAlert("CSV Export Failed", "Error: " + e.getMessage());
+                     }
+                  })
+                  .exceptionally(e -> {
+                     System.err.println("ERROR: Failed to fetch data: " + e.getMessage());
+                     showErrorAlert("Data Fetch Failed", "Failed to fetch sensor data: " + e.getMessage());
+                     return null;
+                  });
+            })
+            .exceptionally(e -> {
+               System.err.println("ERROR: Failed to get sensor ID: " + e.getMessage());
+               showErrorAlert("Sensor Lookup Failed", "Failed to get sensor ID: " + e.getMessage());
+               return null;
+            });
+      } catch (NumberFormatException nfe) {
+         System.err.println("ERROR: Invalid user ID format: " + nfe.getMessage());
+         showErrorAlert("Invalid User ID", "Could not parse user ID from selection");
+      } catch (Exception e) {
+         System.err.println("ERROR: Unexpected error in generateCsvExport: " + e.getMessage());
+         e.printStackTrace();
+         showErrorAlert("Unexpected Error", "An unexpected error occurred: " + e.getMessage());
+      }
+   }
+
 
    @FXML
    private void generatePdfLog() {
-      // Triggered by UI action. Validates selections, obtains sensorID, fetches data, then calls PdfService.generateSensorDataReport.
-      // All operations that update UI are executed via Platform.runLater.
+      // Triggered by UI action. Validates selections, shows FileChooser, fetches data, then exports to PDF.
       String userSelection = this.userSelector.getValue();
       String useCase = this.useCaseSelector.getValue();
       String timeRange = this.timeRangeSelector.getValue();
@@ -766,6 +920,26 @@ public class visPageController {
       try {
          int userID = Integer.parseInt(userSelection.split(" ")[0]);
 
+         // Show FileChooser to let user select save location
+         FileChooser fileChooser = new FileChooser();
+         fileChooser.setTitle("Save PDF Report");
+         fileChooser.setInitialDirectory(ExportService.getDefaultExportDirectory());
+         fileChooser.setInitialFileName(ExportService.generateDefaultFilename(userID, useCase, "pdf"));
+         fileChooser.getExtensionFilters().add(
+            new FileChooser.ExtensionFilter("PDF Files", "*.pdf")
+         );
+
+         // Get the current stage from any FXML element
+         Stage stage = (Stage) userSelector.getScene().getWindow();
+         File selectedFile = fileChooser.showSaveDialog(stage);
+
+         if (selectedFile == null) {
+            System.out.println("PDF export cancelled by user");
+            return;
+         }
+
+         final String filePath = selectedFile.getAbsolutePath();
+
          // Get sensor ID and fetch data asynchronously
          ApiService.getInstance().getSensorIdByName(useCase)
             .thenAccept(sensorID -> {
@@ -776,29 +950,29 @@ public class visPageController {
                }
 
                Map<String, String> params = new HashMap<>();
-                params.put("userid", String.valueOf(userID));
-                params.put("alert_type", String.valueOf(sensorID));
+               params.put("userid", String.valueOf(userID));
+               params.put("alert_type", String.valueOf(sensorID));
 
-                // Handle custom date range vs preset ranges
-                if ("Custom Date Range".equals(timeRange)) {
-                   params.put("range", "custom");
-                   if (startDatePicker != null && startDatePicker.getValue() != null) {
-                      params.put("start_date", startDatePicker.getValue().toString());
-                   }
-                   if (endDatePicker != null && endDatePicker.getValue() != null) {
-                      params.put("end_date", endDatePicker.getValue().toString());
-                   }
-                } else {
-                   params.put("range", timeRange);
-                }
+               // Handle custom date range vs preset ranges
+               if ("Custom Date Range".equals(timeRange)) {
+                  params.put("range", "custom");
+                  if (startDatePicker != null && startDatePicker.getValue() != null) {
+                     params.put("start_date", startDatePicker.getValue().toString());
+                  }
+                  if (endDatePicker != null && endDatePicker.getValue() != null) {
+                     params.put("end_date", endDatePicker.getValue().toString());
+                  }
+               } else {
+                  params.put("range", timeRange);
+               }
 
                ApiService.getInstance().get(ApiService.EP_SENSOR_DATA, params)
                   .thenAccept(response -> {
                      try {
                         System.out.println("DEBUG: generatePdfLog received response: " + response.getNodeType());
 
-                        // Delegate PDF generation to PdfService (will handle unwrapping internally)
-                        String fullPath = PdfService.generateSensorDataReport(userID, useCase, timeRange, response);
+                        // Generate PDF using ExportService
+                        String fullPath = ExportService.generatePdf(filePath, userID, useCase, timeRange, response);
                         System.out.println("PDF generated: " + fullPath);
 
                         // Show success alert with file open link
@@ -807,10 +981,12 @@ public class visPageController {
                            Alert alert = new Alert(AlertType.INFORMATION);
                            alert.setTitle("PDF Generated");
                            alert.setHeaderText("PDF Report Created Successfully");
-                           alert.setContentText("The report has been saved to:\n" + fullPath);
 
                            VBox content = new VBox(10.0);
-                           content.getChildren().addAll(new Label("The report has been saved to:"), new Label(fullPath));
+                           content.getChildren().addAll(
+                              new Label("The report has been saved to:"),
+                              new Label(fullPath)
+                           );
 
                            // Only add open button if Desktop is supported
                            if (Desktop.isDesktopSupported()) {
@@ -824,6 +1000,16 @@ public class visPageController {
                                  }
                               });
                               content.getChildren().add(link);
+
+                              Hyperlink folderLink = new Hyperlink("Open Containing Folder");
+                              folderLink.setOnAction(e -> {
+                                 try {
+                                    Desktop.getDesktop().open(pdfFile.getParentFile());
+                                 } catch (Exception ex) {
+                                    System.out.println("ERROR: Cannot open folder: " + ex.getMessage());
+                                 }
+                              });
+                              content.getChildren().add(folderLink);
                            } else {
                               content.getChildren().add(new Label("(Desktop file open not supported on this system)"));
                            }
