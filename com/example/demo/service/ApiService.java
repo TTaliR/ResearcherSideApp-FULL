@@ -22,9 +22,10 @@ import java.util.stream.Collectors;
 public class ApiService {
 
     //should be replaced with ngrok link
-     private static final String BASE_URL = "http://localhost:5678/webhook";
-    //private static final String BASE_URL = "https://marcella-unguerdoned-ayanna.ngrok-free.dev/webhook";  //tali
-    //private static final String BASE_URL = "https://vacantly-holmic-etta.ngrok-free.dev/";  //liran
+    //private static final String BASE_URL = "http://localhost:5678/webhook";
+    private static final String BASE_URL = "https://marcella-unguerdoned-ayanna.ngrok-free.dev/webhook";  //tali
+    //private static final String BASE_URL = "https://vacantly-holmic-etta.ngrok-free.dev/webhook";  //liran
+
     public static final String EP_GET_USERS = "/get-users";
     public static final String EP_GET_SENSOR_TYPES = "/get-sensor-types";
     public static final String EP_GET_USECASES = "/get-usecases";
@@ -34,7 +35,8 @@ public class ApiService {
     public static final String EP_SET_SUN = "/set-sun-azimuth-threshold";
     public static final String EP_SET_MOON = "/set-moon-azimuth-threshold";
     public static final String EP_SET_HEART = "/set-heart-rate-threshold";
-    public static final String EP_CHAT_CONFIG = "/chat-config"; //
+    public static final String EP_CHAT_CONFIG = "/chat-config";
+    public static final String EP_CHECK_CONNECTION = "/check-connection";
 
     private static final ApiService INSTANCE = new ApiService();
     private final ObjectMapper mapper;
@@ -141,7 +143,7 @@ public class ApiService {
                 System.out.println("POST Response Code: " + code + " - " + conn.getResponseMessage());
 
                 if (code != 200) {
-                    System.err.println("POST Failed - HTTP " + code + " for endpoint: " + endpoint);
+                    System.err.println("POST Failed - HTTP " + code + " for endpoint: " + endpoint + " - " + conn.getResponseMessage());
                 }
                 return code == 200;
 
@@ -304,6 +306,21 @@ public class ApiService {
      */
     public CompletableFuture<Integer> getSensorIdByName(String name) {
         return getSensorTypes().thenApply(sensorMap -> sensorMap.getOrDefault(name, -1));
+    }
+
+    public boolean checkConnection() {
+        try {
+            boolean response = post(EP_CHECK_CONNECTION, null).get();
+            if (!response) {
+                System.err.println("Connection check failed");
+                return false;
+            }
+            System.out.println("Connection check successful");
+            return true;
+        } catch (Exception e) {
+            System.err.println("Connection check failed: " + e.getMessage());
+        }
+        return false;
     }
 }
 
