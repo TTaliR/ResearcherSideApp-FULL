@@ -25,14 +25,15 @@ public class JavaFXApp extends Application {
          primaryStage.setScene(scene);
          primaryStage.show();
 
-         // Show a modal dialog that blocks user interaction until connection is available or app is closed
+         // Show a modal dialog that blocks user interaction until connection is available or the app is closed
          while (!ApiService.getInstance().checkConnection()) {
             Alert alert = new Alert(Alert.AlertType.NONE);
             alert.initOwner(primaryStage);
             alert.initModality(Modality.WINDOW_MODAL);
             alert.setTitle("No Connection");
             alert.setHeaderText("No connection to the server");
-            alert.setContentText("Please check your network. You can retry or close the application.");
+            alert.setContentText("Please check your network or n8n server.\nYou can retry or close the application.");
+            alert.setAlertType(Alert.AlertType.WARNING);
             ButtonType retry = new ButtonType("Retry", ButtonBar.ButtonData.OK_DONE);
             ButtonType close = new ButtonType("Close", ButtonBar.ButtonData.CANCEL_CLOSE);
             alert.getButtonTypes().setAll(retry, close);

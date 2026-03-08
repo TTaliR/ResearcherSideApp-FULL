@@ -308,11 +308,14 @@ public class ApiService {
         return getSensorTypes().thenApply(sensorMap -> sensorMap.getOrDefault(name, -1));
     }
 
+    /**
+     * Verifies connection via endpoint response; logs and returns status
+     */
     public boolean checkConnection() {
         try {
-            boolean response = post(EP_CHECK_CONNECTION, null).get();
-            if (!response) {
-                System.err.println("Connection check failed");
+            JsonNode response = postWithResponse(EP_CHECK_CONNECTION, null).get();
+            if (response.has("error") || !response.get("connected").asBoolean()) {
+                System.err.println("Connection check failed: " + response.get("message").asText());
                 return false;
             }
             System.out.println("Connection check successful");
