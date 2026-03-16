@@ -313,17 +313,20 @@ public class ApiService {
      */
     public boolean checkConnection() {
         try {
-            JsonNode response = postWithResponse(EP_CHECK_CONNECTION, null).get();
-            if (response.has("error") || !response.get("connected").asBoolean()) {
-                System.err.println("Connection check failed: " + response.get("message").asText());
+            // Match n8n Respond to Webhook config that only guarantees HTTP 200
+            boolean ok = post(EP_CHECK_CONNECTION, new HashMap<>()).get();
+
+            if (!ok) {
+                System.err.println("Connection check failed: non-200 response");
                 return false;
             }
+
             System.out.println("Connection check successful");
             return true;
         } catch (Exception e) {
             System.err.println("Connection check failed: " + e.getMessage());
+            return false;
         }
-        return false;
     }
 }
 

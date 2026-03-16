@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.DatePicker?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.Tab?>
+<?import javafx.scene.control.TabPane?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.control.ToggleButton?>
+<?import javafx.scene.layout.AnchorPane?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.FlowPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+
+<HBox prefHeight="800.0" prefWidth="1280.0" styleClass="dashboard-root" xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.example.demo.controller.DashboardController">
+    <VBox prefWidth="250.0" styleClass="sidebar">
+        <Label styleClass="sidebar-title" text="ResearcherSide" />
+
+        <VBox spacing="8.0" styleClass="sidebar-nav">
+            <ToggleButton fx:id="useCasesNavButton" styleClass="sidebar-nav-button" text="Use Cases" />
+            <ToggleButton fx:id="participantManagementNavButton" styleClass="sidebar-nav-button" text="Participant Management" />
+        </VBox>
+
+        <Separator />
+
+        <VBox fx:id="useCasesSidebarPane" spacing="8.0" VBox.vgrow="ALWAYS">
+            <Label styleClass="sidebar-section-title" text="Available Use Cases" />
+            <ListView fx:id="useCaseListView" VBox.vgrow="ALWAYS" />
+        </VBox>
+
+        <VBox fx:id="participantManagementSidebarPane" spacing="8.0" visible="false" managed="false" VBox.vgrow="ALWAYS">
+            <Label styleClass="sidebar-section-title" text="Participant List" />
+            <Label text="Read-only mode" styleClass="sidebar-muted-text" />
+            <Label text="Total Participants:" styleClass="sidebar-muted-text" />
+            <Label fx:id="participantCountLabel" text="0" styleClass="sidebar-count" />
+            <ListView fx:id="participantSidebarList" VBox.vgrow="ALWAYS" />
+        </VBox>
+    </VBox>
+
+    <BorderPane styleClass="workspace-root" HBox.hgrow="ALWAYS">
+        <top>
+            <VBox spacing="8.0" styleClass="topbar-wrapper">
+                <HBox alignment="CENTER_LEFT" spacing="14.0" styleClass="topbar">
+                    <Label text="Use Case:" styleClass="topbar-label" />
+                    <Label fx:id="selectedUseCaseLabel" text="-" styleClass="topbar-value" />
+
+                    <Separator orientation="VERTICAL" prefHeight="22.0" />
+
+                    <Label text="Participant:" styleClass="topbar-label" />
+                    <ComboBox fx:id="participantComboBox" prefWidth="260.0" promptText="Select participant" />
+
+                    <Label text="Date Range:" styleClass="topbar-label" />
+                    <ComboBox fx:id="timeRangeComboBox" prefWidth="170.0" />
+                    <DatePicker fx:id="startDatePicker" prefWidth="140.0" visible="false" managed="false" />
+                    <DatePicker fx:id="endDatePicker" prefWidth="140.0" visible="false" managed="false" />
+                </HBox>
+            </VBox>
+        </top>
+
+        <center>
+            <TabPane fx:id="workspaceTabPane" tabClosingPolicy="UNAVAILABLE" styleClass="workspace-tabs">
+                <tabs>
+                    <Tab fx:id="agentChatTab" text="Agent Chat">
+                        <content>
+                            <BorderPane styleClass="tab-content-root">
+                                <center>
+                                    <VBox spacing="10.0" styleClass="chat-panel" BorderPane.alignment="CENTER">
+                                        <ScrollPane fx:id="chatScrollPane" fitToWidth="true" styleClass="chat-scroll" VBox.vgrow="ALWAYS">
+                                            <VBox fx:id="chatHistoryBox" spacing="10.0" styleClass="chat-history" />
+                                        </ScrollPane>
+                                        <HBox spacing="10.0">
+                                            <TextField fx:id="chatInputField" promptText="Type your instruction or query..." HBox.hgrow="ALWAYS" />
+                                            <Button fx:id="chatSendButton" text="Send" styleClass="primary-button" />
+                                            <Button fx:id="contextDrawerToggleButton" text="Hide Context" styleClass="secondary-button" />
+                                        </HBox>
+                                    </VBox>
+                                </center>
+                                <right>
+                                    <VBox fx:id="contextDrawer" prefWidth="330.0" spacing="10.0" styleClass="context-drawer">
+                                        <Label text="Context Drawer" styleClass="drawer-title" />
+                                        <Label text="Use Case" styleClass="drawer-label" />
+                                        <Label fx:id="contextUseCaseLabel" text="-" />
+                                        <Label text="Participant" styleClass="drawer-label" />
+                                        <Label fx:id="contextParticipantLabel" text="-" />
+                                        <Separator />
+                                        <Label text="Simplified Graph" styleClass="drawer-label" />
+                                        <AnchorPane fx:id="miniGraphAnchor" prefHeight="180.0" />
+                                        <Label text="Active Rule Summary" styleClass="drawer-label" />
+                                        <VBox fx:id="activeRulesSummaryBox" spacing="6.0" />
+                                    </VBox>
+                                </right>
+                            </BorderPane>
+                        </content>
+                    </Tab>
+
+                    <Tab fx:id="graphTab" text="Graph">
+                        <content>
+                            <VBox spacing="10.0" styleClass="tab-content-root">
+                                <HBox alignment="CENTER_RIGHT" spacing="10.0">
+                                    <Button fx:id="refreshGraphButton" text="Refresh Graph" styleClass="primary-button" />
+                                </HBox>
+                                <AnchorPane fx:id="graphAnchor" VBox.vgrow="ALWAYS" />
+                            </VBox>
+                        </content>
+                    </Tab>
+
+                    <Tab fx:id="mappingsTab" text="Active Mappings">
+                        <content>
+                            <StackPane styleClass="tab-content-root">
+                                <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="mappings-scroll">
+                                    <FlowPane fx:id="mappingsFlowPane" hgap="14.0" vgap="14.0" prefWrapLength="920.0">
+                                        <padding>
+                                            <Insets top="12.0" right="12.0" bottom="12.0" left="12.0" />
+                                        </padding>
+                                    </FlowPane>
+                                </ScrollPane>
+                                <Label fx:id="mappingsEmptyLabel" text="No mappings found." styleClass="mappings-empty-label" StackPane.alignment="CENTER">
+                                    <StackPane.margin>
+                                        <Insets top="8.0" />
+                                    </StackPane.margin>
+                                </Label>
+                            </StackPane>
+                        </content>
+                    </Tab>
+                </tabs>
+            </TabPane>
+        </center>
+    </BorderPane>
+</HBox>
+
+
+

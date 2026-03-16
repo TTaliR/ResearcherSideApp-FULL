@@ -1,0 +1,229 @@
+.dashboard-root {
+    -fx-background-color: #eef2f7;
+    -fx-font-family: "Segoe UI", "Arial", sans-serif;
+}
+
+.sidebar {
+    -fx-background-color: #161f2b;
+    -fx-padding: 18 14 18 14;
+    -fx-spacing: 12;
+}
+
+.sidebar-title {
+    -fx-text-fill: #f3f6fb;
+    -fx-font-size: 20px;
+    -fx-font-weight: bold;
+}
+
+.sidebar-nav {
+    -fx-padding: 4 0 4 0;
+}
+
+.sidebar-nav-button {
+    -fx-background-color: #243247;
+    -fx-text-fill: #e8eef8;
+    -fx-font-size: 13px;
+    -fx-padding: 8 10;
+    -fx-cursor: hand;
+    -fx-background-radius: 6;
+}
+
+.sidebar-nav-button:selected {
+    -fx-background-color: #3c82f6;
+    -fx-text-fill: white;
+}
+
+.sidebar-section-title {
+    -fx-text-fill: #c7d1de;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+
+.sidebar-muted-text {
+    -fx-text-fill: #9fb0c5;
+    -fx-font-size: 12px;
+}
+
+.sidebar-count {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 20px;
+    -fx-font-weight: bold;
+}
+
+.sidebar .list-view {
+    -fx-background-color: #1f2a3a;
+    -fx-background-radius: 8;
+    -fx-control-inner-background: #1f2a3a;
+    -fx-padding: 4;
+}
+
+.sidebar .list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: #d9e4f5;
+    -fx-padding: 8;
+}
+
+.sidebar .list-cell:filled:selected,
+.sidebar .list-cell:filled:hover {
+    -fx-background-color: #2c3f59;
+    -fx-text-fill: #ffffff;
+    -fx-background-radius: 6;
+}
+
+.workspace-root {
+    -fx-background-color: #eef2f7;
+}
+
+.topbar-wrapper {
+    -fx-padding: 14 16 8 16;
+}
+
+.topbar {
+    -fx-background-color: #ffffff;
+    -fx-padding: 12;
+    -fx-background-radius: 8;
+    -fx-border-color: #d6dde8;
+    -fx-border-radius: 8;
+}
+
+.topbar-label {
+    -fx-text-fill: #4f627a;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.topbar-value {
+    -fx-text-fill: #0f1723;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+
+.workspace-tabs {
+    -fx-padding: 0 16 16 16;
+}
+
+.workspace-tabs .tab-header-area {
+    -fx-padding: 6 0 0 0;
+}
+
+.workspace-tabs .tab {
+    -fx-background-color: #dce4ee;
+}
+
+.workspace-tabs .tab:selected {
+    -fx-background-color: #ffffff;
+}
+
+.workspace-tabs .tab-label {
+    -fx-text-fill: #233247;
+    -fx-font-weight: 600;
+}
+
+.tab-content-root {
+    -fx-background-color: #ffffff;
+    -fx-padding: 12;
+    -fx-background-radius: 10;
+    -fx-border-color: #d6dde8;
+    -fx-border-radius: 10;
+}
+
+.primary-button {
+    -fx-background-color: #2563eb;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-background-radius: 6;
+}
+
+.secondary-button {
+    -fx-background-color: #f3f5f8;
+    -fx-text-fill: #213246;
+    -fx-border-color: #cfd8e4;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+}
+
+.chat-panel {
+    -fx-padding: 2;
+}
+
+.chat-scroll {
+    -fx-background-color: #f9fbfd;
+    -fx-border-color: #d6dde8;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+}
+
+.chat-history {
+    -fx-padding: 12;
+}
+
+.chat-message-row {
+    -fx-padding: 2 0 2 0;
+}
+
+.chat-bubble-user {
+    -fx-background-color: #dbeafe;
+    -fx-border-color: #92c5ff;
+    -fx-padding: 10;
+    -fx-background-radius: 10;
+    -fx-border-radius: 10;
+}
+
+.chat-bubble-ai {
+    -fx-background-color: #f3f4f6;
+    -fx-border-color: #d0d7e2;
+    -fx-padding: 10;
+    -fx-background-radius: 10;
+    -fx-border-radius: 10;
+}
+
+.context-drawer {
+    -fx-background-color: #f7f9fc;
+    -fx-border-color: #d6dde8;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 12;
+}
+
+.drawer-title {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1f2f43;
+}
+
+.drawer-label {
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #52667f;
+}
+
+.drawer-rule-line {
+    -fx-font-size: 12px;
+    -fx-text-fill: #2f3f54;
+    -fx-wrap-text: true;
+}
+
+.mappings-scroll {
+    -fx-background-color: transparent;
+}
+
+.mappings-empty-label {
+    -fx-text-fill: #6b7280;
+    -fx-font-size: 14px;
+}
+
+.mapping-card {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d7e0eb;
+    -fx-border-radius: 10;
+    -fx-background-radius: 10;
+    -fx-padding: 12;
+    -fx-pref-width: 280;
+}
+
+.mapping-card-title {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #1f2f43;
+}
+

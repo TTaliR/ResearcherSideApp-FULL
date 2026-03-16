@@ -18,8 +18,9 @@ import java.util.Optional;
 public class JavaFXApp extends Application {
    public void start(Stage primaryStage) {
       try {
-         FXMLLoader fxmlLoader = new FXMLLoader(this.getClass().getResource("/com/example/demo/view/ResearcherInterface.fxml"));
+         FXMLLoader fxmlLoader = new FXMLLoader(this.getClass().getResource("/com/example/demo/view/Dashboard.fxml"));
          Scene scene = new Scene((Parent)fxmlLoader.load());
+         scene.getStylesheets().add(this.getClass().getResource("/com/example/demo/view/dashboard.css").toExternalForm());
          primaryStage.getIcons().add(new Image(this.getClass().getResourceAsStream("/com/example/demo/images/app-icon.png")));
          primaryStage.setTitle("Smart Watch Haptic System");
          primaryStage.setScene(scene);
