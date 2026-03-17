@@ -3,6 +3,7 @@ package com.example.demo.controller;
 import com.example.demo.controller.state.DashboardState;
 import com.example.demo.model.User;
 import com.example.demo.service.ApiService;
+import com.example.demo.service.ExportService;
 import com.fasterxml.jackson.databind.JsonNode;
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
@@ -16,6 +17,7 @@ import javafx.scene.control.DatePicker;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.Alert;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
@@ -28,8 +30,11 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
+import javafx.stage.FileChooser;
+import javafx.stage.Stage;
 import javafx.util.Duration;
 
+import java.io.File;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -38,11 +43,14 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
 public class DashboardController {
+    private static final List<String> DEFAULT_USE_CASES = List.of("HeartRate", "MoonAzimuth", "SunAzimuth", "Pollution");
 
     @FXML
     private ToggleButton useCasesNavButton;
@@ -103,6 +111,10 @@ public class DashboardController {
     @FXML
     private AnchorPane graphAnchor;
     @FXML
+    private Button exportGraphCsvButton;
+    @FXML
+    private Button exportGraphPdfButton;
+    @FXML
     private Button refreshGraphButton;
 
     @FXML
@@ -114,6 +126,7 @@ public class DashboardController {
     private final ObservableList<User> users = FXCollections.observableArrayList();
     private final ObservableList<String> useCases = FXCollections.observableArrayList();
     private final Map<String, String> useCaseDescriptions = new HashMap<>();
+    private final Map<String, String> useCaseDisplayNames = new HashMap<>();
     private final List<RuleCardData> allRules = new ArrayList<>();
     private final String chatSessionId = UUID.randomUUID().toString();
 
@@ -148,7 +161,8 @@ public class DashboardController {
             }
             state.setSelectedUseCase(newValue);
             selectedUseCaseLabel.setText(newValue);
-            String desc = useCaseDescriptions.getOrDefault(newValue, "");
+            String selectedKey = normalizeUseCaseName(newValue);
+            String desc = useCaseDescriptions.getOrDefault(selectedKey, "");
             selectedUseCaseLabel.setTooltip(desc.isBlank() ? null : new Tooltip(desc));
             contextUseCaseLabel.setText(newValue);
             refreshRuleSummary();
@@ -257,10 +271,106 @@ public class DashboardController {
 
     private void setupGraph() {
         refreshGraphButton.setOnAction(event -> scheduleGraphUpdate());
+        exportGraphCsvButton.setOnAction(event -> exportGraphData("csv"));
+        exportGraphPdfButton.setOnAction(event -> exportGraphData("pdf"));
         ensureGraphWebView();
         ensureMiniGraphWebView();
         renderGraphPlaceholder("Select a use case and participant to render graph data.");
         renderMiniGraphPlaceholder("Graph preview appears here.");
+    }
+
+    private void exportGraphData(String format) {
+        User user = state.getSelectedParticipant();
+        String useCase = state.getSelectedUseCase();
+        String range = state.getSelectedTimeRange();
+
+        if (user == null || useCase == null || useCase.isBlank() || range == null || range.isBlank()) {
+            showErrorAlert("Missing Selection", "Please select a participant, use case, and time range before exporting.");
+            return;
+        }
+
+        if ("Custom Date Range".equals(range)) {
+            LocalDate start = state.getStartDate();
+            LocalDate end = state.getEndDate();
+            if (start == null || end == null) {
+                showErrorAlert("Missing Date Range", "Please select both start and end dates for custom range export.");
+                return;
+            }
+            if (end.isBefore(start)) {
+                showErrorAlert("Invalid Date Range", "End date cannot be before start date.");
+                return;
+            }
+        }
+
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("csv".equals(format) ? "Save CSV Export" : "Save PDF Export");
+        fileChooser.setInitialDirectory(ExportService.getDefaultExportDirectory());
+        fileChooser.setInitialFileName(ExportService.generateDefaultFilename(user.getUserID(), useCase, format));
+        if ("csv".equals(format)) {
+            fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV Files", "*.csv"));
+        } else {
+            fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PDF Files", "*.pdf"));
+        }
+
+        Stage stage = (Stage) graphAnchor.getScene().getWindow();
+        File selectedFile = fileChooser.showSaveDialog(stage);
+        if (selectedFile == null) {
+            return;
+        }
+
+        ApiService.getInstance().getSensorIdByName(useCase)
+            .thenAccept(sensorId -> {
+                if (sensorId == -1) {
+                    showErrorAlert("Sensor Not Found", "Could not resolve a sensor id for use case: " + useCase);
+                    return;
+                }
+
+                Map<String, String> params = buildSensorDataParams(user.getUserID(), sensorId, range);
+                ApiService.getInstance().get(ApiService.EP_SENSOR_DATA, params)
+                    .thenAccept(response -> {
+                        try {
+                            String fullPath;
+                            if ("csv".equals(format)) {
+                                fullPath = ExportService.generateCsv(selectedFile.getAbsolutePath(), user.getUserID(), useCase, range, response);
+                            } else {
+                                fullPath = ExportService.generatePdf(selectedFile.getAbsolutePath(), user.getUserID(), useCase, range, response);
+                            }
+                            showInfoAlert("Export Successful", "Saved to:\n" + fullPath);
+                        } catch (Exception ex) {
+                            showErrorAlert("Export Failed", ex.getMessage());
+                        }
+                    })
+                    .exceptionally(ex -> {
+                        showErrorAlert("Data Fetch Failed", "Failed to fetch sensor data: " + ex.getMessage());
+                        return null;
+                    });
+            })
+            .exceptionally(ex -> {
+                showErrorAlert("Sensor Lookup Failed", "Failed to resolve sensor id: " + ex.getMessage());
+                return null;
+            });
+    }
+
+    private Map<String, String> buildSensorDataParams(int userId, int sensorId, String range) {
+        Map<String, String> params = new HashMap<>();
+        params.put("alert_type", String.valueOf(sensorId));
+        params.put("userid", String.valueOf(userId));
+
+        if ("Custom Date Range".equals(range)) {
+            params.put("range", "custom");
+            LocalDate start = state.getStartDate();
+            LocalDate end = state.getEndDate();
+            if (start != null) {
+                params.put("start_date", start.toString());
+            }
+            if (end != null) {
+                params.put("end_date", end.toString());
+            }
+        } else {
+            params.put("range", range);
+        }
+
+        return params;
     }
 
     private void setupStateListeners() {
@@ -316,34 +426,42 @@ public class DashboardController {
         ApiService.getInstance().get(ApiService.EP_GET_USECASES, null)
             .thenAccept(response -> {
                 JsonNode useCaseArray = ApiService.getInstance().extractArray(response);
-                List<String> loadedNames = new ArrayList<>();
+                LinkedHashMap<String, String> normalizedToDisplay = new LinkedHashMap<>();
                 Map<String, String> loadedDescriptions = new HashMap<>();
 
                 if (useCaseArray != null && useCaseArray.isArray()) {
                     for (JsonNode useCaseNode : useCaseArray) {
-                        String name = useCaseNode.path("name").asText("").trim();
+                        String rawName = useCaseNode.path("name").asText("").trim();
                         String description = useCaseNode.path("description").asText("").trim();
-                        if (!name.isEmpty()) {
-                            loadedNames.add(name);
-                            loadedDescriptions.put(name, description);
+                        if (!rawName.isEmpty()) {
+                            String normalizedName = normalizeUseCaseName(rawName);
+                            normalizedToDisplay.putIfAbsent(normalizedName, rawName);
+                            loadedDescriptions.put(normalizedName, description);
                         }
                     }
                 }
 
-                if (loadedNames.isEmpty()) {
-                    loadedNames.addAll(List.of("HeartRate", "SunAzimuth", "MoonAzimuth"));
+                if (normalizedToDisplay.isEmpty()) {
+                    for (String defaultUseCase : DEFAULT_USE_CASES) {
+                        normalizedToDisplay.put(normalizeUseCaseName(defaultUseCase), defaultUseCase);
+                    }
                 }
 
                 Platform.runLater(() -> {
-                    useCases.setAll(loadedNames);
+                    useCases.setAll(normalizedToDisplay.values());
                     useCaseDescriptions.clear();
                     useCaseDescriptions.putAll(loadedDescriptions);
+                    useCaseDisplayNames.clear();
+                    useCaseDisplayNames.putAll(normalizedToDisplay);
 
                     if (!useCases.isEmpty()) {
                         useCaseListView.getSelectionModel().selectFirst();
                         String selected = useCaseListView.getSelectionModel().getSelectedItem();
                         state.setSelectedUseCase(selected);
                         selectedUseCaseLabel.setText(selected);
+                        String selectedKey = normalizeUseCaseName(selected);
+                        String desc = useCaseDescriptions.getOrDefault(selectedKey, "");
+                        selectedUseCaseLabel.setTooltip(desc.isBlank() ? null : new Tooltip(desc));
                         contextUseCaseLabel.setText(selected);
                     }
                 });
@@ -359,9 +477,7 @@ public class DashboardController {
             .thenAccept(response -> {
                 Platform.runLater(() -> {
                     allRules.clear();
-                    parseAzimuthRules(response.path("sunAzimuthRanges"), "SunAzimuth", "Sun Azimuth");
-                    parseAzimuthRules(response.path("moonAzimuthRanges"), "MoonAzimuth", "Moon Azimuth");
-                    parseHeartRateRules(response.path("heartRateMappings"));
+                    parseMappingsFromConfiguration(response);
                     renderMappingsForUseCase(state.getSelectedUseCase());
                     refreshRuleSummary();
                 });
@@ -372,36 +488,31 @@ public class DashboardController {
             });
     }
 
-    private void parseAzimuthRules(JsonNode arrayNode, String useCaseName, String labelPrefix) {
-        if (arrayNode == null || !arrayNode.isArray()) {
+    private void parseMappingsFromConfiguration(JsonNode rootNode) {
+        if (rootNode == null || !rootNode.isObject()) {
             return;
         }
 
-        for (JsonNode node : arrayNode) {
-            RuleCardData rule = new RuleCardData();
-            rule.useCase = useCaseName;
-            rule.rangeLabel = labelPrefix + ": " + node.path("minvalue").asInt() + " - " + node.path("maxvalue").asInt();
-            rule.pulseLabel = node.path("minpulses").asInt() + " - " + node.path("maxpulses").asInt();
-            rule.intensityLabel = node.path("minintensity").asInt() + " - " + node.path("maxintensity").asInt();
-            rule.durationLabel = node.path("minduration").asInt() + " - " + node.path("maxduration").asInt() + " ms";
-            rule.intervalLabel = node.path("mininterval").asInt() + " - " + node.path("maxinterval").asInt() + " ms";
-            allRules.add(rule);
-        }
+        rootNode.fields().forEachRemaining(entry -> parseRulesArray(entry.getKey(), entry.getValue()));
     }
 
-    private void parseHeartRateRules(JsonNode arrayNode) {
+    private void parseRulesArray(String configKey, JsonNode arrayNode) {
         if (arrayNode == null || !arrayNode.isArray()) {
             return;
         }
 
+        String useCaseKey = inferUseCaseFromConfigKey(configKey);
+        String useCaseLabel = toUseCaseLabel(useCaseKey);
+
         for (JsonNode node : arrayNode) {
             RuleCardData rule = new RuleCardData();
-            rule.useCase = "HeartRate";
-            rule.rangeLabel = "Heart Rate: " + node.path("minvalue").asInt() + " - " + node.path("maxvalue").asInt();
-            rule.pulseLabel = node.path("minpulses").asInt() + " - " + node.path("maxpulses").asInt();
-            rule.intensityLabel = node.path("minintensity").asInt() + " - " + node.path("maxintensity").asInt();
-            rule.durationLabel = node.path("minduration").asInt() + " - " + node.path("maxduration").asInt() + " ms";
-            rule.intervalLabel = node.path("mininterval").asInt() + " - " + node.path("maxinterval").asInt() + " ms";
+            rule.useCaseKey = useCaseKey;
+            rule.useCaseLabel = useCaseLabel;
+            rule.rangeLabel = readRangeLabel(node, useCaseLabel);
+            rule.pulseLabel = readRangeValue(node, "minpulses", "maxpulses", "N/A");
+            rule.intensityLabel = readRangeValue(node, "minintensity", "maxintensity", "N/A");
+            rule.durationLabel = readRangeValue(node, "minduration", "maxduration", "N/A ms");
+            rule.intervalLabel = readRangeValue(node, "mininterval", "maxinterval", "N/A ms");
             allRules.add(rule);
         }
     }
@@ -416,8 +527,9 @@ public class DashboardController {
             return;
         }
 
+        String selectedUseCaseKey = normalizeUseCaseName(useCase);
         List<RuleCardData> filtered = allRules.stream()
-            .filter(rule -> useCase.equals(rule.useCase))
+            .filter(rule -> selectedUseCaseKey.equals(rule.useCaseKey))
             .toList();
 
         if (filtered.isEmpty()) {
@@ -498,8 +610,9 @@ public class DashboardController {
             return;
         }
 
+        String selectedUseCaseKey = normalizeUseCaseName(selectedUseCase);
         List<RuleCardData> filtered = allRules.stream()
-            .filter(rule -> selectedUseCase.equals(rule.useCase))
+            .filter(rule -> selectedUseCaseKey.equals(rule.useCaseKey))
             .limit(5)
             .toList();
 
@@ -729,6 +842,82 @@ public class DashboardController {
         endDatePicker.setManaged(custom);
     }
 
+    private String normalizeUseCaseName(String rawUseCase) {
+        if (rawUseCase == null) {
+            return "";
+        }
+
+        String normalized = rawUseCase.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
+        if (normalized.contains("heartrate")) {
+            return "HeartRate";
+        }
+        if (normalized.contains("sunazimuth") || (normalized.contains("sun") && normalized.contains("azimuth"))) {
+            return "SunAzimuth";
+        }
+        if (normalized.contains("moonazimuth") || (normalized.contains("moon") && normalized.contains("azimuth"))) {
+            return "MoonAzimuth";
+        }
+        if (normalized.contains("pollution")) {
+            return "Pollution";
+        }
+
+        return normalized.isBlank() ? "Unknown" : normalized;
+    }
+
+    private String inferUseCaseFromConfigKey(String configKey) {
+        String lowered = configKey == null ? "" : configKey.toLowerCase(Locale.ROOT);
+        if (lowered.contains("heart")) {
+            return "HeartRate";
+        }
+        if (lowered.contains("sun")) {
+            return "SunAzimuth";
+        }
+        if (lowered.contains("moon")) {
+            return "MoonAzimuth";
+        }
+        if (lowered.contains("pollution")) {
+            return "Pollution";
+        }
+
+        return normalizeUseCaseName(configKey);
+    }
+
+    private String toUseCaseLabel(String useCaseKey) {
+        if (useCaseKey == null || useCaseKey.isBlank()) {
+            return "Unknown";
+        }
+
+        String explicitLabel = useCaseDisplayNames.get(useCaseKey);
+        if (explicitLabel != null && !explicitLabel.isBlank()) {
+            return explicitLabel;
+        }
+
+        return switch (useCaseKey) {
+            case "HeartRate" -> "Heart Rate";
+            case "SunAzimuth" -> "Sun Azimuth";
+            case "MoonAzimuth" -> "Moon Azimuth";
+            case "Pollution" -> "Pollution";
+            default -> useCaseKey;
+        };
+    }
+
+    private String readRangeLabel(JsonNode node, String useCaseLabel) {
+        if (node.has("minvalue") && node.has("maxvalue")) {
+            return useCaseLabel + ": " + node.path("minvalue").asInt() + " - " + node.path("maxvalue").asInt();
+        }
+        if (node.has("min") && node.has("max")) {
+            return useCaseLabel + ": " + node.path("min").asInt() + " - " + node.path("max").asInt();
+        }
+        return useCaseLabel + ": rule";
+    }
+
+    private String readRangeValue(JsonNode node, String minField, String maxField, String fallback) {
+        if (node.has(minField) && node.has(maxField)) {
+            return node.path(minField).asInt() + " - " + node.path(maxField).asInt();
+        }
+        return fallback;
+    }
+
     private String escapeHtml(String text) {
         if (text == null) {
             return "";
@@ -741,8 +930,29 @@ public class DashboardController {
             .replace("'", "&#39;");
     }
 
+    private void showErrorAlert(String title, String message) {
+        Platform.runLater(() -> {
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+            alert.setTitle(title);
+            alert.setHeaderText(title);
+            alert.setContentText(message);
+            alert.showAndWait();
+        });
+    }
+
+    private void showInfoAlert(String title, String message) {
+        Platform.runLater(() -> {
+            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+            alert.setTitle(title);
+            alert.setHeaderText(title);
+            alert.setContentText(message);
+            alert.showAndWait();
+        });
+    }
+
     private static class RuleCardData {
-        String useCase;
+        String useCaseKey;
+        String useCaseLabel;
         String rangeLabel;
         String pulseLabel;
         String intensityLabel;
