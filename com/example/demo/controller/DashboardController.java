@@ -242,7 +242,7 @@ public class DashboardController {
     }
 
     private void setupTabs() {
-        workspaceTabPane.getSelectionModel().select(graphTab);
+        workspaceTabPane.getSelectionModel().select(agentChatTab);
         workspaceTabPane.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
             if (newValue == graphTab) {
                 scheduleGraphUpdate();
@@ -260,6 +260,10 @@ public class DashboardController {
         chatInputField.setOnAction(event -> onSendMessage());
 
         chatHistoryBox.heightProperty().addListener((observable, oldValue, newValue) -> chatScrollPane.setVvalue(1.0));
+
+        contextDrawer.setVisible(false);
+        contextDrawer.setManaged(false);
+        contextDrawerToggleButton.setText("Show Context");
 
         contextDrawerToggleButton.setOnAction(event -> {
             boolean nextVisible = !contextDrawer.isVisible();

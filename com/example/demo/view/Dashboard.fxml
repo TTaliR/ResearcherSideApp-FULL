@@ -67,7 +67,7 @@
         <center>
             <TabPane fx:id="workspaceTabPane" tabClosingPolicy="UNAVAILABLE" styleClass="workspace-tabs">
                 <tabs>
-                    <Tab fx:id="agentChatTab" text="Agent Chat">
+                    <Tab fx:id="agentChatTab" text="AI Agent Chat">
                         <content>
                             <BorderPane styleClass="tab-content-root">
                                 <center>
