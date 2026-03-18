@@ -6,6 +6,7 @@ import com.example.demo.model.User;
 import com.example.demo.service.ApiService;
 import com.example.demo.service.ExportService;
 import com.fasterxml.jackson.databind.JsonNode;
+import javafx.beans.value.ChangeListener;
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -49,7 +50,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 
 public class DashboardController {
@@ -125,7 +129,9 @@ public class DashboardController {
     @FXML
     private Label mappingsEmptyLabel;
     @FXML
-    private ComboBox<String> ruleSensorTypeComboBox;
+    private Label ruleSensorTypeLabel;
+    @FXML
+    private Label ruleSensorTypeDescriptionLabel;
     @FXML
     private TextField ruleMinValueField;
     @FXML
@@ -135,11 +141,17 @@ public class DashboardController {
     @FXML
     private TextField ruleMaxPulsesField;
     @FXML
-    private TextField ruleIntensityField;
+    private TextField ruleMinIntensityField;
     @FXML
-    private TextField ruleDurationField;
+    private TextField ruleMaxIntensityField;
     @FXML
-    private TextField ruleIntervalField;
+    private TextField ruleMinDurationField;
+    @FXML
+    private TextField ruleMaxDurationField;
+    @FXML
+    private TextField ruleMinIntervalField;
+    @FXML
+    private TextField ruleMaxIntervalField;
     @FXML
     private Button saveRuleButton;
 
@@ -171,49 +183,41 @@ public class DashboardController {
         loadMappings();
     }
 
+    /**
+     * Configures rule builder and applies integer-only input guards
+     */
     private void setupMappingsRuleBuilder() {
-        if (ruleSensorTypeComboBox == null) {
-            return;
-        }
-
+        updateRuleBuilderUseCaseDisplay(state.getSelectedUseCase());
         enforceIntegerInput(ruleMinValueField);
         enforceIntegerInput(ruleMaxValueField);
         enforceIntegerInput(ruleMinPulsesField);
         enforceIntegerInput(ruleMaxPulsesField);
-        enforceIntegerInput(ruleIntensityField);
-        enforceIntegerInput(ruleDurationField);
-        enforceIntegerInput(ruleIntervalField);
-
-        populateRuleBuilderSensorTypes();
+        enforceIntegerInput(ruleMinIntensityField);
+        enforceIntegerInput(ruleMaxIntensityField);
+        enforceIntegerInput(ruleMinDurationField);
+        enforceIntegerInput(ruleMaxDurationField);
+        enforceIntegerInput(ruleMinIntervalField);
+        enforceIntegerInput(ruleMaxIntervalField);
     }
 
-    private void populateRuleBuilderSensorTypes() {
-        ApiService.getInstance().getSensorTypes()
-            .thenAccept(sensorMap -> {
-                List<String> sensorNames = new ArrayList<>(sensorMap.keySet());
-                sensorNames.sort(String::compareToIgnoreCase);
+    private void updateRuleBuilderUseCaseDisplay(String selectedUseCase) {
+        if (ruleSensorTypeLabel == null || ruleSensorTypeDescriptionLabel == null) {
+            return;
+        }
 
-                if (sensorNames.isEmpty()) {
-                    sensorNames.addAll(DEFAULT_USE_CASES);
-                }
+        if (selectedUseCase == null || selectedUseCase.isBlank()) {
+            ruleSensorTypeLabel.setText("-");
+            ruleSensorTypeDescriptionLabel.setText("Select a use case to build a rule.");
+            return;
+        }
 
-                Platform.runLater(() -> {
-                    ruleSensorTypeComboBox.getItems().setAll(sensorNames);
-                    if (ruleSensorTypeComboBox.getSelectionModel().isEmpty()) {
-                        ruleSensorTypeComboBox.getSelectionModel().selectFirst();
-                    }
-                });
-            })
-            .exceptionally(ex -> {
-                Platform.runLater(() -> {
-                    ruleSensorTypeComboBox.getItems().setAll(DEFAULT_USE_CASES);
-                    if (ruleSensorTypeComboBox.getSelectionModel().isEmpty()) {
-                        ruleSensorTypeComboBox.getSelectionModel().selectFirst();
-                    }
-                });
-                return null;
-            });
+        String normalizedKey = normalizeUseCaseName(selectedUseCase);
+        ruleSensorTypeLabel.setText(toUseCaseLabel(normalizedKey));
+
+        String description = useCaseDescriptions.getOrDefault(normalizedKey, "").trim();
+        ruleSensorTypeDescriptionLabel.setText(description.isEmpty() ? "No description available." : description);
     }
+
 
     private void enforceIntegerInput(TextField textField) {
         if (textField == null) {
@@ -253,9 +257,9 @@ public class DashboardController {
     }
 
     private SensorRuleConfig buildRuleConfigFromForm() {
-        String sensorType = ruleSensorTypeComboBox == null ? null : ruleSensorTypeComboBox.getValue();
+        String sensorType = state.getSelectedUseCase() == null ? null : state.getSelectedUseCase();
         if (sensorType == null || sensorType.isBlank()) {
-            throw new IllegalArgumentException("Please select a sensor type.");
+            throw new IllegalArgumentException("Please select an active use case.");
         }
 
         int minValue = parseRequiredInt(ruleMinValueField, "Min Value");
@@ -270,9 +274,23 @@ public class DashboardController {
             throw new IllegalArgumentException("Min Pulses cannot be greater than Max Pulses.");
         }
 
-        int intensity = parseRequiredInt(ruleIntensityField, "Intensity");
-        int duration = parseRequiredInt(ruleDurationField, "Duration");
-        int interval = parseRequiredInt(ruleIntervalField, "Interval");
+        int minIntensity = parseRequiredInt(ruleMinIntensityField, "Min Intensity");
+        int maxIntensity = parseRequiredInt(ruleMaxIntensityField, "Max Intensity");
+        if (minIntensity > maxIntensity) {
+            throw new IllegalArgumentException("Min Intensity cannot be greater than Max Intensity.");
+        }
+
+        int minDuration = parseRequiredInt(ruleMinDurationField, "Min Duration");
+        int maxDuration = parseRequiredInt(ruleMaxDurationField, "Max Duration");
+        if (minDuration > maxDuration) {
+            throw new IllegalArgumentException("Min Duration cannot be greater than Max Duration.");
+        }
+
+        int minInterval = parseRequiredInt(ruleMinIntervalField, "Min Interval");
+        int maxInterval = parseRequiredInt(ruleMaxIntervalField, "Max Interval");
+        if (minInterval > maxInterval) {
+            throw new IllegalArgumentException("Min Interval cannot be greater than Max Interval.");
+        }
 
         SensorRuleConfig rule = new SensorRuleConfig();
         rule.setType(sensorType.trim());
@@ -280,12 +298,12 @@ public class DashboardController {
         rule.setMaxvalue(maxValue);
         rule.setMinpulses(minPulses);
         rule.setMaxpulses(maxPulses);
-        rule.setMinintensity(intensity);
-        rule.setMaxintensity(intensity);
-        rule.setMinduration(duration);
-        rule.setMaxduration(duration);
-        rule.setMininterval(interval);
-        rule.setMaxinterval(interval);
+        rule.setMinintensity(minIntensity);
+        rule.setMaxintensity(maxIntensity);
+        rule.setMinduration(minDuration);
+        rule.setMaxduration(maxDuration);
+        rule.setMininterval(minInterval);
+        rule.setMaxinterval(maxInterval);
         rule.setActive(true);
         return rule;
     }
@@ -315,39 +333,40 @@ public class DashboardController {
         if (ruleMaxPulsesField != null) {
             ruleMaxPulsesField.clear();
         }
-        if (ruleIntensityField != null) {
-            ruleIntensityField.clear();
+        if (ruleMinIntensityField != null) {
+            ruleMinIntensityField.clear();
         }
-        if (ruleDurationField != null) {
-            ruleDurationField.clear();
+        if (ruleMaxIntensityField != null) {
+            ruleMaxIntensityField.clear();
         }
-        if (ruleIntervalField != null) {
-            ruleIntervalField.clear();
+        if (ruleMinDurationField != null) {
+            ruleMinDurationField.clear();
+        }
+        if (ruleMaxDurationField != null) {
+            ruleMaxDurationField.clear();
+        }
+        if (ruleMinIntervalField != null) {
+            ruleMinIntervalField.clear();
+        }
+        if (ruleMaxIntervalField != null) {
+            ruleMaxIntervalField.clear();
         }
     }
 
     private void setupSidebar() {
-        useCasesNavButton.setOnAction(event -> setSidebarMode(true));
-        participantManagementNavButton.setOnAction(event -> setSidebarMode(false));
+        useCasesNavButton.setOnAction(ignored -> setSidebarMode(true));
+        participantManagementNavButton.setOnAction(ignored -> setSidebarMode(false));
         setSidebarMode(true);
 
         useCaseListView.setItems(useCases);
-        useCaseListView.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
-            if (newValue == null || newValue.equals(oldValue)) {
+        useCaseListView.getSelectionModel().selectedItemProperty().addListener(onNewValueChanged(newValue -> {
+            if (newValue == null || newValue.isBlank()) {
                 return;
             }
             state.setSelectedUseCase(newValue);
-            selectedUseCaseLabel.setText(newValue);
-            String selectedKey = normalizeUseCaseName(newValue);
-            String desc = useCaseDescriptions.getOrDefault(selectedKey, "");
-            selectedUseCaseLabel.setTooltip(desc.isBlank() ? null : new Tooltip(desc));
-            contextUseCaseLabel.setText(newValue);
-            refreshRuleSummary();
-            renderMappingsForUseCase(newValue);
-            scheduleGraphUpdate();
-        });
+        }));
 
-        participantSidebarList.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
+        participantSidebarList.getSelectionModel().selectedItemProperty().addListener(onNewValueChanged(newValue -> {
             if (newValue == null) {
                 return;
             }
@@ -355,7 +374,7 @@ public class DashboardController {
             if (selected != null && selected != participantComboBox.getValue()) {
                 participantComboBox.setValue(selected);
             }
-        });
+        }));
     }
 
     private void setupTopbar() {
@@ -375,7 +394,7 @@ public class DashboardController {
             }
         });
 
-        participantComboBox.valueProperty().addListener((obs, oldValue, newValue) -> {
+        participantComboBox.valueProperty().addListener(onNewValueChanged(newValue -> {
             if (newValue == null) {
                 return;
             }
@@ -386,41 +405,41 @@ public class DashboardController {
                 participantSidebarList.getSelectionModel().select(listValue);
             }
             scheduleGraphUpdate();
-        });
+        }));
 
         timeRangeComboBox.getItems().setAll("Last 24 Hours", "Last 7 Days", "Last 30 Days", "All Time", "Custom Date Range");
         timeRangeComboBox.setValue("Last 24 Hours");
-        timeRangeComboBox.valueProperty().addListener((obs, oldValue, newValue) -> {
+        timeRangeComboBox.valueProperty().addListener(onNewValueChanged(newValue -> {
             state.setSelectedTimeRange(newValue);
             updateDatePickerVisibility();
             scheduleGraphUpdate();
-        });
+        }));
 
         startDatePicker.setValue(LocalDate.now().minusDays(7));
         endDatePicker.setValue(LocalDate.now());
         state.setStartDate(startDatePicker.getValue());
         state.setEndDate(endDatePicker.getValue());
 
-        startDatePicker.valueProperty().addListener((obs, oldValue, newValue) -> {
+        startDatePicker.valueProperty().addListener(onNewValueChanged(newValue -> {
             state.setStartDate(newValue);
             if ("Custom Date Range".equals(state.getSelectedTimeRange())) {
                 scheduleGraphUpdate();
             }
-        });
+        }));
 
-        endDatePicker.valueProperty().addListener((obs, oldValue, newValue) -> {
+        endDatePicker.valueProperty().addListener(onNewValueChanged(newValue -> {
             state.setEndDate(newValue);
             if ("Custom Date Range".equals(state.getSelectedTimeRange())) {
                 scheduleGraphUpdate();
             }
-        });
+        }));
 
         updateDatePickerVisibility();
     }
 
     private void setupTabs() {
         workspaceTabPane.getSelectionModel().select(agentChatTab);
-        workspaceTabPane.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
+        workspaceTabPane.getSelectionModel().selectedItemProperty().addListener(onNewValueChanged(newValue -> {
             if (newValue == graphTab) {
                 scheduleGraphUpdate();
             } else if (newValue == mappingsTab) {
@@ -429,20 +448,20 @@ public class DashboardController {
                 refreshRuleSummary();
                 renderMiniGraphFromData(latestGraphData);
             }
-        });
+        }));
     }
 
     private void setupChat() {
-        chatSendButton.setOnAction(event -> onSendMessage());
-        chatInputField.setOnAction(event -> onSendMessage());
+        chatSendButton.setOnAction(ignored -> onSendMessage());
+        chatInputField.setOnAction(ignored -> onSendMessage());
 
-        chatHistoryBox.heightProperty().addListener((observable, oldValue, newValue) -> chatScrollPane.setVvalue(1.0));
+        chatHistoryBox.heightProperty().addListener(onNewValueChanged(newValue -> chatScrollPane.setVvalue(1.0)));
 
         contextDrawer.setVisible(false);
         contextDrawer.setManaged(false);
         contextDrawerToggleButton.setText("Show Context");
 
-        contextDrawerToggleButton.setOnAction(event -> {
+        contextDrawerToggleButton.setOnAction(ignored -> {
             boolean nextVisible = !contextDrawer.isVisible();
             contextDrawer.setVisible(nextVisible);
             contextDrawer.setManaged(nextVisible);
@@ -451,9 +470,9 @@ public class DashboardController {
     }
 
     private void setupGraph() {
-        refreshGraphButton.setOnAction(event -> scheduleGraphUpdate());
-        exportGraphCsvButton.setOnAction(event -> exportGraphData("csv"));
-        exportGraphPdfButton.setOnAction(event -> exportGraphData("pdf"));
+        refreshGraphButton.setOnAction(ignored -> scheduleGraphUpdate());
+        exportGraphCsvButton.setOnAction(ignored -> exportGraphData("csv"));
+        exportGraphPdfButton.setOnAction(ignored -> exportGraphData("pdf"));
         ensureGraphWebView();
         ensureMiniGraphWebView();
         renderGraphPlaceholder("Select a use case and participant to render graph data.");
@@ -555,14 +574,14 @@ public class DashboardController {
     }
 
     private void setupStateListeners() {
-        graphUpdateDebounce.setOnFinished(event -> refreshGraphData());
+        graphUpdateDebounce.setOnFinished(ignored -> refreshGraphData());
 
-        state.selectedUseCaseProperty().addListener((obs, oldValue, newValue) -> {
-            refreshRuleSummary();
-            renderMappingsForUseCase(newValue);
-        });
+        state.selectedUseCaseProperty().addListener(onChanged((oldValue, newValue) -> {
+            applySelectedUseCaseUi(newValue);
+            scheduleGraphUpdate();
+        }));
 
-        state.selectedParticipantProperty().addListener((obs, oldValue, newValue) -> refreshRuleSummary());
+        state.selectedParticipantProperty().addListener(onNewValueChanged(newValue -> refreshRuleSummary()));
     }
 
     private void loadParticipants() {
@@ -604,6 +623,7 @@ public class DashboardController {
     }
 
     private void loadUseCases() {
+        // Loads use cases with fallbacks; populates normalized UI collections
         ApiService.getInstance().get(ApiService.EP_GET_USECASES, null)
             .thenAccept(response -> {
                 JsonNode useCaseArray = ApiService.getInstance().extractArray(response);
@@ -634,23 +654,55 @@ public class DashboardController {
                     useCaseDescriptions.putAll(loadedDescriptions);
                     useCaseDisplayNames.clear();
                     useCaseDisplayNames.putAll(normalizedToDisplay);
-
-                    if (!useCases.isEmpty()) {
-                        useCaseListView.getSelectionModel().selectFirst();
-                        String selected = useCaseListView.getSelectionModel().getSelectedItem();
-                        state.setSelectedUseCase(selected);
-                        selectedUseCaseLabel.setText(selected);
-                        String selectedKey = normalizeUseCaseName(selected);
-                        String desc = useCaseDescriptions.getOrDefault(selectedKey, "");
-                        selectedUseCaseLabel.setTooltip(desc.isBlank() ? null : new Tooltip(desc));
-                        contextUseCaseLabel.setText(selected);
+                    String selected = state.getSelectedUseCase();
+                    if (selected == null || selected.isBlank() || !useCases.contains(selected)) {
+                        selected = useCases.isEmpty() ? null : useCases.get(0);
                     }
+                    state.setSelectedUseCase(selected);
+                    applySelectedUseCaseUi(selected);
                 });
             })
             .exceptionally(ex -> {
                 ex.printStackTrace();
                 return null;
             });
+    }
+
+    private void applySelectedUseCaseUi(String selectedUseCase) {
+        if (selectedUseCaseLabel != null) {
+            selectedUseCaseLabel.setText((selectedUseCase == null || selectedUseCase.isBlank()) ? "-" : selectedUseCase);
+            String selectedKey = normalizeUseCaseName(selectedUseCase);
+            String desc = useCaseDescriptions.getOrDefault(selectedKey, "").trim();
+            selectedUseCaseLabel.setTooltip(desc.isEmpty() ? null : new Tooltip(desc));
+        }
+
+        if (contextUseCaseLabel != null) {
+            contextUseCaseLabel.setText((selectedUseCase == null || selectedUseCase.isBlank()) ? "-" : selectedUseCase);
+        }
+
+        if (useCaseListView != null && selectedUseCase != null && !selectedUseCase.isBlank()) {
+            String current = useCaseListView.getSelectionModel().getSelectedItem();
+            if (!selectedUseCase.equals(current)) {
+                useCaseListView.getSelectionModel().select(selectedUseCase);
+            }
+        }
+
+        updateRuleBuilderUseCaseDisplay(selectedUseCase);
+        refreshRuleSummary();
+        renderMappingsForUseCase(selectedUseCase);
+    }
+
+    private static <T> ChangeListener<T> onChanged(BiConsumer<T, T> handler) {
+        return (observable, oldValue, newValue) -> {
+            if (observable == null || Objects.equals(oldValue, newValue)) {
+                return;
+            }
+            handler.accept(oldValue, newValue);
+        };
+    }
+
+    private static <T> ChangeListener<T> onNewValueChanged(Consumer<T> handler) {
+        return onChanged((oldValue, newValue) -> handler.accept(newValue));
     }
 
     private void loadMappings() {

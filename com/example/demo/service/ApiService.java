@@ -87,7 +87,7 @@ public class ApiService {
             return CompletableFuture.completedFuture(false);
         }
 
-        RuleRoute route = resolveRuleRoute(ruleConfig.getType());
+        RuleRoute route = new RuleRoute(EP_SET_RULES, "rules"); // Default route
         Map<String, Object> payload = new HashMap<>();
         payload.put(route.getPayloadKey(), List.of(ruleConfig));
         return post(route.getEndpoint(), payload);

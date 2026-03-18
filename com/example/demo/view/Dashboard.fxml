@@ -120,7 +120,8 @@
                                     <Label text="Rule Builder" styleClass="drawer-title" />
                                     <HBox spacing="10.0" alignment="CENTER_LEFT">
                                         <Label minWidth="100.0" text="Sensor Type" styleClass="topbar-label" />
-                                        <ComboBox fx:id="ruleSensorTypeComboBox" prefWidth="260.0" promptText="Select sensor type" />
+                                        <Label fx:id="ruleSensorTypeLabel" text="-" styleClass="topbar-value" />
+                                        <Label fx:id="ruleSensorTypeDescriptionLabel" text="-" styleClass="topbar-muted-value" />
                                     </HBox>
                                     <HBox spacing="10.0" alignment="CENTER_LEFT">
                                         <Label minWidth="100.0" text="Min Value" styleClass="topbar-label" />
@@ -135,14 +136,24 @@
                                         <TextField fx:id="ruleMaxPulsesField" prefWidth="120.0" promptText="e.g. 4" />
                                     </HBox>
                                     <HBox spacing="10.0" alignment="CENTER_LEFT">
-                                        <Label minWidth="100.0" text="Intensity" styleClass="topbar-label" />
-                                        <TextField fx:id="ruleIntensityField" prefWidth="120.0" promptText="e.g. 3" />
-                                        <Label minWidth="100.0" text="Duration (ms)" styleClass="topbar-label" />
-                                        <TextField fx:id="ruleDurationField" prefWidth="120.0" promptText="e.g. 120" />
+                                        <Label minWidth="100.0" text="Min Intensity" styleClass="topbar-label" />
+                                        <TextField fx:id="ruleMinIntensityField" prefWidth="120.0" promptText="e.g. 2" />
+                                        <Label minWidth="100.0" text="Max Intensity" styleClass="topbar-label" />
+                                        <TextField fx:id="ruleMaxIntensityField" prefWidth="120.0" promptText="e.g. 5" />
                                     </HBox>
                                     <HBox spacing="10.0" alignment="CENTER_LEFT">
-                                        <Label minWidth="100.0" text="Interval (ms)" styleClass="topbar-label" />
-                                        <TextField fx:id="ruleIntervalField" prefWidth="120.0" promptText="e.g. 80" />
+                                        <Label minWidth="100.0" text="Min Duration (ms)" styleClass="topbar-label" />
+                                        <TextField fx:id="ruleMinDurationField" prefWidth="120.0" promptText="e.g. 80" />
+                                        <Label minWidth="100.0" text="Max Duration (ms)" styleClass="topbar-label" />
+                                        <TextField fx:id="ruleMaxDurationField" prefWidth="120.0" promptText="e.g. 120" />
+                                    </HBox>
+                                    <HBox spacing="10.0" alignment="CENTER_LEFT">
+                                        <Label minWidth="100.0" text="Min Interval (ms)" styleClass="topbar-label" />
+                                        <TextField fx:id="ruleMinIntervalField" prefWidth="120.0" promptText="e.g. 60" />
+                                        <Label minWidth="100.0" text="Max Interval (ms)" styleClass="topbar-label" />
+                                        <TextField fx:id="ruleMaxIntervalField" prefWidth="120.0" promptText="e.g. 100" />
+                                    </HBox>
+                                    <HBox>
                                         <Button fx:id="saveRuleButton" text="Save Rule" styleClass="primary-button" onAction="#saveRuleBuilderConfig" />
                                     </HBox>
                                 </VBox>
