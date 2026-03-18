@@ -26,6 +26,7 @@ import javafx.scene.transform.Rotate;
 import javafx.util.Duration;
 import org.springframework.stereotype.Component;
 
+@Deprecated
 @Component
 public class SunPositionController {
    @FXML

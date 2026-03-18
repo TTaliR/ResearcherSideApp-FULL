@@ -1,6 +1,7 @@
 package com.example.demo.controller;
 
 import com.example.demo.controller.state.DashboardState;
+import com.example.demo.model.SensorRuleConfig;
 import com.example.demo.model.User;
 import com.example.demo.service.ApiService;
 import com.example.demo.service.ExportService;
@@ -22,6 +23,7 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextFormatter;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.AnchorPane;
@@ -48,6 +50,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.UnaryOperator;
 
 public class DashboardController {
     private static final List<String> DEFAULT_USE_CASES = List.of("HeartRate", "MoonAzimuth", "SunAzimuth", "Pollution");
@@ -121,6 +124,24 @@ public class DashboardController {
     private FlowPane mappingsFlowPane;
     @FXML
     private Label mappingsEmptyLabel;
+    @FXML
+    private ComboBox<String> ruleSensorTypeComboBox;
+    @FXML
+    private TextField ruleMinValueField;
+    @FXML
+    private TextField ruleMaxValueField;
+    @FXML
+    private TextField ruleMinPulsesField;
+    @FXML
+    private TextField ruleMaxPulsesField;
+    @FXML
+    private TextField ruleIntensityField;
+    @FXML
+    private TextField ruleDurationField;
+    @FXML
+    private TextField ruleIntervalField;
+    @FXML
+    private Button saveRuleButton;
 
     private final DashboardState state = new DashboardState();
     private final ObservableList<User> users = FXCollections.observableArrayList();
@@ -142,11 +163,167 @@ public class DashboardController {
         setupTabs();
         setupChat();
         setupGraph();
+        setupMappingsRuleBuilder();
         setupStateListeners();
 
         loadParticipants();
         loadUseCases();
         loadMappings();
+    }
+
+    private void setupMappingsRuleBuilder() {
+        if (ruleSensorTypeComboBox == null) {
+            return;
+        }
+
+        enforceIntegerInput(ruleMinValueField);
+        enforceIntegerInput(ruleMaxValueField);
+        enforceIntegerInput(ruleMinPulsesField);
+        enforceIntegerInput(ruleMaxPulsesField);
+        enforceIntegerInput(ruleIntensityField);
+        enforceIntegerInput(ruleDurationField);
+        enforceIntegerInput(ruleIntervalField);
+
+        populateRuleBuilderSensorTypes();
+    }
+
+    private void populateRuleBuilderSensorTypes() {
+        ApiService.getInstance().getSensorTypes()
+            .thenAccept(sensorMap -> {
+                List<String> sensorNames = new ArrayList<>(sensorMap.keySet());
+                sensorNames.sort(String::compareToIgnoreCase);
+
+                if (sensorNames.isEmpty()) {
+                    sensorNames.addAll(DEFAULT_USE_CASES);
+                }
+
+                Platform.runLater(() -> {
+                    ruleSensorTypeComboBox.getItems().setAll(sensorNames);
+                    if (ruleSensorTypeComboBox.getSelectionModel().isEmpty()) {
+                        ruleSensorTypeComboBox.getSelectionModel().selectFirst();
+                    }
+                });
+            })
+            .exceptionally(ex -> {
+                Platform.runLater(() -> {
+                    ruleSensorTypeComboBox.getItems().setAll(DEFAULT_USE_CASES);
+                    if (ruleSensorTypeComboBox.getSelectionModel().isEmpty()) {
+                        ruleSensorTypeComboBox.getSelectionModel().selectFirst();
+                    }
+                });
+                return null;
+            });
+    }
+
+    private void enforceIntegerInput(TextField textField) {
+        if (textField == null) {
+            return;
+        }
+        UnaryOperator<TextFormatter.Change> rangeFilter = change -> {
+            String newText = change.getControlNewText();
+            return newText.matches("\\d*") ? change : null;
+        };
+        textField.setTextFormatter(new TextFormatter<>(rangeFilter));
+    }
+
+    @FXML
+    private void saveRuleBuilderConfig() {
+        try {
+            SensorRuleConfig ruleConfig = buildRuleConfigFromForm();
+
+            ApiService.getInstance().saveSensorRuleConfig(ruleConfig)
+                .thenAccept(success -> Platform.runLater(() -> {
+                    if (!success) {
+                        showErrorAlert("Save Failed", "Could not save the rule. Please try again.");
+                        return;
+                    }
+
+                    clearRuleBuilderForm();
+                    loadMappings();
+                    String savedUseCase = toUseCaseLabel(normalizeUseCaseName(ruleConfig.getType()));
+                    showInfoAlert("Save Successful", "Saved mapping for " + savedUseCase + ".");
+                }))
+                .exceptionally(ex -> {
+                    showErrorAlert("Save Failed", "Could not save rule: " + ex.getMessage());
+                    return null;
+                });
+        } catch (IllegalArgumentException ex) {
+            showErrorAlert("Validation Error", ex.getMessage());
+        }
+    }
+
+    private SensorRuleConfig buildRuleConfigFromForm() {
+        String sensorType = ruleSensorTypeComboBox == null ? null : ruleSensorTypeComboBox.getValue();
+        if (sensorType == null || sensorType.isBlank()) {
+            throw new IllegalArgumentException("Please select a sensor type.");
+        }
+
+        int minValue = parseRequiredInt(ruleMinValueField, "Min Value");
+        int maxValue = parseRequiredInt(ruleMaxValueField, "Max Value");
+        if (minValue > maxValue) {
+            throw new IllegalArgumentException("Min Value cannot be greater than Max Value.");
+        }
+
+        int minPulses = parseRequiredInt(ruleMinPulsesField, "Min Pulses");
+        int maxPulses = parseRequiredInt(ruleMaxPulsesField, "Max Pulses");
+        if (minPulses > maxPulses) {
+            throw new IllegalArgumentException("Min Pulses cannot be greater than Max Pulses.");
+        }
+
+        int intensity = parseRequiredInt(ruleIntensityField, "Intensity");
+        int duration = parseRequiredInt(ruleDurationField, "Duration");
+        int interval = parseRequiredInt(ruleIntervalField, "Interval");
+
+        SensorRuleConfig rule = new SensorRuleConfig();
+        rule.setType(sensorType.trim());
+        rule.setMinvalue(minValue);
+        rule.setMaxvalue(maxValue);
+        rule.setMinpulses(minPulses);
+        rule.setMaxpulses(maxPulses);
+        rule.setMinintensity(intensity);
+        rule.setMaxintensity(intensity);
+        rule.setMinduration(duration);
+        rule.setMaxduration(duration);
+        rule.setMininterval(interval);
+        rule.setMaxinterval(interval);
+        rule.setActive(true);
+        return rule;
+    }
+
+    private int parseRequiredInt(TextField field, String fieldName) {
+        if (field == null || field.getText() == null || field.getText().trim().isEmpty()) {
+            throw new IllegalArgumentException(fieldName + " is required.");
+        }
+
+        try {
+            return Integer.parseInt(field.getText().trim());
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException(fieldName + " must be a valid integer.");
+        }
+    }
+
+    private void clearRuleBuilderForm() {
+        if (ruleMinValueField != null) {
+            ruleMinValueField.clear();
+        }
+        if (ruleMaxValueField != null) {
+            ruleMaxValueField.clear();
+        }
+        if (ruleMinPulsesField != null) {
+            ruleMinPulsesField.clear();
+        }
+        if (ruleMaxPulsesField != null) {
+            ruleMaxPulsesField.clear();
+        }
+        if (ruleIntensityField != null) {
+            ruleIntensityField.clear();
+        }
+        if (ruleDurationField != null) {
+            ruleDurationField.clear();
+        }
+        if (ruleIntervalField != null) {
+            ruleIntervalField.clear();
+        }
     }
 
     private void setupSidebar() {
@@ -505,10 +682,13 @@ public class DashboardController {
             return;
         }
 
-        String useCaseKey = inferUseCaseFromConfigKey(configKey);
-        String useCaseLabel = toUseCaseLabel(useCaseKey);
-
         for (JsonNode node : arrayNode) {
+            String rawType = node.path("type").asText("").trim();
+            String useCaseKey = rawType.isEmpty()
+                ? inferUseCaseFromConfigKey(configKey)
+                : normalizeUseCaseName(rawType);
+            String useCaseLabel = rawType.isEmpty() ? toUseCaseLabel(useCaseKey) : rawType;
+
             RuleCardData rule = new RuleCardData();
             rule.useCaseKey = useCaseKey;
             rule.useCaseLabel = useCaseLabel;

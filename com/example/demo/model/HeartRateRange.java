@@ -2,6 +2,7 @@ package com.example.demo.model;
 
 import java.util.List;
 
+@Deprecated(since = "milestone-1", forRemoval = false)
 public class HeartRateRange {
    private List<HeartRateRange.HeartRateThresholdMapping> thresholds;
 
@@ -13,6 +14,7 @@ public class HeartRateRange {
       this.thresholds = thresholds;
    }
 
+   @Deprecated(since = "milestone-1", forRemoval = false)
    public static class HeartRateThresholdMapping {
       private int id;
       private int min;

@@ -31,6 +31,7 @@ import javafx.scene.shape.Circle;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 
+@Deprecated
 public class SunPositionTracker {
    private Stage stage;
    private int selectedUserID;

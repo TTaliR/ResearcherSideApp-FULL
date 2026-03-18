@@ -2,6 +2,7 @@ package com.example.demo.model;
 
 import java.util.List;
 
+@Deprecated(since = "milestone-1", forRemoval = false)
 public class SunMoonThreshold {
    private List<AzimuthRange> sunAzimuthRanges;
    private List<AzimuthRange> moonAzimuthRanges;

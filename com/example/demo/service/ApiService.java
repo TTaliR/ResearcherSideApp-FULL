@@ -1,5 +1,6 @@
 package com.example.demo.service;
 
+import com.example.demo.model.SensorRuleConfig;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -11,6 +12,7 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -35,6 +37,7 @@ public class ApiService {
     public static final String EP_SET_SUN = "/set-sun-azimuth-threshold";
     public static final String EP_SET_MOON = "/set-moon-azimuth-threshold";
     public static final String EP_SET_HEART = "/set-heart-rate-threshold";
+    public static final String EP_SET_RULES = "/set-rules";
     public static final String EP_CHAT_CONFIG = "/chat-config";
     public static final String EP_CHECK_CONNECTION = "/check-connection";
 
@@ -49,6 +52,83 @@ public class ApiService {
 
     public static ApiService getInstance() { return INSTANCE; }
     public ObjectMapper getMapper() { return mapper; }
+
+    public static final class RuleRoute {
+        private final String endpoint;
+        private final String payloadKey;
+
+        public RuleRoute(String endpoint, String payloadKey) {
+            this.endpoint = endpoint;
+            this.payloadKey = payloadKey;
+        }
+
+        public String getEndpoint() {
+            return endpoint;
+        }
+
+        public String getPayloadKey() {
+            return payloadKey;
+        }
+    }
+
+    public RuleRoute resolveRuleRoute(String ruleType) {
+        String normalized = normalizeRuleType(ruleType);
+        if ("sunazimuth".equals(normalized)) {
+            return new RuleRoute(EP_SET_SUN, "sunAzimuthRanges");
+        }
+        if ("moonazimuth".equals(normalized)) {
+            return new RuleRoute(EP_SET_MOON, "moonAzimuthRanges");
+        }
+        return new RuleRoute(EP_SET_HEART, "heartRateMappings");
+    }
+
+    public CompletableFuture<Boolean> saveSensorRuleConfig(SensorRuleConfig ruleConfig) {
+        if (ruleConfig == null) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        RuleRoute route = resolveRuleRoute(ruleConfig.getType());
+        Map<String, Object> payload = new HashMap<>();
+        payload.put(route.getPayloadKey(), List.of(ruleConfig));
+        return post(route.getEndpoint(), payload);
+    }
+
+    public CompletableFuture<Boolean> saveSensorRuleConfigs(List<SensorRuleConfig> rules) {
+        if (rules == null || rules.isEmpty()) {
+            return CompletableFuture.completedFuture(true);
+        }
+
+        boolean allSuccessful = true;
+        for (SensorRuleConfig rule : rules) {
+            try {
+                if (!saveSensorRuleConfig(rule).get()) {
+                    allSuccessful = false;
+                }
+            } catch (Exception e) {
+                System.err.println("Failed to save rule config: " + e.getMessage());
+                allSuccessful = false;
+            }
+        }
+        return CompletableFuture.completedFuture(allSuccessful);
+    }
+
+    private String normalizeRuleType(String ruleType) {
+        if (ruleType == null) {
+            return "";
+        }
+
+        String normalized = ruleType.replaceAll("[^A-Za-z0-9]", "").toLowerCase();
+        if (normalized.contains("sun") && normalized.contains("azimuth")) {
+            return "sunazimuth";
+        }
+        if (normalized.contains("moon") && normalized.contains("azimuth")) {
+            return "moonazimuth";
+        }
+        if (normalized.contains("heartrate")) {
+            return "heartrate";
+        }
+        return normalized;
+    }
 
     // --- GET Request ---
     /**

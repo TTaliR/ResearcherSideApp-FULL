@@ -1,11 +1,10 @@
 package com.example.demo.controller;
 
-import com.example.demo.model.AzimuthRange;
-import com.example.demo.model.HeartRateRange;
-import com.example.demo.model.SunMoonThreshold;
+import com.example.demo.model.SensorRuleConfig;
 import com.example.demo.service.ApiService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import javafx.application.Platform;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
@@ -33,6 +32,9 @@ import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
 
 public class ResearcherController {
+   private static final String DEFAULT_HEART_RATE_TYPE = "HeartRate";
+   private static final String DEFAULT_SUN_AZIMUTH_TYPE = "SunAzimuth";
+   private static final String DEFAULT_MOON_AZIMUTH_TYPE = "MoonAzimuth";
    @FXML
    private RadioButton heartRateRadio;
    @FXML
@@ -41,6 +43,22 @@ public class ResearcherController {
    private RadioButton moonPositionRadio;
    @FXML
    private ComboBox<String> monitoringComboBox;
+   @FXML
+   private ComboBox<String> ruleSensorTypeComboBox;
+   @FXML
+   private TextField ruleMinValueField;
+   @FXML
+   private TextField ruleMaxValueField;
+   @FXML
+   private TextField ruleMinPulsesField;
+   @FXML
+   private TextField ruleMaxPulsesField;
+   @FXML
+   private TextField ruleIntensityField;
+   @FXML
+   private TextField ruleDurationField;
+   @FXML
+   private TextField ruleIntervalField;
    @FXML
    private CheckBox sunPositionToggle;
    @FXML
@@ -82,17 +100,165 @@ public class ResearcherController {
    @FXML
    private Button saveHeartRateMappingsButton;
    String jsonInputString;
-   private final List<HeartRateRange.HeartRateThresholdMapping> heartRateMappings = new ArrayList<>();
-   private final List<HeartRateRange.HeartRateThresholdMapping> heartRateMappingsTest = new ArrayList<>();
+   private final List<SensorRuleConfig> heartRateMappingsTest = new ArrayList<>();
    @FXML
    private VBox savedMappingsBox;
-   private final List<AzimuthRange> sunRangeInputs = new ArrayList<>();
-   private final List<AzimuthRange> sunRangeInputsTest = new ArrayList<>();
-   private final List<AzimuthRange> moonRangeInputsTest = new ArrayList<>();
+   private final List<SensorRuleConfig> sunRangeInputsTest = new ArrayList<>();
+   private final List<SensorRuleConfig> moonRangeInputsTest = new ArrayList<>();
+   private final List<String> availableUseCases = new ArrayList<>();
    private boolean fetchConfigurationClicked = false;
 
    public void initialize() {
       this.populateMonitorTypes();
+      this.populateRuleBuilderSensorTypes();
+      this.initializeRuleBuilderFieldFilters();
+   }
+
+   private void initializeRuleBuilderFieldFilters() {
+      if (this.ruleMinValueField != null) {
+         this.enforceIntegerInput(this.ruleMinValueField);
+      }
+      if (this.ruleMaxValueField != null) {
+         this.enforceIntegerInput(this.ruleMaxValueField);
+      }
+      if (this.ruleMinPulsesField != null) {
+         this.enforceIntegerInput(this.ruleMinPulsesField);
+      }
+      if (this.ruleMaxPulsesField != null) {
+         this.enforceIntegerInput(this.ruleMaxPulsesField);
+      }
+      if (this.ruleIntensityField != null) {
+         this.enforceIntegerInput(this.ruleIntensityField);
+      }
+      if (this.ruleDurationField != null) {
+         this.enforceIntegerInput(this.ruleDurationField);
+      }
+      if (this.ruleIntervalField != null) {
+         this.enforceIntegerInput(this.ruleIntervalField);
+      }
+   }
+
+   private void populateRuleBuilderSensorTypes() {
+      ApiService.getInstance().getSensorTypes()
+         .thenAccept(sensorMap -> {
+            List<String> sensorTypes = new ArrayList<>(sensorMap.keySet());
+            sensorTypes.sort(String::compareToIgnoreCase);
+            if (sensorTypes.isEmpty()) {
+               sensorTypes.add(DEFAULT_HEART_RATE_TYPE);
+               sensorTypes.add(DEFAULT_SUN_AZIMUTH_TYPE);
+               sensorTypes.add(DEFAULT_MOON_AZIMUTH_TYPE);
+            }
+
+            Platform.runLater(() -> {
+               if (this.ruleSensorTypeComboBox != null) {
+                  this.ruleSensorTypeComboBox.getItems().setAll(sensorTypes);
+                  if (this.ruleSensorTypeComboBox.getSelectionModel().isEmpty()) {
+                     this.ruleSensorTypeComboBox.getSelectionModel().selectFirst();
+                  }
+               }
+            });
+         })
+         .exceptionally(ex -> {
+            Platform.runLater(() -> {
+               if (this.ruleSensorTypeComboBox != null) {
+                  this.ruleSensorTypeComboBox.getItems().setAll(DEFAULT_HEART_RATE_TYPE, DEFAULT_SUN_AZIMUTH_TYPE, DEFAULT_MOON_AZIMUTH_TYPE);
+                  if (this.ruleSensorTypeComboBox.getSelectionModel().isEmpty()) {
+                     this.ruleSensorTypeComboBox.getSelectionModel().selectFirst();
+                  }
+               }
+            });
+            return null;
+         });
+   }
+
+   @FXML
+   public void saveRuleBuilderConfig(ActionEvent event) {
+      try {
+         SensorRuleConfig ruleConfig = this.buildRuleConfigFromForm();
+         if (this.persistRuleConfig(ruleConfig)) {
+            this.showAlert("Success", "Rule was saved successfully.");
+            this.clearRuleBuilderForm();
+         } else {
+            this.showAlert("Error", "Failed to save rule.");
+         }
+      } catch (IllegalArgumentException ex) {
+         this.showAlert("Validation Error", ex.getMessage());
+      } catch (Exception ex) {
+         ex.printStackTrace();
+         this.showAlert("Error", "Unexpected error while saving rule: " + ex.getMessage());
+      }
+   }
+
+   private SensorRuleConfig buildRuleConfigFromForm() {
+      if (this.ruleSensorTypeComboBox == null || this.ruleSensorTypeComboBox.getValue() == null || this.ruleSensorTypeComboBox.getValue().trim().isEmpty()) {
+         throw new IllegalArgumentException("Please select a sensor type.");
+      }
+
+      int minValue = this.parseRequiredInt(this.ruleMinValueField, "Min Value");
+      int maxValue = this.parseRequiredInt(this.ruleMaxValueField, "Max Value");
+      if (minValue > maxValue) {
+         throw new IllegalArgumentException("Min Value cannot be greater than Max Value.");
+      }
+
+      int minPulses = this.parseRequiredInt(this.ruleMinPulsesField, "Min Pulses");
+      int maxPulses = this.parseRequiredInt(this.ruleMaxPulsesField, "Max Pulses");
+      if (minPulses > maxPulses) {
+         throw new IllegalArgumentException("Min Pulses cannot be greater than Max Pulses.");
+      }
+
+      int intensity = this.parseRequiredInt(this.ruleIntensityField, "Intensity");
+      int duration = this.parseRequiredInt(this.ruleDurationField, "Duration");
+      int interval = this.parseRequiredInt(this.ruleIntervalField, "Interval");
+
+      SensorRuleConfig ruleConfig = new SensorRuleConfig();
+      ruleConfig.setType(this.ruleSensorTypeComboBox.getValue().trim());
+      ruleConfig.setMinvalue(minValue);
+      ruleConfig.setMaxvalue(maxValue);
+      ruleConfig.setMinpulses(minPulses);
+      ruleConfig.setMaxpulses(maxPulses);
+      ruleConfig.setMinintensity(intensity);
+      ruleConfig.setMaxintensity(intensity);
+      ruleConfig.setMinduration(duration);
+      ruleConfig.setMaxduration(duration);
+      ruleConfig.setMininterval(interval);
+      ruleConfig.setMaxinterval(interval);
+      ruleConfig.setActive(true);
+      return ruleConfig;
+   }
+
+   private int parseRequiredInt(TextField field, String label) {
+      if (field == null || field.getText() == null || field.getText().trim().isEmpty()) {
+         throw new IllegalArgumentException(label + " is required.");
+      }
+      try {
+         return Integer.parseInt(field.getText().trim());
+      } catch (NumberFormatException ex) {
+         throw new IllegalArgumentException(label + " must be an integer.");
+      }
+   }
+
+   private void clearRuleBuilderForm() {
+      if (this.ruleMinValueField != null) {
+         this.ruleMinValueField.clear();
+      }
+      if (this.ruleMaxValueField != null) {
+         this.ruleMaxValueField.clear();
+      }
+      if (this.ruleMinPulsesField != null) {
+         this.ruleMinPulsesField.clear();
+      }
+      if (this.ruleMaxPulsesField != null) {
+         this.ruleMaxPulsesField.clear();
+      }
+      if (this.ruleIntensityField != null) {
+         this.ruleIntensityField.clear();
+      }
+      if (this.ruleDurationField != null) {
+         this.ruleDurationField.clear();
+      }
+      if (this.ruleIntervalField != null) {
+         this.ruleIntervalField.clear();
+      }
    }
 
    @FXML
@@ -107,57 +273,93 @@ public class ResearcherController {
       }
    }
 
-   private boolean sendSunRangeMappings() {
-      if (!this.handleSaveSunData()) {
+   private boolean saveRuleSection(VBox rulesBox, List<SensorRuleConfig> ruleBuffer, String fallbackType, String sectionLabel) {
+      if (!this.collectRulesFromSection(rulesBox, ruleBuffer, fallbackType)) {
          return false;
-      } else {
-         SunMoonThreshold sunThreshold = new SunMoonThreshold();
-         sunThreshold.setSunAzimuthRanges(new ArrayList<>(this.sunRangeInputsTest));
-
-         for (HeartRateRange.HeartRateThresholdMapping p : this.heartRateMappingsTest) {
-            System.out.println(p + " FROM SEND SUN RANGE MAPPING 1");
-         }
-
-         this.postJson(sunThreshold, ApiService.getInstance().getBaseUrl()+ApiService.EP_SET_SUN, "Sun Azimuth Ranges sent successfully!");
-
-         for (HeartRateRange.HeartRateThresholdMapping p : this.heartRateMappingsTest) {
-            System.out.println(p + " FROM SEND SUN RANGE MAPPING 2");
-         }
-
-         this.removeInvisibleNodes(this.sunAzimuthRangesBox);
-         return true;
       }
+
+      for (SensorRuleConfig ruleConfig : ruleBuffer) {
+         if (!this.persistRuleConfig(ruleConfig)) {
+            this.showAlert("Error", "Failed to save " + sectionLabel + " rules.");
+            return false;
+         }
+      }
+
+      this.removeInvisibleNodes(rulesBox);
+      return true;
    }
 
-   private boolean sendMoonRangeMappings() {
-      if (!this.handleSaveMoonData()) {
-         return false;
-      } else {
-         SunMoonThreshold moonThreshold = new SunMoonThreshold();
-         moonThreshold.setMoonAzimuthRanges(new ArrayList<>(this.moonRangeInputsTest));
-         this.postJson(moonThreshold, ApiService.getInstance().getBaseUrl()+ApiService.EP_SET_MOON, "Moon Azimuth Ranges sent successfully!");
-
-         for (HeartRateRange.HeartRateThresholdMapping p : this.heartRateMappingsTest) {
-            System.out.println(p + " FROM SEND SUN RANGE MAPPING 2");
+   private boolean collectRulesFromSection(VBox rulesBox, List<SensorRuleConfig> ruleBuffer, String fallbackType) {
+      for (int i = 0; i < ruleBuffer.size() && i < rulesBox.getChildren().size(); i++) {
+         Node node = rulesBox.getChildren().get(i);
+         if (node instanceof HBox) {
+            SensorRuleConfig existingRule = ruleBuffer.get(i);
+            existingRule.setActive(node.isVisible());
          }
-
-         this.removeInvisibleNodes(this.moonAzimuthRangesBox);
-         return true;
       }
+
+      for (int ix = ruleBuffer.size(); ix < rulesBox.getChildren().size(); ix++) {
+         Node node = rulesBox.getChildren().get(ix);
+         if (node instanceof HBox inputRow) {
+            try {
+               SensorRuleConfig createdRule = this.parseRuleFromInput(inputRow, fallbackType);
+               ruleBuffer.add(createdRule);
+            } catch (IllegalArgumentException ex) {
+               this.showAlert("Validation Error", ex.getMessage());
+               return false;
+            } catch (Exception ex) {
+               this.showAlert("Unexpected Error", "An unknown error occurred while saving the input.");
+               ex.printStackTrace();
+               return false;
+            }
+         }
+      }
+
+      return true;
    }
 
-   private boolean sendHeartRateMappings() {
-      for (HeartRateRange.HeartRateThresholdMapping p : this.heartRateMappingsTest) {
-         System.out.println(p + " FROM SEND HEART RATE MAPPINGS");
+   private SensorRuleConfig parseRuleFromInput(HBox inputRow, String fallbackType) {
+      TextField primaryRangeField = (TextField) inputRow.getChildren().get(0);
+      TextField pulsesField = (TextField) inputRow.getChildren().get(1);
+      TextField intensityField = (TextField) inputRow.getChildren().get(2);
+      TextField durationField = (TextField) inputRow.getChildren().get(3);
+      TextField intervalField = (TextField) inputRow.getChildren().get(4);
+
+      if (primaryRangeField.getText().isEmpty()
+         || pulsesField.getText().isEmpty()
+         || intensityField.getText().isEmpty()
+         || durationField.getText().isEmpty()
+         || intervalField.getText().isEmpty()) {
+         throw new IllegalArgumentException("Please fill in all fields before saving.");
       }
 
-      if (this.saveHeartRateMappings()) {
-         HeartRateRange heartThreshold = new HeartRateRange();
-         heartThreshold.setThresholds(new ArrayList<>(this.heartRateMappingsTest));
-         this.postJson(heartThreshold, ApiService.getInstance().getBaseUrl()+ApiService.EP_SET_HEART, "Heart Rate mappings sent successfully!");
-         this.removeInvisibleNodes(this.heartRateMappingsBox);
-         return true;
-      } else {
+      int[] valueRange = this.parseRange(primaryRangeField.getText(), Integer.MAX_VALUE);
+      int[] pulsesRange = this.parseRange(pulsesField.getText(), Integer.MAX_VALUE);
+      int[] intensityRange = this.parseRange(intensityField.getText(), 255);
+      int[] durationRange = this.parseRange(durationField.getText(), Integer.MAX_VALUE);
+      int[] intervalRange = this.parseRange(intervalField.getText(), Integer.MAX_VALUE);
+
+      SensorRuleConfig ruleConfig = new SensorRuleConfig();
+      ruleConfig.setType(this.resolveRuleType(fallbackType));
+      ruleConfig.setMinvalue(valueRange[0]);
+      ruleConfig.setMaxvalue(valueRange[1]);
+      ruleConfig.setMinpulses(pulsesRange[0]);
+      ruleConfig.setMaxpulses(pulsesRange[1]);
+      ruleConfig.setMinintensity(intensityRange[0]);
+      ruleConfig.setMaxintensity(intensityRange[1]);
+      ruleConfig.setMinduration(durationRange[0]);
+      ruleConfig.setMaxduration(durationRange[1]);
+      ruleConfig.setMininterval(intervalRange[0]);
+      ruleConfig.setMaxinterval(intervalRange[1]);
+      ruleConfig.setActive(inputRow.isVisible());
+      return ruleConfig;
+   }
+
+   private boolean persistRuleConfig(SensorRuleConfig ruleConfig) {
+      try {
+         return ApiService.getInstance().saveSensorRuleConfig(ruleConfig).get();
+      } catch (Exception ex) {
+         ex.printStackTrace();
          return false;
       }
    }
@@ -172,7 +374,7 @@ public class ResearcherController {
          }
       }
 
-      for (HeartRateRange.HeartRateThresholdMapping p : this.heartRateMappingsTest) {
+      for (SensorRuleConfig p : this.heartRateMappingsTest) {
          System.out.println(p + " FROM remove invisible nodes ");
       }
    }
@@ -180,13 +382,13 @@ public class ResearcherController {
    @FXML
    public void saveConfigurationsToBackend(ActionEvent event) {
       try {
-         for (HeartRateRange.HeartRateThresholdMapping p : this.heartRateMappingsTest) {
+         for (SensorRuleConfig p : this.heartRateMappingsTest) {
             System.out.println(p + " FROM SAVE CONFIG");
          }
 
-         Boolean sendSunRangeMappings = this.sendSunRangeMappings();
-         Boolean sendHeartRateMappings = this.sendHeartRateMappings();
-         Boolean sendMoonRangeMappings = this.sendMoonRangeMappings();
+         boolean sendSunRangeMappings = this.saveRuleSection(this.sunAzimuthRangesBox, this.sunRangeInputsTest, DEFAULT_SUN_AZIMUTH_TYPE, "Sun");
+         boolean sendHeartRateMappings = this.saveRuleSection(this.heartRateMappingsBox, this.heartRateMappingsTest, DEFAULT_HEART_RATE_TYPE, "Heart Rate");
+         boolean sendMoonRangeMappings = this.saveRuleSection(this.moonAzimuthRangesBox, this.moonRangeInputsTest, DEFAULT_MOON_AZIMUTH_TYPE, "Moon");
          List<String> successList = new ArrayList<>();
          if (sendSunRangeMappings) {
             successList.add("Sun Rules");
@@ -310,70 +512,6 @@ public class ResearcherController {
       }
    }
 
-   @FXML
-   private boolean handleSaveSunData() {
-      System.out.println("\ud83d\udd01 Updating visibility and saving new Sun Azimuth Ranges...");
-      this.sunRangeInputs.clear();
-
-      for (int i = 0; i < this.sunRangeInputsTest.size(); i++) {
-         Node node = (Node)this.sunAzimuthRangesBox.getChildren().get(i);
-         if (node instanceof HBox) {
-            AzimuthRange range = this.sunRangeInputsTest.get(i);
-            range.setActive(node.isVisible());
-         }
-      }
-
-      for (int ix = this.sunRangeInputsTest.size(); ix < this.sunAzimuthRangesBox.getChildren().size(); ix++) {
-         Node node = (Node)this.sunAzimuthRangesBox.getChildren().get(ix);
-         if (node instanceof HBox rangeInput) {
-            try {
-               TextField azimuthRangeField = (TextField)rangeInput.getChildren().get(0);
-               TextField pulsesField = (TextField)rangeInput.getChildren().get(1);
-               TextField intensityField = (TextField)rangeInput.getChildren().get(2);
-               TextField durationField = (TextField)rangeInput.getChildren().get(3);
-               TextField intervalField = (TextField)rangeInput.getChildren().get(4);
-               if (azimuthRangeField.getText().isEmpty()
-                       || pulsesField.getText().isEmpty()
-                       || intensityField.getText().isEmpty()
-                       || durationField.getText().isEmpty()
-                       || intervalField.getText().isEmpty()) {
-                  this.showAlert("Validation Error", "Please fill in all fields before saving.");
-                  return false;
-               }
-
-               int[] azimuthRange = this.parseRange(azimuthRangeField.getText(), Integer.MAX_VALUE);
-               int[] pulsesRange = this.parseRange(pulsesField.getText(), Integer.MAX_VALUE);
-               int[] intensityRange = this.parseRange(intensityField.getText(), 255);
-               int[] durationRange = this.parseRange(durationField.getText(), Integer.MAX_VALUE);
-               int[] intervalRange = this.parseRange(intervalField.getText(), Integer.MAX_VALUE);
-               AzimuthRange azimuthRangeObj = new AzimuthRange();
-               azimuthRangeObj.setMinAzimuth(azimuthRange[0]);
-               azimuthRangeObj.setMaxAzimuth(azimuthRange[1]);
-               azimuthRangeObj.setMinPulses(pulsesRange[0]);
-               azimuthRangeObj.setMaxPulses(pulsesRange[1]);
-               azimuthRangeObj.setMinIntensity(intensityRange[0]);
-               azimuthRangeObj.setMaxIntensity(intensityRange[1]);
-               azimuthRangeObj.setMinDuration(durationRange[0]);
-               azimuthRangeObj.setMaxDuration(durationRange[1]);
-               azimuthRangeObj.setMinInterval(intervalRange[0]);
-               azimuthRangeObj.setMaxInterval(intervalRange[1]);
-               azimuthRangeObj.setActive(rangeInput.isVisible());
-               this.sunRangeInputs.add(azimuthRangeObj);
-               this.sunRangeInputsTest.add(azimuthRangeObj);
-            } catch (IllegalArgumentException var15) {
-               this.showAlert("Input Validation Error", var15.getMessage());
-               return false;
-            } catch (Exception var16) {
-               this.showAlert("Unexpected Error", "An unknown error occurred while saving the input.");
-               var16.printStackTrace();
-               return false;
-            }
-         }
-      }
-
-      return true;
-   }
-
    private HBox createMoonAzimuthInput(String metricName) {
       HBox rangeInput = new HBox(10.0);
       TextField azimuthRangeField = this.createLabeledField("Azimuth Range", 130.0, "Moon azimuth range, e.g., 0-180 (0° = North, 180° = South)");
@@ -438,68 +576,6 @@ public class ResearcherController {
    }
 
    @FXML
-   private boolean handleSaveMoonData() {
-      System.out.println("\ud83d\udd01 Updating visibility and saving new Moon Azimuth Ranges...");
-
-      for (int i = 0; i < this.moonRangeInputsTest.size(); i++) {
-         Node node = (Node)this.moonAzimuthRangesBox.getChildren().get(i);
-         if (node instanceof HBox) {
-            AzimuthRange range = this.moonRangeInputsTest.get(i);
-            range.setActive(node.isVisible());
-         }
-      }
-
-      for (int ix = this.moonRangeInputsTest.size(); ix < this.moonAzimuthRangesBox.getChildren().size(); ix++) {
-         Node node = (Node)this.moonAzimuthRangesBox.getChildren().get(ix);
-         if (node instanceof HBox rangeInput) {
-            try {
-               TextField azimuthRangeField = (TextField)rangeInput.getChildren().get(0);
-               TextField pulsesField = (TextField)rangeInput.getChildren().get(1);
-               TextField intensityField = (TextField)rangeInput.getChildren().get(2);
-               TextField durationField = (TextField)rangeInput.getChildren().get(3);
-               TextField intervalField = (TextField)rangeInput.getChildren().get(4);
-               if (azimuthRangeField.getText().isEmpty()
-                       || pulsesField.getText().isEmpty()
-                       || intensityField.getText().isEmpty()
-                       || durationField.getText().isEmpty()
-                       || intervalField.getText().isEmpty()) {
-                  this.showAlert("Validation Error", "Please fill in all fields before saving.");
-                  return false;
-               }
-
-               int[] azimuthRange = this.parseRange(azimuthRangeField.getText(), Integer.MAX_VALUE);
-               int[] pulsesRange = this.parseRange(pulsesField.getText(), Integer.MAX_VALUE);
-               int[] intensityRange = this.parseRange(intensityField.getText(), 255);
-               int[] durationRange = this.parseRange(durationField.getText(), Integer.MAX_VALUE);
-               int[] intervalRange = this.parseRange(intervalField.getText(), Integer.MAX_VALUE);
-               AzimuthRange model = new AzimuthRange();
-               model.setMinAzimuth(azimuthRange[0]);
-               model.setMaxAzimuth(azimuthRange[1]);
-               model.setMinPulses(pulsesRange[0]);
-               model.setMaxPulses(pulsesRange[1]);
-               model.setMinIntensity(intensityRange[0]);
-               model.setMaxIntensity(intensityRange[1]);
-               model.setMinDuration(durationRange[0]);
-               model.setMaxDuration(durationRange[1]);
-               model.setMinInterval(intervalRange[0]);
-               model.setMaxInterval(intervalRange[1]);
-               model.setActive(rangeInput.isVisible());
-               this.moonRangeInputsTest.add(model);
-            } catch (IllegalArgumentException var15) {
-               this.showAlert("Input Validation Error", var15.getMessage());
-               return false;
-            } catch (Exception var16) {
-               this.showAlert("Unexpected Error", "An unknown error occurred while saving the input.");
-               var16.printStackTrace();
-               return false;
-            }
-         }
-      }
-
-      return true;
-   }
-
-   @FXML
    private void addHeartRateMappingInput() {
       if (!this.fetchConfigurationClicked) {
          this.showAlert("Action Blocked", "Please click 'Fetch Current' before adding new mappings.");
@@ -555,72 +631,6 @@ public class ResearcherController {
       }
    }
 
-   @FXML
-   private Boolean saveHeartRateMappings() {
-      System.out.println("\ud83d\udd01 Updating visibility and saving new Heart Rate Mappings...");
-      this.heartRateMappings.clear();
-
-      for (int i = 0; i < this.heartRateMappingsTest.size(); i++) {
-         Node node = (Node)this.heartRateMappingsBox.getChildren().get(i);
-         if (node instanceof HBox) {
-            HeartRateRange.HeartRateThresholdMapping existing = this.heartRateMappingsTest.get(i);
-            existing.setActive(node.isVisible());
-         }
-      }
-
-      for (int ix = this.heartRateMappingsTest.size(); ix < this.heartRateMappingsBox.getChildren().size(); ix++) {
-         Node node = (Node)this.heartRateMappingsBox.getChildren().get(ix);
-         if (node instanceof HBox input) {
-            TextField heartRateField = (TextField)input.getChildren().get(0);
-            TextField pulsesField = (TextField)input.getChildren().get(1);
-            TextField intensityField = (TextField)input.getChildren().get(2);
-            TextField durationField = (TextField)input.getChildren().get(3);
-            TextField intervalField = (TextField)input.getChildren().get(4);
-            if (heartRateField.getText().isEmpty()
-                    || pulsesField.getText().isEmpty()
-                    || intensityField.getText().isEmpty()
-                    || durationField.getText().isEmpty()
-                    || intervalField.getText().isEmpty()) {
-               this.showAlert("Validation Error", "Please fill in all fields before saving.");
-               return false;
-            }
-
-            try {
-               int[] hrRange = this.parseRange(heartRateField.getText(), Integer.MAX_VALUE);
-               int[] pulsesRange = this.parseRange(pulsesField.getText(), Integer.MAX_VALUE);
-               int[] intensityRange = this.parseRange(intensityField.getText(), 255);
-               int[] durationRange = this.parseRange(durationField.getText(), Integer.MAX_VALUE);
-               int[] intervalRange = this.parseRange(intervalField.getText(), Integer.MAX_VALUE);
-               HeartRateRange.HeartRateThresholdMapping mapping = new HeartRateRange.HeartRateThresholdMapping(
-                       hrRange[0],
-                       hrRange[1],
-                       intensityRange[0],
-                       intensityRange[1],
-                       pulsesRange[0],
-                       pulsesRange[1],
-                       durationRange[0],
-                       durationRange[1],
-                       intervalRange[0],
-                       intervalRange[1]
-               );
-               mapping.setActive(input.isVisible());
-               System.out.println(mapping);
-               this.heartRateMappings.add(mapping);
-               this.heartRateMappingsTest.add(mapping);
-            } catch (IllegalArgumentException var15) {
-               this.showAlert("Range Format Error", var15.getMessage());
-               return false;
-            } catch (Exception var16) {
-               var16.printStackTrace();
-               this.showAlert("Unexpected Error", "An error occurred while saving: " + var16.getMessage());
-               return false;
-            }
-         }
-      }
-
-      return true;
-   }
-
    public void fetchCurrentConfigurationsWithoutMessage() {
       try {
          JsonNode rootNode = this.getJson(ApiService.getInstance().getBaseUrl()+ApiService.EP_CURRENT_CONFIGURATION);
@@ -644,7 +654,7 @@ public class ResearcherController {
          this.parseMoonAzimuthRanges(rootNode.path("moonAzimuthRanges"));
          this.parseHeartRateMappings(rootNode.path("heartRateMappings"));
 
-         for (HeartRateRange.HeartRateThresholdMapping p : this.heartRateMappingsTest) {
+         for (SensorRuleConfig p : this.heartRateMappingsTest) {
             System.out.println(p + " HERE v2");
          }
 
@@ -658,22 +668,26 @@ public class ResearcherController {
    }
 
    private void parseSunAzimuthRanges(JsonNode sunAzimuthRanges) {
+      if (this.sunAzimuthRangesBox == null) {
+         return;
+      }
       this.sunRangeInputsTest.clear();
       this.sunAzimuthRangesBox.getChildren().clear();
       if (sunAzimuthRanges != null && sunAzimuthRanges.isArray()) {
          for (JsonNode range : sunAzimuthRanges) {
-            AzimuthRange model = new AzimuthRange();
+            SensorRuleConfig model = new SensorRuleConfig();
             model.setId(range.path("id").asInt());
-            model.setMinAzimuth(range.path("minvalue").asInt());
-            model.setMaxAzimuth(range.path("maxvalue").asInt());
-            model.setMinPulses(range.path("minpulses").asInt());
-            model.setMaxPulses(range.path("maxpulses").asInt());
-            model.setMinIntensity(range.path("minintensity").asInt());
-            model.setMaxIntensity(range.path("maxintensity").asInt());
-            model.setMinDuration(range.path("minduration").asInt());
-            model.setMaxDuration(range.path("maxduration").asInt());
-            model.setMinInterval(range.path("mininterval").asInt());
-            model.setMaxInterval(range.path("maxinterval").asInt());
+            model.setType(range.path("type").asText(this.resolveRuleType(DEFAULT_SUN_AZIMUTH_TYPE)));
+            model.setMinvalue(range.path("minvalue").asInt());
+            model.setMaxvalue(range.path("maxvalue").asInt());
+            model.setMinpulses(range.path("minpulses").asInt());
+            model.setMaxpulses(range.path("maxpulses").asInt());
+            model.setMinintensity(range.path("minintensity").asInt());
+            model.setMaxintensity(range.path("maxintensity").asInt());
+            model.setMinduration(range.path("minduration").asInt());
+            model.setMaxduration(range.path("maxduration").asInt());
+            model.setMininterval(range.path("mininterval").asInt());
+            model.setMaxinterval(range.path("maxinterval").asInt());
             model.setActive(true);
             this.sunRangeInputsTest.add(model);
             HBox row = new HBox(10.0);
@@ -684,21 +698,21 @@ public class ResearcherController {
             String durationTooltip = "Duration range in ms, e.g., 100-200.";
             String intervalTooltip = "Interval range in ms, e.g., 50-150.";
             row.getChildren()
-                    .addAll(new Node[]{this.bindRangeField(model.getMinAzimuth(), model.getMaxAzimuth(), 130, Integer.MAX_VALUE, azimuthTooltip, (min, max) -> {
-                       model.setMinAzimuth(min);
-                       model.setMaxAzimuth(max);
-                    }), this.bindRangeField(model.getMinPulses(), model.getMaxPulses(), 80, Integer.MAX_VALUE, pulsesTooltip, (min, max) -> {
-                       model.setMinPulses(min);
-                       model.setMaxPulses(max);
-                    }), this.bindRangeField(model.getMinIntensity(), model.getMaxIntensity(), 80, 255, intensityTooltip, (min, max) -> {
-                       model.setMinIntensity(min);
-                       model.setMaxIntensity(max);
-                    }), this.bindRangeField(model.getMinDuration(), model.getMaxDuration(), 100, Integer.MAX_VALUE, durationTooltip, (min, max) -> {
-                       model.setMinDuration(min);
-                       model.setMaxDuration(max);
-                    }), this.bindRangeField(model.getMinInterval(), model.getMaxInterval(), 100, Integer.MAX_VALUE, intervalTooltip, (min, max) -> {
-                       model.setMinInterval(min);
-                       model.setMaxInterval(max);
+                    .addAll(new Node[]{this.bindRangeField(model.getMinvalue(), model.getMaxvalue(), 130, Integer.MAX_VALUE, azimuthTooltip, (min, max) -> {
+                       model.setMinvalue(min);
+                       model.setMaxvalue(max);
+                    }), this.bindRangeField(model.getMinpulses(), model.getMaxpulses(), 80, Integer.MAX_VALUE, pulsesTooltip, (min, max) -> {
+                       model.setMinpulses(min);
+                       model.setMaxpulses(max);
+                    }), this.bindRangeField(model.getMinintensity(), model.getMaxintensity(), 80, 255, intensityTooltip, (min, max) -> {
+                       model.setMinintensity(min);
+                       model.setMaxintensity(max);
+                    }), this.bindRangeField(model.getMinduration(), model.getMaxduration(), 100, Integer.MAX_VALUE, durationTooltip, (min, max) -> {
+                       model.setMinduration(min);
+                       model.setMaxduration(max);
+                    }), this.bindRangeField(model.getMininterval(), model.getMaxinterval(), 100, Integer.MAX_VALUE, intervalTooltip, (min, max) -> {
+                       model.setMininterval(min);
+                       model.setMaxinterval(max);
                     }), this.createDeleteButton(row, () -> model.setActive(false))});
             this.sunAzimuthRangesBox.getChildren().add(row);
          }
@@ -706,22 +720,26 @@ public class ResearcherController {
    }
 
    private void parseMoonAzimuthRanges(JsonNode moonAzimuthRanges) {
+      if (this.moonAzimuthRangesBox == null) {
+         return;
+      }
       this.moonRangeInputsTest.clear();
       this.moonAzimuthRangesBox.getChildren().clear();
       if (moonAzimuthRanges != null && moonAzimuthRanges.isArray()) {
          for (JsonNode range : moonAzimuthRanges) {
-            AzimuthRange model = new AzimuthRange();
+            SensorRuleConfig model = new SensorRuleConfig();
             model.setId(range.path("id").asInt());
-            model.setMinAzimuth(range.path("minvalue").asInt());
-            model.setMaxAzimuth(range.path("maxvalue").asInt());
-            model.setMinPulses(range.path("minpulses").asInt());
-            model.setMaxPulses(range.path("maxpulses").asInt());
-            model.setMinIntensity(range.path("minintensity").asInt());
-            model.setMaxIntensity(range.path("maxintensity").asInt());
-            model.setMinDuration(range.path("minduration").asInt());
-            model.setMaxDuration(range.path("maxduration").asInt());
-            model.setMinInterval(range.path("mininterval").asInt());
-            model.setMaxInterval(range.path("maxinterval").asInt());
+            model.setType(range.path("type").asText(this.resolveRuleType(DEFAULT_MOON_AZIMUTH_TYPE)));
+            model.setMinvalue(range.path("minvalue").asInt());
+            model.setMaxvalue(range.path("maxvalue").asInt());
+            model.setMinpulses(range.path("minpulses").asInt());
+            model.setMaxpulses(range.path("maxpulses").asInt());
+            model.setMinintensity(range.path("minintensity").asInt());
+            model.setMaxintensity(range.path("maxintensity").asInt());
+            model.setMinduration(range.path("minduration").asInt());
+            model.setMaxduration(range.path("maxduration").asInt());
+            model.setMininterval(range.path("mininterval").asInt());
+            model.setMaxinterval(range.path("maxinterval").asInt());
             model.setActive(true);
             this.moonRangeInputsTest.add(model);
             HBox row = new HBox(10.0);
@@ -732,21 +750,21 @@ public class ResearcherController {
             String durationTooltip = "Duration range in ms, e.g., 100-200.";
             String intervalTooltip = "Interval range in ms, e.g., 50-150.";
             row.getChildren()
-                    .addAll(new Node[]{this.bindRangeField(model.getMinAzimuth(), model.getMaxAzimuth(), 130, Integer.MAX_VALUE, azimuthTooltip, (min, max) -> {
-                       model.setMinAzimuth(min);
-                       model.setMaxAzimuth(max);
-                    }), this.bindRangeField(model.getMinPulses(), model.getMaxPulses(), 80, Integer.MAX_VALUE, pulsesTooltip, (min, max) -> {
-                       model.setMinPulses(min);
-                       model.setMaxPulses(max);
-                    }), this.bindRangeField(model.getMinIntensity(), model.getMaxIntensity(), 80, Integer.MAX_VALUE, intensityTooltip, (min, max) -> {
-                       model.setMinIntensity(min);
-                       model.setMaxIntensity(max);
-                    }), this.bindRangeField(model.getMinDuration(), model.getMaxDuration(), 100, Integer.MAX_VALUE, durationTooltip, (min, max) -> {
-                       model.setMinDuration(min);
-                       model.setMaxDuration(max);
-                    }), this.bindRangeField(model.getMinInterval(), model.getMaxInterval(), 100, Integer.MAX_VALUE, intervalTooltip, (min, max) -> {
-                       model.setMinInterval(min);
-                       model.setMaxInterval(max);
+                    .addAll(new Node[]{this.bindRangeField(model.getMinvalue(), model.getMaxvalue(), 130, Integer.MAX_VALUE, azimuthTooltip, (min, max) -> {
+                       model.setMinvalue(min);
+                       model.setMaxvalue(max);
+                    }), this.bindRangeField(model.getMinpulses(), model.getMaxpulses(), 80, Integer.MAX_VALUE, pulsesTooltip, (min, max) -> {
+                       model.setMinpulses(min);
+                       model.setMaxpulses(max);
+                    }), this.bindRangeField(model.getMinintensity(), model.getMaxintensity(), 80, Integer.MAX_VALUE, intensityTooltip, (min, max) -> {
+                       model.setMinintensity(min);
+                       model.setMaxintensity(max);
+                    }), this.bindRangeField(model.getMinduration(), model.getMaxduration(), 100, Integer.MAX_VALUE, durationTooltip, (min, max) -> {
+                       model.setMinduration(min);
+                       model.setMaxduration(max);
+                    }), this.bindRangeField(model.getMininterval(), model.getMaxinterval(), 100, Integer.MAX_VALUE, intervalTooltip, (min, max) -> {
+                       model.setMininterval(min);
+                       model.setMaxinterval(max);
                     }), this.createDeleteButton(row, () -> model.setActive(false))});
             this.moonAzimuthRangesBox.getChildren().add(row);
          }
@@ -754,22 +772,26 @@ public class ResearcherController {
    }
 
    private void parseHeartRateMappings(JsonNode heartRateMappingsNode) {
+      if (this.heartRateMappingsBox == null) {
+         return;
+      }
       this.heartRateMappingsTest.clear();
       this.heartRateMappingsBox.getChildren().clear();
       if (heartRateMappingsNode != null && heartRateMappingsNode.isArray()) {
          for (JsonNode mapping : heartRateMappingsNode) {
-            HeartRateRange.HeartRateThresholdMapping model = new HeartRateRange.HeartRateThresholdMapping();
+            SensorRuleConfig model = new SensorRuleConfig();
             model.setId(mapping.path("id").asInt());
-            model.setMin(mapping.path("minvalue").asInt());
-            model.setMax(mapping.path("maxvalue").asInt());
-            model.setMinPulses(mapping.path("minpulses").asInt());
-            model.setMaxPulses(mapping.path("maxpulses").asInt());
-            model.setMinIntensity(mapping.path("minintensity").asInt());
-            model.setMaxIntensity(mapping.path("maxintensity").asInt());
-            model.setMinDuration(mapping.path("minduration").asInt());
-            model.setMaxDuration(mapping.path("maxduration").asInt());
-            model.setMinInterval(mapping.path("mininterval").asInt());
-            model.setMaxInterval(mapping.path("maxinterval").asInt());
+            model.setType(mapping.path("type").asText(this.resolveRuleType(DEFAULT_HEART_RATE_TYPE)));
+            model.setMinvalue(mapping.path("minvalue").asInt());
+            model.setMaxvalue(mapping.path("maxvalue").asInt());
+            model.setMinpulses(mapping.path("minpulses").asInt());
+            model.setMaxpulses(mapping.path("maxpulses").asInt());
+            model.setMinintensity(mapping.path("minintensity").asInt());
+            model.setMaxintensity(mapping.path("maxintensity").asInt());
+            model.setMinduration(mapping.path("minduration").asInt());
+            model.setMaxduration(mapping.path("maxduration").asInt());
+            model.setMininterval(mapping.path("mininterval").asInt());
+            model.setMaxinterval(mapping.path("maxinterval").asInt());
             model.setActive(true);
             this.heartRateMappingsTest.add(model);
             HBox row = new HBox(10.0);
@@ -779,21 +801,21 @@ public class ResearcherController {
             String intensityTooltip = "Intensity range, e.g., 2-4.";
             String durationTooltip = "Duration range in ms, e.g., 100-200.";
             String intervalTooltip = "Interval range in ms, e.g., 50-150.";
-            row.getChildren().addAll(new Node[]{this.bindRangeField(model.getMin(), model.getMax(), 130, Integer.MAX_VALUE, heartTooltip, (min, max) -> {
-               model.setMin(min);
-               model.setMax(max);
-            }), this.bindRangeField(model.getMinPulses(), model.getMaxPulses(), 80, Integer.MAX_VALUE, pulsesTooltip, (min, max) -> {
-               model.setMinPulses(min);
-               model.setMaxPulses(max);
-            }), this.bindRangeField(model.getMinIntensity(), model.getMaxIntensity(), 80, 255, intensityTooltip, (min, max) -> {
-               model.setMinIntensity(min);
-               model.setMaxIntensity(max);
-            }), this.bindRangeField(model.getMinDuration(), model.getMaxDuration(), 100, Integer.MAX_VALUE, durationTooltip, (min, max) -> {
-               model.setMinDuration(min);
-               model.setMaxDuration(max);
-            }), this.bindRangeField(model.getMinInterval(), model.getMaxInterval(), 100, Integer.MAX_VALUE, intervalTooltip, (min, max) -> {
-               model.setMinInterval(min);
-               model.setMaxInterval(max);
+            row.getChildren().addAll(new Node[]{this.bindRangeField(model.getMinvalue(), model.getMaxvalue(), 130, Integer.MAX_VALUE, heartTooltip, (min, max) -> {
+               model.setMinvalue(min);
+               model.setMaxvalue(max);
+            }), this.bindRangeField(model.getMinpulses(), model.getMaxpulses(), 80, Integer.MAX_VALUE, pulsesTooltip, (min, max) -> {
+               model.setMinpulses(min);
+               model.setMaxpulses(max);
+            }), this.bindRangeField(model.getMinintensity(), model.getMaxintensity(), 80, 255, intensityTooltip, (min, max) -> {
+               model.setMinintensity(min);
+               model.setMaxintensity(max);
+            }), this.bindRangeField(model.getMinduration(), model.getMaxduration(), 100, Integer.MAX_VALUE, durationTooltip, (min, max) -> {
+               model.setMinduration(min);
+               model.setMaxduration(max);
+            }), this.bindRangeField(model.getMininterval(), model.getMaxinterval(), 100, Integer.MAX_VALUE, intervalTooltip, (min, max) -> {
+               model.setMininterval(min);
+               model.setMaxinterval(max);
             }), this.createDeleteButton(row, () -> model.setActive(false))});
             this.heartRateMappingsBox.getChildren().add(row);
          }
@@ -926,7 +948,74 @@ public class ResearcherController {
    }
 
    private void populateMonitorTypes() {
-      this.monitoringComboBox.getItems().addAll(new String[]{"HeartRate", "SunAzimuth", "MoonAzimuth"});
+      ApiService.getInstance().get(ApiService.EP_GET_USECASES, null)
+         .thenAccept(response -> {
+            JsonNode useCasesArray = ApiService.getInstance().extractArray(response);
+            List<String> loadedUseCases = new ArrayList<>();
+
+            if (useCasesArray != null && useCasesArray.isArray()) {
+               for (JsonNode useCaseNode : useCasesArray) {
+                  String rawName = useCaseNode.path("name").asText("").trim();
+                  if (!rawName.isEmpty()) {
+                     loadedUseCases.add(rawName);
+                  }
+               }
+            }
+
+            if (loadedUseCases.isEmpty()) {
+               loadedUseCases.add(DEFAULT_HEART_RATE_TYPE);
+               loadedUseCases.add(DEFAULT_SUN_AZIMUTH_TYPE);
+               loadedUseCases.add(DEFAULT_MOON_AZIMUTH_TYPE);
+            }
+
+            Platform.runLater(() -> {
+               this.monitoringComboBox.getItems().setAll(loadedUseCases);
+               this.availableUseCases.clear();
+               this.availableUseCases.addAll(loadedUseCases);
+               if (!this.monitoringComboBox.getItems().isEmpty() && this.monitoringComboBox.getSelectionModel().isEmpty()) {
+                  this.monitoringComboBox.getSelectionModel().selectFirst();
+               }
+            });
+         })
+         .exceptionally(ex -> {
+            Platform.runLater(() -> {
+               this.monitoringComboBox.getItems().setAll(DEFAULT_HEART_RATE_TYPE, DEFAULT_SUN_AZIMUTH_TYPE, DEFAULT_MOON_AZIMUTH_TYPE);
+               this.availableUseCases.clear();
+               this.availableUseCases.addAll(this.monitoringComboBox.getItems());
+               if (this.monitoringComboBox.getSelectionModel().isEmpty()) {
+                  this.monitoringComboBox.getSelectionModel().selectFirst();
+               }
+            });
+            return null;
+         });
+   }
+
+   private String resolveRuleType(String fallbackType) {
+      String normalizedFallback = this.normalizeUseCaseName(fallbackType);
+      for (String useCaseName : this.availableUseCases) {
+         if (this.normalizeUseCaseName(useCaseName).equals(normalizedFallback)) {
+            return useCaseName;
+         }
+      }
+      return fallbackType;
+   }
+
+   private String normalizeUseCaseName(String rawUseCase) {
+      if (rawUseCase == null) {
+         return "";
+      }
+
+      String normalized = rawUseCase.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
+      if (normalized.contains("heartrate")) {
+         return DEFAULT_HEART_RATE_TYPE;
+      }
+      if (normalized.contains("sunazimuth") || (normalized.contains("sun") && normalized.contains("azimuth"))) {
+         return DEFAULT_SUN_AZIMUTH_TYPE;
+      }
+      if (normalized.contains("moonazimuth") || (normalized.contains("moon") && normalized.contains("azimuth"))) {
+         return DEFAULT_MOON_AZIMUTH_TYPE;
+      }
+      return normalized;
    }
 
    private void showAlert(String title, String message) {

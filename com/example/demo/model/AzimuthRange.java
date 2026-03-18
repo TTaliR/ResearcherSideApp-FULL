@@ -1,5 +1,6 @@
 package com.example.demo.model;
 
+@Deprecated(since = "milestone-1", forRemoval = false)
 public class AzimuthRange {
    private int id;
    private int minAzimuth;

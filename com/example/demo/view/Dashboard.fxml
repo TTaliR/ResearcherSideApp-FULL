@@ -115,20 +115,53 @@
 
                     <Tab fx:id="mappingsTab" text="Active Mappings">
                         <content>
-                            <StackPane styleClass="tab-content-root">
-                                <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="mappings-scroll">
-                                    <FlowPane fx:id="mappingsFlowPane" hgap="14.0" vgap="14.0" prefWrapLength="920.0">
-                                        <padding>
-                                            <Insets top="12.0" right="12.0" bottom="12.0" left="12.0" />
-                                        </padding>
-                                    </FlowPane>
-                                </ScrollPane>
-                                <Label fx:id="mappingsEmptyLabel" text="No mappings found." styleClass="mappings-empty-label" StackPane.alignment="CENTER">
-                                    <StackPane.margin>
-                                        <Insets top="8.0" />
-                                    </StackPane.margin>
-                                </Label>
-                            </StackPane>
+                            <VBox spacing="12.0" styleClass="tab-content-root">
+                                <VBox spacing="10.0" styleClass="chat-panel">
+                                    <Label text="Rule Builder" styleClass="drawer-title" />
+                                    <HBox spacing="10.0" alignment="CENTER_LEFT">
+                                        <Label minWidth="100.0" text="Sensor Type" styleClass="topbar-label" />
+                                        <ComboBox fx:id="ruleSensorTypeComboBox" prefWidth="260.0" promptText="Select sensor type" />
+                                    </HBox>
+                                    <HBox spacing="10.0" alignment="CENTER_LEFT">
+                                        <Label minWidth="100.0" text="Min Value" styleClass="topbar-label" />
+                                        <TextField fx:id="ruleMinValueField" prefWidth="120.0" promptText="e.g. 60" />
+                                        <Label minWidth="100.0" text="Max Value" styleClass="topbar-label" />
+                                        <TextField fx:id="ruleMaxValueField" prefWidth="120.0" promptText="e.g. 100" />
+                                    </HBox>
+                                    <HBox spacing="10.0" alignment="CENTER_LEFT">
+                                        <Label minWidth="100.0" text="Min Pulses" styleClass="topbar-label" />
+                                        <TextField fx:id="ruleMinPulsesField" prefWidth="120.0" promptText="e.g. 2" />
+                                        <Label minWidth="100.0" text="Max Pulses" styleClass="topbar-label" />
+                                        <TextField fx:id="ruleMaxPulsesField" prefWidth="120.0" promptText="e.g. 4" />
+                                    </HBox>
+                                    <HBox spacing="10.0" alignment="CENTER_LEFT">
+                                        <Label minWidth="100.0" text="Intensity" styleClass="topbar-label" />
+                                        <TextField fx:id="ruleIntensityField" prefWidth="120.0" promptText="e.g. 3" />
+                                        <Label minWidth="100.0" text="Duration (ms)" styleClass="topbar-label" />
+                                        <TextField fx:id="ruleDurationField" prefWidth="120.0" promptText="e.g. 120" />
+                                    </HBox>
+                                    <HBox spacing="10.0" alignment="CENTER_LEFT">
+                                        <Label minWidth="100.0" text="Interval (ms)" styleClass="topbar-label" />
+                                        <TextField fx:id="ruleIntervalField" prefWidth="120.0" promptText="e.g. 80" />
+                                        <Button fx:id="saveRuleButton" text="Save Rule" styleClass="primary-button" onAction="#saveRuleBuilderConfig" />
+                                    </HBox>
+                                </VBox>
+
+                                <StackPane VBox.vgrow="ALWAYS">
+                                    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="mappings-scroll" VBox.vgrow="ALWAYS">
+                                        <FlowPane fx:id="mappingsFlowPane" hgap="14.0" vgap="14.0" prefWrapLength="920.0">
+                                            <padding>
+                                                <Insets top="12.0" right="12.0" bottom="12.0" left="12.0" />
+                                            </padding>
+                                        </FlowPane>
+                                    </ScrollPane>
+                                    <Label fx:id="mappingsEmptyLabel" text="No mappings found." styleClass="mappings-empty-label" StackPane.alignment="CENTER">
+                                        <StackPane.margin>
+                                            <Insets top="8.0" />
+                                        </StackPane.margin>
+                                    </Label>
+                                </StackPane>
+                            </VBox>
                         </content>
                     </Tab>
                 </tabs>
