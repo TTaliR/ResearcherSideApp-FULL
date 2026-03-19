@@ -9,11 +9,21 @@ import javafx.beans.property.StringProperty;
 import java.time.LocalDate;
 
 public class DashboardState {
+    private static final DashboardState INSTANCE = new DashboardState();
+
     private final ObjectProperty<User> selectedParticipant = new SimpleObjectProperty<>();
     private final StringProperty selectedUseCase = new SimpleStringProperty();
+    private final ObjectProperty<Integer> selectedUseCaseId = new SimpleObjectProperty<>(0);
     private final StringProperty selectedTimeRange = new SimpleStringProperty("Last 24 Hours");
     private final ObjectProperty<LocalDate> startDate = new SimpleObjectProperty<>(LocalDate.now().minusDays(7));
     private final ObjectProperty<LocalDate> endDate = new SimpleObjectProperty<>(LocalDate.now());
+
+    private DashboardState() {
+    }
+
+    public static DashboardState getInstance() {
+        return INSTANCE;
+    }
 
     public ObjectProperty<User> selectedParticipantProperty() {
         return selectedParticipant;
@@ -37,6 +47,19 @@ public class DashboardState {
 
     public void setSelectedUseCase(String selectedUseCase) {
         this.selectedUseCase.set(selectedUseCase);
+    }
+
+    public ObjectProperty<Integer> selectedUseCaseIdProperty() {
+        return selectedUseCaseId;
+    }
+
+    public int getSelectedUseCaseId() {
+        Integer value = selectedUseCaseId.get();
+        return value == null ? 0 : value;
+    }
+
+    public void setSelectedUseCaseId(int selectedUseCaseId) {
+        this.selectedUseCaseId.set(selectedUseCaseId);
     }
 
     public StringProperty selectedTimeRangeProperty() {

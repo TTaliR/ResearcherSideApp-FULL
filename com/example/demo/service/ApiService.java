@@ -38,7 +38,7 @@ public class ApiService {
     public static final String EP_SET_MOON = "/set-moon-azimuth-threshold";
     public static final String EP_SET_HEART = "/set-heart-rate-threshold";
     public static final String EP_SET_RULES = "/set-rules";
-    public static final String EP_CHAT_CONFIG = "/chat-config";
+    public static final String EP_CHAT_CONFIG = "/chat";
     public static final String EP_CHECK_CONNECTION = "/check-connection";
 
     private static final ApiService INSTANCE = new ApiService();

@@ -123,7 +123,8 @@ public class DashboardController {
     private Button exportGraphPdfButton;
     @FXML
     private Button refreshGraphButton;
-
+    @FXML
+    private Button refreshedSimplifiedGraphButton;
     @FXML
     private FlowPane mappingsFlowPane;
     @FXML
@@ -154,12 +155,21 @@ public class DashboardController {
     private TextField ruleMaxIntervalField;
     @FXML
     private Button saveRuleButton;
+    @FXML
+    private Button clearRuleButton;
+    @FXML
+    private Button refreshRuleButton;
+    @FXML
+    private Button refreshRuleSummaryButton;
+    @FXML
+    private Label agentTypingLabel;
 
-    private final DashboardState state = new DashboardState();
+    private final DashboardState state = DashboardState.getInstance();
     private final ObservableList<User> users = FXCollections.observableArrayList();
     private final ObservableList<String> useCases = FXCollections.observableArrayList();
     private final Map<String, String> useCaseDescriptions = new HashMap<>();
     private final Map<String, String> useCaseDisplayNames = new HashMap<>();
+    private final Map<String, Integer> useCaseIdsByNormalizedName = new HashMap<>();
     private final List<RuleCardData> allRules = new ArrayList<>();
     private final String chatSessionId = UUID.randomUUID().toString();
 
@@ -254,6 +264,34 @@ public class DashboardController {
         } catch (IllegalArgumentException ex) {
             showErrorAlert("Validation Error", ex.getMessage());
         }
+    }
+
+    @FXML
+    private void clearRuleInputFields() {
+        ruleMinValueField.clear();
+        ruleMaxValueField.clear();
+        ruleMinPulsesField.clear();
+        ruleMaxPulsesField.clear();
+        ruleMinIntensityField.clear();
+        ruleMaxIntensityField.clear();
+        ruleMinDurationField.clear();
+        ruleMaxDurationField.clear();
+        ruleMinIntervalField.clear();
+        ruleMaxIntervalField.clear();
+    }
+
+    @FXML
+    private void refreshMappings() {
+        try {
+            String useCase = state.getSelectedUseCase();
+            if (useCase == null || useCase.isBlank()) {
+                throw new IllegalArgumentException("Please select a use case.");
+            }
+        } catch (IllegalArgumentException ex) {
+            showErrorAlert("Validation Error", ex.getMessage());
+            return;
+        }
+        loadMappings();
     }
 
     private SensorRuleConfig buildRuleConfigFromForm() {
@@ -457,6 +495,11 @@ public class DashboardController {
 
         chatHistoryBox.heightProperty().addListener(onNewValueChanged(newValue -> chatScrollPane.setVvalue(1.0)));
 
+        if (agentTypingLabel != null) {
+            agentTypingLabel.setVisible(false);
+            agentTypingLabel.setManaged(false);
+        }
+
         contextDrawer.setVisible(false);
         contextDrawer.setManaged(false);
         contextDrawerToggleButton.setText("Show Context");
@@ -577,6 +620,7 @@ public class DashboardController {
         graphUpdateDebounce.setOnFinished(ignored -> refreshGraphData());
 
         state.selectedUseCaseProperty().addListener(onChanged((oldValue, newValue) -> {
+            resolveSelectedUseCaseId(newValue);
             applySelectedUseCaseUi(newValue);
             scheduleGraphUpdate();
         }));
@@ -629,15 +673,26 @@ public class DashboardController {
                 JsonNode useCaseArray = ApiService.getInstance().extractArray(response);
                 LinkedHashMap<String, String> normalizedToDisplay = new LinkedHashMap<>();
                 Map<String, String> loadedDescriptions = new HashMap<>();
+                Map<String, Integer> loadedUseCaseIds = new HashMap<>();
 
                 if (useCaseArray != null && useCaseArray.isArray()) {
                     for (JsonNode useCaseNode : useCaseArray) {
                         String rawName = useCaseNode.path("name").asText("").trim();
                         String description = useCaseNode.path("description").asText("").trim();
+                        int useCaseId = useCaseNode.path("usecase_id").asInt(0);
+                        if (useCaseId <= 0) {
+                            useCaseId = useCaseNode.path("usecaseid").asInt(0);
+                        }
+                        if (useCaseId <= 0) {
+                            useCaseId = useCaseNode.path("id").asInt(0);
+                        }
                         if (!rawName.isEmpty()) {
                             String normalizedName = normalizeUseCaseName(rawName);
                             normalizedToDisplay.putIfAbsent(normalizedName, rawName);
                             loadedDescriptions.put(normalizedName, description);
+                            if (useCaseId > 0) {
+                                loadedUseCaseIds.putIfAbsent(normalizedName, useCaseId);
+                            }
                         }
                     }
                 }
@@ -654,6 +709,8 @@ public class DashboardController {
                     useCaseDescriptions.putAll(loadedDescriptions);
                     useCaseDisplayNames.clear();
                     useCaseDisplayNames.putAll(normalizedToDisplay);
+                    useCaseIdsByNormalizedName.clear();
+                    useCaseIdsByNormalizedName.putAll(loadedUseCaseIds);
                     String selected = state.getSelectedUseCase();
                     if (selected == null || selected.isBlank() || !useCases.contains(selected)) {
                         selected = useCases.isEmpty() ? null : useCases.get(0);
@@ -666,6 +723,17 @@ public class DashboardController {
                 ex.printStackTrace();
                 return null;
             });
+    }
+
+    private void resolveSelectedUseCaseId(String selectedUseCase) {
+        if (selectedUseCase == null || selectedUseCase.isBlank()) {
+            state.setSelectedUseCaseId(0);
+            return;
+        }
+
+        String normalized = normalizeUseCaseName(selectedUseCase);
+        Integer knownId = useCaseIdsByNormalizedName.get(normalized);
+        state.setSelectedUseCaseId((knownId != null && knownId > 0) ? knownId : 0);
     }
 
     private void applySelectedUseCaseUi(String selectedUseCase) {
@@ -804,22 +872,41 @@ public class DashboardController {
         addChatMessage(message, true);
         chatInputField.clear();
 
+        // Keys must match webhook body fields used by n8n.
         Map<String, Object> payload = new HashMap<>();
-        payload.put("chatInput", message);
-        payload.put("sessionId", chatSessionId);
+        int useCaseId = state.getSelectedUseCaseId();
+
+        payload.put("message", message);     // Maps to {{ $json.body.message }} in n8n
+        payload.put("session_id", chatSessionId); // Maps to {{ $json.body.session_id }} in n8n
+        payload.put("usecase_id", useCaseId); // Maps to {{ $json.body.usecase_id }} in n8n
+
+        setAgentTyping(true);
 
         ApiService.getInstance().postWithResponse(ApiService.EP_CHAT_CONFIG, payload)
             .thenAccept(response -> Platform.runLater(() -> {
-                if (response != null && response.has("output")) {
-                    addChatMessage(response.get("output").asText(), false);
+                setAgentTyping(false);
+                if (response != null && response.has("reply")) {
+                    addChatMessage(response.get("reply").asText(), false);
                 } else {
-                    addChatMessage("AI response did not include an output field.", false);
+                    addChatMessage("AI response did not include reply field.", false);
                 }
             }))
             .exceptionally(ex -> {
-                Platform.runLater(() -> addChatMessage("Error: " + ex.getMessage(), false));
+                Platform.runLater(() -> {
+                    setAgentTyping(false);
+                    addChatMessage("Error: " + ex.getMessage(), false);
+                });
                 return null;
             });
+    }
+
+    private void setAgentTyping(boolean typing) {
+        if (agentTypingLabel == null) {
+            return;
+        }
+        agentTypingLabel.setText("Agent is typing...");
+        agentTypingLabel.setVisible(typing);
+        agentTypingLabel.setManaged(typing);
     }
 
     private void addChatMessage(String text, boolean userMessage) {
@@ -864,6 +951,7 @@ public class DashboardController {
         }
     }
 
+    @FXML
     private void scheduleGraphUpdate() {
         graphUpdateDebounce.playFromStart();
     }

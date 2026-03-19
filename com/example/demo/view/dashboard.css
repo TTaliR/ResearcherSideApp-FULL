@@ -147,6 +147,14 @@
     -fx-background-radius: 6;
 }
 
+.cancel-button {
+    -fx-background-color: #d20123;
+    -fx-text-fill: #000000;
+    -fx-border-color: #cfd8e4;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+}
+
 .chat-panel {
     -fx-padding: 2;
 }

@@ -75,6 +75,7 @@
                                         <ScrollPane fx:id="chatScrollPane" fitToWidth="true" styleClass="chat-scroll" VBox.vgrow="ALWAYS">
                                             <VBox fx:id="chatHistoryBox" spacing="10.0" styleClass="chat-history" />
                                         </ScrollPane>
+                                        <Label fx:id="agentTypingLabel" text="Agent is typing..." visible="false" managed="false" styleClass="sidebar-muted-text" />
                                         <HBox spacing="10.0">
                                             <TextField fx:id="chatInputField" promptText="Type your instruction or query..." HBox.hgrow="ALWAYS" />
                                             <Button fx:id="chatSendButton" text="Send" styleClass="primary-button" />
@@ -94,6 +95,11 @@
                                         <AnchorPane fx:id="miniGraphAnchor" prefHeight="180.0" />
                                         <Label text="Active Rule Summary" styleClass="drawer-label" />
                                         <VBox fx:id="activeRulesSummaryBox" spacing="6.0" />
+                                        <Separator />
+                                        <HBox spacing="10.0">
+                                            <Button fx:id="refreshedSimplifiedGraphButton" styleClass="secondary-button" text="Refresh Graph" onAction="#scheduleGraphUpdate"/>
+                                            <Button fx:id="refreshRuleSummaryButton" styleClass="secondary-button" text="Refresh Mappings" onAction="#refreshMappings" />
+                                        </HBox>
                                     </VBox>
                                 </right>
                             </BorderPane>
@@ -115,48 +121,55 @@
 
                     <Tab fx:id="mappingsTab" text="Active Mappings">
                         <content>
-                            <VBox spacing="12.0" styleClass="tab-content-root">
-                                <VBox spacing="10.0" styleClass="chat-panel">
-                                    <Label text="Rule Builder" styleClass="drawer-title" />
-                                    <HBox spacing="10.0" alignment="CENTER_LEFT">
-                                        <Label minWidth="100.0" text="Sensor Type" styleClass="topbar-label" />
+                            <VBox spacing="10.0" styleClass="tab-content-root">
+                                <HBox spacing="0">
+                                    <Label text="New Mapping Rule Builder" styleClass="drawer-title" alignment="CENTER_LEFT"/>
+                                </HBox>
+                                <HBox spacing="8.0" styleClass="chat-panel">
+                                    <VBox spacing="10.0" alignment="CENTER_LEFT">
+                                        <Label minWidth="100.0" text="Sensor Type:" styleClass="topbar-label" />
                                         <Label fx:id="ruleSensorTypeLabel" text="-" styleClass="topbar-value" />
                                         <Label fx:id="ruleSensorTypeDescriptionLabel" text="-" styleClass="topbar-muted-value" />
-                                    </HBox>
-                                    <HBox spacing="10.0" alignment="CENTER_LEFT">
+                                    </VBox>
+                                    <VBox spacing="10.0" alignment="CENTER_LEFT">
                                         <Label minWidth="100.0" text="Min Value" styleClass="topbar-label" />
                                         <TextField fx:id="ruleMinValueField" prefWidth="120.0" promptText="e.g. 60" />
                                         <Label minWidth="100.0" text="Max Value" styleClass="topbar-label" />
                                         <TextField fx:id="ruleMaxValueField" prefWidth="120.0" promptText="e.g. 100" />
-                                    </HBox>
-                                    <HBox spacing="10.0" alignment="CENTER_LEFT">
+                                    </VBox>
+                                    <VBox spacing="10.0" alignment="CENTER_LEFT">
                                         <Label minWidth="100.0" text="Min Pulses" styleClass="topbar-label" />
                                         <TextField fx:id="ruleMinPulsesField" prefWidth="120.0" promptText="e.g. 2" />
                                         <Label minWidth="100.0" text="Max Pulses" styleClass="topbar-label" />
                                         <TextField fx:id="ruleMaxPulsesField" prefWidth="120.0" promptText="e.g. 4" />
-                                    </HBox>
-                                    <HBox spacing="10.0" alignment="CENTER_LEFT">
+                                    </VBox>
+                                    <VBox spacing="10.0" alignment="CENTER_LEFT">
                                         <Label minWidth="100.0" text="Min Intensity" styleClass="topbar-label" />
                                         <TextField fx:id="ruleMinIntensityField" prefWidth="120.0" promptText="e.g. 2" />
                                         <Label minWidth="100.0" text="Max Intensity" styleClass="topbar-label" />
                                         <TextField fx:id="ruleMaxIntensityField" prefWidth="120.0" promptText="e.g. 5" />
-                                    </HBox>
-                                    <HBox spacing="10.0" alignment="CENTER_LEFT">
+                                    </VBox>
+                                    <VBox spacing="10.0" alignment="CENTER_LEFT">
                                         <Label minWidth="100.0" text="Min Duration (ms)" styleClass="topbar-label" />
                                         <TextField fx:id="ruleMinDurationField" prefWidth="120.0" promptText="e.g. 80" />
                                         <Label minWidth="100.0" text="Max Duration (ms)" styleClass="topbar-label" />
                                         <TextField fx:id="ruleMaxDurationField" prefWidth="120.0" promptText="e.g. 120" />
-                                    </HBox>
-                                    <HBox spacing="10.0" alignment="CENTER_LEFT">
+                                    </VBox>
+                                    <VBox spacing="10.0" alignment="CENTER_LEFT">
                                         <Label minWidth="100.0" text="Min Interval (ms)" styleClass="topbar-label" />
                                         <TextField fx:id="ruleMinIntervalField" prefWidth="120.0" promptText="e.g. 60" />
                                         <Label minWidth="100.0" text="Max Interval (ms)" styleClass="topbar-label" />
                                         <TextField fx:id="ruleMaxIntervalField" prefWidth="120.0" promptText="e.g. 100" />
-                                    </HBox>
-                                    <HBox>
+                                    </VBox>
+                                    <Separator orientation="VERTICAL" prefHeight="150.0" />
+                                    <VBox spacing="10.0" alignment="CENTER">
                                         <Button fx:id="saveRuleButton" text="Save Rule" styleClass="primary-button" onAction="#saveRuleBuilderConfig" />
-                                    </HBox>
-                                </VBox>
+                                        <Button fx:id="clearRuleButton" text="Clear" styleClass="cancel-button" onAction="#clearRuleInputFields" />
+                                    </VBox>
+                                </HBox>
+                                <HBox>
+                                    <Button fx:id="refreshRuleButton" text="Refresh Mappings" onAction="#refreshMappings" styleClass="secondary-button" />
+                                </HBox>
 
                                 <StackPane VBox.vgrow="ALWAYS">
                                     <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="mappings-scroll" VBox.vgrow="ALWAYS">
