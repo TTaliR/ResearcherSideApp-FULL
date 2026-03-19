@@ -240,3 +240,15 @@
     -fx-text-fill: #1f2f43;
 }
 
+.mapping-delete-button {
+    -fx-background-color: transparent;
+    -fx-padding: 2;
+    -fx-background-radius: 6;
+    -fx-border-color: transparent;
+    -fx-cursor: hand;
+}
+
+.mapping-delete-button:hover {
+    -fx-background-color: #f3f4f6;
+}
+

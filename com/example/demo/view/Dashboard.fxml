@@ -122,15 +122,18 @@
                     <Tab fx:id="mappingsTab" text="Active Mappings">
                         <content>
                             <VBox spacing="10.0" styleClass="tab-content-root">
-                                <HBox spacing="0">
+                                <VBox spacing="0">
                                     <Label text="New Mapping Rule Builder" styleClass="drawer-title" alignment="CENTER_LEFT"/>
-                                </HBox>
+                                </VBox>
                                 <HBox spacing="8.0" styleClass="chat-panel">
-                                    <VBox spacing="10.0" alignment="CENTER_LEFT">
-                                        <Label minWidth="100.0" text="Sensor Type:" styleClass="topbar-label" />
-                                        <Label fx:id="ruleSensorTypeLabel" text="-" styleClass="topbar-value" />
+                                    <VBox spacing="3.0" alignment="CENTER">
+                                        <HBox alignment="CENTER_LEFT">
+                                            <Label minWidth="100.0" text="Sensor Type:" styleClass="topbar-label" />
+                                            <Label fx:id="ruleSensorTypeLabel" text="-" styleClass="topbar-value" />
+                                        </HBox>
                                         <Label fx:id="ruleSensorTypeDescriptionLabel" text="-" styleClass="topbar-muted-value" />
                                     </VBox>
+                                    <Separator orientation="VERTICAL"></Separator>
                                     <VBox spacing="10.0" alignment="CENTER_LEFT">
                                         <Label minWidth="100.0" text="Min Value" styleClass="topbar-label" />
                                         <TextField fx:id="ruleMinValueField" prefWidth="120.0" promptText="e.g. 60" />

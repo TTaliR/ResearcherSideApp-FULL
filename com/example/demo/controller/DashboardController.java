@@ -27,10 +27,13 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
@@ -58,6 +61,7 @@ import java.util.function.UnaryOperator;
 
 public class DashboardController {
     private static final List<String> DEFAULT_USE_CASES = List.of("HeartRate", "MoonAzimuth", "SunAzimuth", "Pollution");
+    private static final String DELETE_ICON_PATH = "/com/example/demo/images/delete.png";
 
     @FXML
     private ToggleButton useCasesNavButton;
@@ -256,6 +260,7 @@ public class DashboardController {
                     loadMappings();
                     String savedUseCase = toUseCaseLabel(normalizeUseCaseName(ruleConfig.getType()));
                     showInfoAlert("Save Successful", "Saved mapping for " + savedUseCase + ".");
+                    refreshMappings();
                 }))
                 .exceptionally(ex -> {
                     showErrorAlert("Save Failed", "Could not save rule: " + ex.getMessage());
@@ -810,6 +815,7 @@ public class DashboardController {
             String useCaseLabel = rawType.isEmpty() ? toUseCaseLabel(useCaseKey) : rawType;
 
             RuleCardData rule = new RuleCardData();
+            rule.configKey = configKey;
             rule.useCaseKey = useCaseKey;
             rule.useCaseLabel = useCaseLabel;
             rule.rangeLabel = readRangeLabel(node, useCaseLabel);
@@ -821,6 +827,9 @@ public class DashboardController {
         }
     }
 
+    /**
+     * Renders filtered use case mappings or empty state
+     */
     private void renderMappingsForUseCase(String useCase) {
         mappingsFlowPane.getChildren().clear();
 
@@ -846,6 +855,7 @@ public class DashboardController {
         mappingsEmptyLabel.setVisible(false);
         mappingsEmptyLabel.setManaged(false);
 
+        // Builds and adds rule detail cards to flow pane
         for (RuleCardData rule : filtered) {
             VBox card = new VBox(8);
             card.getStyleClass().add("mapping-card");
@@ -853,14 +863,59 @@ public class DashboardController {
             Label title = new Label(rule.rangeLabel);
             title.getStyleClass().add("mapping-card-title");
 
+            HBox titleRow = new HBox(8);
+            titleRow.setAlignment(Pos.CENTER_LEFT);
+
+            Region spacer = new Region();
+            HBox.setHgrow(spacer, Priority.ALWAYS);
+
+            Button deleteButton = createDeleteMappingButton(rule);
+            titleRow.getChildren().addAll(title, spacer, deleteButton);
+
             Label pulses = new Label("Pulse count: " + rule.pulseLabel);
             Label intensity = new Label("Intensity: " + rule.intensityLabel);
             Label duration = new Label("Duration: " + rule.durationLabel);
             Label interval = new Label("Interval: " + rule.intervalLabel);
 
-            card.getChildren().addAll(title, pulses, intensity, duration, interval);
+            card.getChildren().addAll(titleRow, pulses, intensity, duration, interval);
             mappingsFlowPane.getChildren().add(card);
         }
+    }
+
+    private Button createDeleteMappingButton(RuleCardData rule) {
+        Button button = new Button();
+        button.getStyleClass().add("mapping-delete-button");
+        button.setTooltip(new Tooltip("Delete mapping (coming soon)"));
+
+        Image icon = null;
+        try {
+            icon = new Image(Objects.requireNonNull(getClass().getResourceAsStream(DELETE_ICON_PATH)));
+        } catch (Exception ignored) {
+            // Fallback text keeps control usable if image is missing from classpath.
+        }
+
+        if (icon != null && !icon.isError()) {
+            ImageView imageView = new ImageView(icon);
+            imageView.setPreserveRatio(true);
+            imageView.setFitWidth(14);
+            imageView.setFitHeight(14);
+            button.setGraphic(imageView);
+        } else {
+            button.setText("X");
+        }
+
+        button.setOnAction(ignored -> onDeleteMappingRequested(rule));
+        return button;
+    }
+
+    private void onDeleteMappingRequested(RuleCardData rule) {
+        // TODO: Call ApiService.EP_DELETE_MAPPING when backend contract is finalized.
+        String label = (rule == null || rule.rangeLabel == null || rule.rangeLabel.isBlank())
+            ? "selected mapping"
+            : rule.rangeLabel;
+        showInfoAlert("Not Implemented", "Delete mapping for " + label + " will be connected in a future update.");
+        int toDelete = allRules.indexOf(rule);
+
     }
 
     private void onSendMessage() {
@@ -890,6 +945,11 @@ public class DashboardController {
                 } else {
                     addChatMessage("AI response did not include reply field.", false);
                 }
+
+                // for future usage?
+//                if(response.has("action") && response.get("action").asText().equals("newMapping")) {
+//                    refreshMappings();
+//                }
             }))
             .exceptionally(ex -> {
                 Platform.runLater(() -> {
@@ -1275,6 +1335,7 @@ public class DashboardController {
     }
 
     private static class RuleCardData {
+        String configKey;
         String useCaseKey;
         String useCaseLabel;
         String rangeLabel;
