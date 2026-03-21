@@ -29,7 +29,7 @@ public class ApiService {
     private static final String BASE_URL = "https://vacantly-holmic-etta.ngrok-free.dev/webhook";  //liran
 
     public static final String EP_GET_USERS = "/get-users";
-    public static final String EP_GET_SENSOR_TYPES = "/get-sensor-types";
+    public static final String EP_GET_SENSOR_TYPES = "/get-usecases";
     public static final String EP_GET_USECASES = "/get-usecases";
     public static final String EP_SENSOR_DATA = "/sensor-data";
     public static final String EP_CURRENT_CONFIGURATION = "/current-configurations";
