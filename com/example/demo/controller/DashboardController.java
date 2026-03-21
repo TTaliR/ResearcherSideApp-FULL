@@ -27,6 +27,7 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
+import javafx.scene.control.ProgressIndicator;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.AnchorPane;
@@ -34,6 +35,7 @@ import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
@@ -62,6 +64,8 @@ import java.util.function.UnaryOperator;
 public class DashboardController {
     private static final List<String> DEFAULT_USE_CASES = List.of("HeartRate", "MoonAzimuth", "SunAzimuth", "Pollution");
     private static final String DELETE_ICON_PATH = "/com/example/demo/images/delete.png";
+    private static final String FEEDBACK_GRAPH_TEMPLATE_PATH = "/com/example/demo/view/templates/feedbackGraph.html";
+    private static final String MINI_GRAPH_TEMPLATE_PATH = "/com/example/demo/view/templates/miniFeedbackGraph.html";
 
     @FXML
     private ToggleButton useCasesNavButton;
@@ -179,6 +183,8 @@ public class DashboardController {
 
     private WebView graphWebView;
     private WebView miniGraphWebView;
+    private StackPane graphLoadingOverlay;
+    private StackPane miniGraphLoadingOverlay;
     private JsonNode latestGraphData;
     private final PauseTransition graphUpdateDebounce = new PauseTransition(Duration.millis(250));
 
@@ -523,6 +529,8 @@ public class DashboardController {
         exportGraphPdfButton.setOnAction(ignored -> exportGraphData("pdf"));
         ensureGraphWebView();
         ensureMiniGraphWebView();
+        setGraphLoadingVisible(false);
+        setMiniGraphLoadingVisible(false);
         renderGraphPlaceholder("Select a use case and participant to render graph data.");
         renderMiniGraphPlaceholder("Graph preview appears here.");
     }
@@ -741,6 +749,9 @@ public class DashboardController {
         state.setSelectedUseCaseId((knownId != null && knownId > 0) ? knownId : 0);
     }
 
+    /**
+     * Updates UI labels, list, and refreshes displays for selected use case
+     */
     private void applySelectedUseCaseUi(String selectedUseCase) {
         if (selectedUseCaseLabel != null) {
             selectedUseCaseLabel.setText((selectedUseCase == null || selectedUseCase.isBlank()) ? "-" : selectedUseCase);
@@ -763,6 +774,8 @@ public class DashboardController {
         updateRuleBuilderUseCaseDisplay(selectedUseCase);
         refreshRuleSummary();
         renderMappingsForUseCase(selectedUseCase);
+        clearChatMessages();
+        addChatMessage("Selected use case: " + selectedUseCase, false);
     }
 
     private static <T> ChangeListener<T> onChanged(BiConsumer<T, T> handler) {
@@ -815,6 +828,7 @@ public class DashboardController {
             String useCaseLabel = rawType.isEmpty() ? toUseCaseLabel(useCaseKey) : rawType;
 
             RuleCardData rule = new RuleCardData();
+            rule.mappingId = readMappingId(node);
             rule.configKey = configKey;
             rule.useCaseKey = useCaseKey;
             rule.useCaseLabel = useCaseLabel;
@@ -885,7 +899,7 @@ public class DashboardController {
     private Button createDeleteMappingButton(RuleCardData rule) {
         Button button = new Button();
         button.getStyleClass().add("mapping-delete-button");
-        button.setTooltip(new Tooltip("Delete mapping (coming soon)"));
+        button.setTooltip(new Tooltip("Delete mapping"));
 
         Image icon = null;
         try {
@@ -909,13 +923,28 @@ public class DashboardController {
     }
 
     private void onDeleteMappingRequested(RuleCardData rule) {
-        // TODO: Call ApiService.EP_DELETE_MAPPING when backend contract is finalized.
+        if (rule == null || rule.mappingId <= 0) {
+            showErrorAlert("Delete Failed", "Could not resolve mapping id for the selected card.");
+            return;
+        }
+
         String label = (rule == null || rule.rangeLabel == null || rule.rangeLabel.isBlank())
             ? "selected mapping"
             : rule.rangeLabel;
-        showInfoAlert("Not Implemented", "Delete mapping for " + label + " will be connected in a future update.");
-        int toDelete = allRules.indexOf(rule);
 
+        ApiService.getInstance().deleteMapping(rule.mappingId)
+            .thenAccept(success -> Platform.runLater(() -> {
+                if (!success) {
+                    showErrorAlert("Delete Failed", "Could not delete mapping for " + label + ".");
+                    return;
+                }
+                showInfoAlert("Mapping Deleted", "Deleted mapping for " + label + ".");
+                loadMappings();
+            }))
+            .exceptionally(ex -> {
+                showErrorAlert("Delete Failed", "Failed to delete mapping: " + ex.getMessage());
+                return null;
+            });
     }
 
     private void onSendMessage() {
@@ -984,6 +1013,10 @@ public class DashboardController {
         chatHistoryBox.getChildren().add(row);
     }
 
+    private void clearChatMessages() {
+        chatHistoryBox.getChildren().clear();
+    }
+
     private void refreshRuleSummary() {
         activeRulesSummaryBox.getChildren().clear();
 
@@ -1021,8 +1054,14 @@ public class DashboardController {
         String useCase = state.getSelectedUseCase();
         String range = state.getSelectedTimeRange();
 
+        setGraphLoadingVisible(true);
+        setMiniGraphLoadingVisible(true);
+
         if (user == null || useCase == null || useCase.isBlank() || range == null) {
             renderGraphPlaceholder("Select a use case and participant to render graph data.");
+            renderMiniGraphPlaceholder("Graph preview appears here.");
+            setGraphLoadingVisible(false);
+            setMiniGraphLoadingVisible(false);
             return;
         }
 
@@ -1032,6 +1071,8 @@ public class DashboardController {
                     Platform.runLater(() -> {
                         renderGraphPlaceholder("Unable to resolve sensor type for use case: " + useCase);
                         renderMiniGraphPlaceholder("No preview data available.");
+                        setGraphLoadingVisible(false);
+                        setMiniGraphLoadingVisible(false);
                     });
                     return;
                 }
@@ -1062,6 +1103,8 @@ public class DashboardController {
                             if (dataArray == null || !dataArray.isArray() || dataArray.isEmpty()) {
                                 renderGraphPlaceholder("No sensor data available for current selection.");
                                 renderMiniGraphPlaceholder("No preview data available.");
+                                setGraphLoadingVisible(false);
+                                setMiniGraphLoadingVisible(false);
                                 return;
                             }
                             renderGraph(dataArray, user.getUserID(), useCase);
@@ -1073,6 +1116,8 @@ public class DashboardController {
                         Platform.runLater(() -> {
                             renderGraphPlaceholder("Failed to load graph data.");
                             renderMiniGraphPlaceholder("No preview data available.");
+                            setGraphLoadingVisible(false);
+                            setMiniGraphLoadingVisible(false);
                         });
                         return null;
                     });
@@ -1082,6 +1127,8 @@ public class DashboardController {
                 Platform.runLater(() -> {
                     renderGraphPlaceholder("Failed to resolve sensor id.");
                     renderMiniGraphPlaceholder("No preview data available.");
+                    setGraphLoadingVisible(false);
+                    setMiniGraphLoadingVisible(false);
                 });
                 return null;
             });
@@ -1090,7 +1137,7 @@ public class DashboardController {
     private void renderGraph(JsonNode dataArray, int userId, String useCase) {
         ensureGraphWebView();
 
-        String template = loadHtmlTemplate();
+        String template = loadHtmlTemplate(FEEDBACK_GRAPH_TEMPLATE_PATH);
         if (template == null) {
             renderGraphPlaceholder("Graph template file is missing.");
             return;
@@ -1105,6 +1152,9 @@ public class DashboardController {
         graphWebView.getEngine().loadContent(html);
     }
 
+    /**
+     * Renders mini-graph from the external HTML template using validated data
+     */
     private void renderMiniGraphFromData(JsonNode dataArray) {
         ensureMiniGraphWebView();
 
@@ -1113,21 +1163,14 @@ public class DashboardController {
             return;
         }
 
+        String template = loadHtmlTemplate(MINI_GRAPH_TEMPLATE_PATH);
+        if (template == null) {
+            renderMiniGraphPlaceholder("Mini graph template file is missing.");
+            return;
+        }
+
         String escapedJson = dataArray.toString().replace("\\", "\\\\").replace("\"", "\\\"");
-        String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'><script src='https://d3js.org/d3.v7.min.js'></script>"
-            + "<style>body{margin:0;background:#fff;}svg{width:100%;height:180px;}text{font-family:sans-serif;font-size:11px;fill:#374151;}</style>"
-            + "</head><body><svg></svg><script>"
-            + "const data=JSON.parse(\"" + escapedJson + "\");"
-            + "if(!data.length){document.body.innerHTML='<div style=\"padding:20px;color:#666\">No data</div>';}" 
-            + "const svg=d3.select('svg');const w=svg.node().clientWidth||340;const h=180;"
-            + "const m={top:10,right:10,bottom:28,left:32};const g=svg.append('g').attr('transform','translate('+m.left+','+m.top+')');"
-            + "const x=d3.scaleLinear().domain([0,data.length-1]).range([0,w-m.left-m.right]);"
-            + "const y=d3.scaleLinear().domain(d3.extent(data,d=>d.value)).nice().range([h-m.top-m.bottom,0]);"
-            + "const line=d3.line().x((d,i)=>x(i)).y(d=>y(d.value));"
-            + "g.append('path').datum(data).attr('fill','none').attr('stroke','#3b82f6').attr('stroke-width',2).attr('d',line);"
-            + "g.append('g').attr('transform','translate(0,'+(h-m.top-m.bottom)+')').call(d3.axisBottom(x).ticks(4));"
-            + "g.append('g').call(d3.axisLeft(y).ticks(4));"
-            + "</script></body></html>";
+        String html = template.replace("const data = DATA_PLACEHOLDER;", "const data = JSON.parse(\"" + escapedJson + "\");");
 
         miniGraphWebView.getEngine().loadContent(html);
     }
@@ -1149,32 +1192,109 @@ public class DashboardController {
 
     private void ensureGraphWebView() {
         if (graphWebView != null) {
+            ensureGraphLoadingOverlay();
             return;
         }
         graphWebView = new WebView();
+        graphWebView.getEngine().getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
+            if (newState == javafx.concurrent.Worker.State.SUCCEEDED || newState == javafx.concurrent.Worker.State.FAILED || newState == javafx.concurrent.Worker.State.CANCELLED) {
+                setGraphLoadingVisible(false);
+            }
+        });
         AnchorPane.setTopAnchor(graphWebView, 0.0);
         AnchorPane.setRightAnchor(graphWebView, 0.0);
         AnchorPane.setBottomAnchor(graphWebView, 0.0);
         AnchorPane.setLeftAnchor(graphWebView, 0.0);
         graphAnchor.getChildren().setAll(graphWebView);
+        ensureGraphLoadingOverlay();
     }
 
     private void ensureMiniGraphWebView() {
         if (miniGraphWebView != null) {
+            ensureMiniGraphLoadingOverlay();
             return;
         }
         miniGraphWebView = new WebView();
+        miniGraphWebView.getEngine().getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
+            if (newState == javafx.concurrent.Worker.State.SUCCEEDED || newState == javafx.concurrent.Worker.State.FAILED || newState == javafx.concurrent.Worker.State.CANCELLED) {
+                setMiniGraphLoadingVisible(false);
+            }
+        });
         miniGraphWebView.setPrefHeight(180);
         AnchorPane.setTopAnchor(miniGraphWebView, 0.0);
         AnchorPane.setRightAnchor(miniGraphWebView, 0.0);
         AnchorPane.setBottomAnchor(miniGraphWebView, 0.0);
         AnchorPane.setLeftAnchor(miniGraphWebView, 0.0);
         miniGraphAnchor.getChildren().setAll(miniGraphWebView);
+        ensureMiniGraphLoadingOverlay();
     }
 
-    private String loadHtmlTemplate() {
+    private void ensureGraphLoadingOverlay() {
+        if (graphLoadingOverlay == null) {
+            graphLoadingOverlay = createLoadingOverlay("Loading graph data...");
+            AnchorPane.setTopAnchor(graphLoadingOverlay, 0.0);
+            AnchorPane.setRightAnchor(graphLoadingOverlay, 0.0);
+            AnchorPane.setBottomAnchor(graphLoadingOverlay, 0.0);
+            AnchorPane.setLeftAnchor(graphLoadingOverlay, 0.0);
+        }
+
+        if (!graphAnchor.getChildren().contains(graphLoadingOverlay)) {
+            graphAnchor.getChildren().add(graphLoadingOverlay);
+        }
+    }
+
+    private void ensureMiniGraphLoadingOverlay() {
+        if (miniGraphLoadingOverlay == null) {
+            miniGraphLoadingOverlay = createLoadingOverlay("Loading preview...");
+            AnchorPane.setTopAnchor(miniGraphLoadingOverlay, 0.0);
+            AnchorPane.setRightAnchor(miniGraphLoadingOverlay, 0.0);
+            AnchorPane.setBottomAnchor(miniGraphLoadingOverlay, 0.0);
+            AnchorPane.setLeftAnchor(miniGraphLoadingOverlay, 0.0);
+        }
+
+        if (!miniGraphAnchor.getChildren().contains(miniGraphLoadingOverlay)) {
+            miniGraphAnchor.getChildren().add(miniGraphLoadingOverlay);
+        }
+    }
+
+    private StackPane createLoadingOverlay(String message) {
+        ProgressIndicator indicator = new ProgressIndicator();
+        indicator.setPrefSize(36, 36);
+
+        Label label = new Label(message);
+        label.setStyle("-fx-text-fill: #374151; -fx-font-size: 12px;");
+
+        VBox content = new VBox(8, indicator, label);
+        content.setAlignment(Pos.CENTER);
+
+        StackPane overlay = new StackPane(content);
+        overlay.setStyle("-fx-background-color: rgba(255,255,255,0.75);");
+        overlay.setVisible(false);
+        overlay.setManaged(false);
+        return overlay;
+    }
+
+    private void setGraphLoadingVisible(boolean visible) {
+        ensureGraphWebView();
+        graphLoadingOverlay.setVisible(visible);
+        graphLoadingOverlay.setManaged(visible);
+        if (visible) {
+            graphLoadingOverlay.toFront();
+        }
+    }
+
+    private void setMiniGraphLoadingVisible(boolean visible) {
+        ensureMiniGraphWebView();
+        miniGraphLoadingOverlay.setVisible(visible);
+        miniGraphLoadingOverlay.setManaged(visible);
+        if (visible) {
+            miniGraphLoadingOverlay.toFront();
+        }
+    }
+
+    private String loadHtmlTemplate(String resourcePath) {
         try {
-            InputStream inputStream = this.getClass().getResourceAsStream("/com/example/demo/feedbackGraph.html");
+            InputStream inputStream = this.getClass().getResourceAsStream(resourcePath);
             if (inputStream == null) {
                 return null;
             }
@@ -1302,6 +1422,22 @@ public class DashboardController {
         return fallback;
     }
 
+    private int readMappingId(JsonNode node) {
+        if (node == null || !node.isObject()) {
+            return 0;
+        }
+        if (node.has("mappingId")) {
+            return node.path("mappingId").asInt(0);
+        }
+        if (node.has("mapping_id")) {
+            return node.path("mapping_id").asInt(0);
+        }
+        if (node.has("id")) {
+            return node.path("id").asInt(0);
+        }
+        return 0;
+    }
+
     private String escapeHtml(String text) {
         if (text == null) {
             return "";
@@ -1335,6 +1471,7 @@ public class DashboardController {
     }
 
     private static class RuleCardData {
+        int mappingId;
         String configKey;
         String useCaseKey;
         String useCaseLabel;
