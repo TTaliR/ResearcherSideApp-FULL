@@ -32,6 +32,7 @@ import javafx.stage.Stage;
 
 import java.awt.*;
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
@@ -42,6 +43,7 @@ import java.util.Objects;
 // - All network calls are async; UI updates must be done on the JavaFX thread via Platform.runLater(...).
 // - This controller also exposes export helpers (PDF, CSV) that rely on ExportService.
 public class visPageController {
+   private static final String FEEDBACK_GRAPH_TEMPLATE_PATH = "/com/example/demo/view/templates/feedbackGraph.html";
    private final ObservableList<User> userData = FXCollections.observableArrayList();
    // Map to store use case descriptions for tooltips (name -> description)
    private final Map<String, String> useCaseDescriptions = new HashMap<>();
@@ -592,17 +594,17 @@ public class visPageController {
       }
    }
 
-   // Helper to load the HTML template from the feedbackGraph.html file
+   // Helper to load the HTML template for the D3 chart
    private String loadHtmlTemplate() {
-      // Reads resource feedbackGraph.html and returns as string.
+      // Reads resource template and returns as string.
       // Keep this method synchronous: it is fast (reads a bundled resource).
       try {
-         InputStream inputStream = this.getClass().getResourceAsStream("/com/example/demo/feedbackGraph.html");
+         InputStream inputStream = this.getClass().getResourceAsStream(FEEDBACK_GRAPH_TEMPLATE_PATH);
          if (inputStream == null) {
-            System.err.println("feedbackGraph.html not found in resources");
+            System.err.println("feedbackGraph template not found in resources");
             return null;
          }
-         BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
+         BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
          StringBuilder htmlContent = new StringBuilder();
          String line;
          while ((line = reader.readLine()) != null) {

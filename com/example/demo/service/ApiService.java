@@ -37,7 +37,7 @@ public class ApiService {
     public static final String EP_SET_MOON = "/set-moon-azimuth-threshold";
     public static final String EP_SET_HEART = "/set-heart-rate-threshold";
     public static final String EP_SET_RULES = "/set-rules";
-    public static final String EP_DELETE_MAPPING = "/delete-mapping"; // Stub for future mapping deletion flow
+    public static final String EP_DELETE_MAPPING = "/deactivate-mapping";
     public static final String EP_CHAT_CONFIG = "/chat";
     public static final String EP_CHECK_CONNECTION = "/check-connection";
 
@@ -110,6 +110,16 @@ public class ApiService {
             }
         }
         return CompletableFuture.completedFuture(allSuccessful);
+    }
+
+    public CompletableFuture<Boolean> deleteMapping(int mappingId) {
+        if (mappingId <= 0) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("mappingId", mappingId);
+        return post(EP_DELETE_MAPPING, payload);
     }
 
     private String normalizeRuleType(String ruleType) {

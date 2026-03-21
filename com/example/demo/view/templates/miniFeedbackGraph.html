@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Mini Sensor Preview</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      background: #ffffff;
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+
+    .empty {
+      color: #6b7280;
+      font-size: 12px;
+      text-align: center;
+      padding-top: 76px;
+    }
+
+    svg {
+      width: 100%;
+      height: 180px;
+    }
+
+    .axis path,
+    .axis line {
+      stroke: #d1d5db;
+      stroke-width: 1;
+    }
+
+    .axis text {
+      fill: #6b7280;
+      font-size: 10px;
+    }
+
+    .x-axis text {
+      text-anchor: end;
+      transform: rotate(-45deg);
+      transform-origin: center;
+    }
+  </style>
+</head>
+<body>
+<svg></svg>
+<script>
+const data = DATA_PLACEHOLDER;
+
+if (!Array.isArray(data) || data.length === 0) {
+  document.body.innerHTML = '<div class="empty">No data</div>';
+} else {
+  const parseTime = d3.utcParse("%Y-%m-%dT%H:%M:%S.%LZ");
+  const multiFormat = (date) => {
+    if (d3.timeSecond(date) < date) return d3.timeFormat(".%L")(date);
+    if (d3.timeMinute(date) < date) return d3.timeFormat(":%S")(date);
+    if (d3.timeHour(date) < date) return d3.timeFormat("%H:%M")(date);
+    if (d3.timeDay(date) < date) return d3.timeFormat("%H:%M")(date);
+    if (d3.timeMonth(date) < date) return d3.timeFormat("%b %d")(date);
+    if (d3.timeYear(date) < date) return d3.timeFormat("%B")(date);
+    return d3.timeFormat("%Y")(date);
+  };
+
+  const normalized = data
+    .map(d => ({
+      parsedTime: parseTime(d.time),
+      value: Number(d.value)
+    }))
+    .filter(d => d.parsedTime && !Number.isNaN(d.value));
+
+  if (normalized.length === 0) {
+    document.body.innerHTML = '<div class="empty">No valid time/value points</div>';
+  } else {
+  const svg = d3.select("svg");
+  const width = svg.node().clientWidth || 320;
+  const height = svg.node().clientHeight || 180;
+  const margin = { top: 12, right: 10, bottom: 44, left: 40 };
+  const innerWidth = width - margin.left - margin.right;
+  const innerHeight = height - margin.top - margin.bottom;
+
+  const g = svg.append("g")
+    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    const x = d3.scaleTime()
+      .domain(d3.extent(normalized, d => d.parsedTime))
+      .range([0, innerWidth]);
+
+    const y = d3.scaleLinear()
+      .domain([
+        (() => {
+          const minVal = d3.min(normalized, d => d.value);
+          return minVal === 0 ? 0 : minVal - 10;
+        })(),
+        d3.max(normalized, d => d.value) + 10
+      ])
+      .nice()
+      .range([innerHeight, 0]);
+
+    const tickCount = Math.max(4, Math.min(10, Math.floor(innerWidth / 120)));
+    const xAxis = d3.axisBottom(x)
+      .ticks(tickCount)
+      .tickFormat(multiFormat);
+
+    const xAxisG = g.append("g")
+      .attr("class", "axis x-axis")
+      .attr("transform", "translate(0," + innerHeight + ")")
+      .call(xAxis);
+
+    xAxisG.selectAll("text")
+      .attr("transform", "rotate(-45)")
+      .style("text-anchor", "end")
+      .attr("dx", "-0.8em")
+      .attr("dy", "0.15em");
+
+    g.append("g")
+      .attr("class", "axis")
+      .call(d3.axisLeft(y).ticks(4));
+
+    const line = d3.line()
+      .x(d => x(d.parsedTime))
+      .y(d => y(d.value))
+      .curve(d3.curveMonotoneX);
+
+    g.append("path")
+      .datum(normalized)
+      .attr("fill", "none")
+      .attr("stroke", "#2563eb")
+      .attr("stroke-width", 2)
+      .attr("d", line);
+  }
+}
+</script>
+</body>
+</html>
+
