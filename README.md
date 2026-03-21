@@ -12,8 +12,7 @@ A JavaFX/Spring Boot desktop application designed for researchers to manage expe
 1. **Java:** Requires JDK 17.
 2. **Properties:** Configure your DB connection in `src/main/resources/application.properties`.
 3. **Build:** Run `./gradlew bootRun` or use the provided IDE run configuration.
-4. **Restore database:** Open PSQL tool workspace and run: 
-<br> \c smartwatchsys_db <br> \i 'C:<YOUR-DIRECTORY-PATH>/<DB-FILE-NAME>.sql'
+
 
 
 ## 🔗 Project Ecosystem
