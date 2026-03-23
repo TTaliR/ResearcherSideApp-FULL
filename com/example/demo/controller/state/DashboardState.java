@@ -13,7 +13,7 @@ public class DashboardState {
 
     private final ObjectProperty<User> selectedParticipant = new SimpleObjectProperty<>();
     private final StringProperty selectedUseCase = new SimpleStringProperty();
-    private final ObjectProperty<Integer> selectedUseCaseId = new SimpleObjectProperty<>(0);
+    private final ObjectProperty<Integer> selectedUseCaseId = new SimpleObjectProperty<>(null);
     private final StringProperty selectedTimeRange = new SimpleStringProperty("Last 24 Hours");
     private final ObjectProperty<LocalDate> startDate = new SimpleObjectProperty<>(LocalDate.now().minusDays(7));
     private final ObjectProperty<LocalDate> endDate = new SimpleObjectProperty<>(LocalDate.now());
@@ -53,12 +53,11 @@ public class DashboardState {
         return selectedUseCaseId;
     }
 
-    public int getSelectedUseCaseId() {
-        Integer value = selectedUseCaseId.get();
-        return value == null ? 0 : value;
+    public Integer getSelectedUseCaseId() {
+        return selectedUseCaseId.get();
     }
 
-    public void setSelectedUseCaseId(int selectedUseCaseId) {
+    public void setSelectedUseCaseId(Integer selectedUseCaseId) {
         this.selectedUseCaseId.set(selectedUseCaseId);
     }
 
@@ -98,4 +97,3 @@ public class DashboardState {
         this.endDate.set(endDate);
     }
 }
-

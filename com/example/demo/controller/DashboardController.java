@@ -740,13 +740,13 @@ public class DashboardController {
 
     private void resolveSelectedUseCaseId(String selectedUseCase) {
         if (selectedUseCase == null || selectedUseCase.isBlank()) {
-            state.setSelectedUseCaseId(0);
+            state.setSelectedUseCaseId(null);
             return;
         }
 
         String normalized = normalizeUseCaseName(selectedUseCase);
         Integer knownId = useCaseIdsByNormalizedName.get(normalized);
-        state.setSelectedUseCaseId((knownId != null && knownId > 0) ? knownId : 0);
+        state.setSelectedUseCaseId((knownId != null && knownId > 0) ? knownId : null);
     }
 
     /**
@@ -958,11 +958,16 @@ public class DashboardController {
 
         // Keys must match webhook body fields used by n8n.
         Map<String, Object> payload = new HashMap<>();
-        int useCaseId = state.getSelectedUseCaseId();
+        Integer useCaseId = state.getSelectedUseCaseId();
 
-        payload.put("message", message);     // Maps to {{ $json.body.message }} in n8n
-        payload.put("session_id", chatSessionId); // Maps to {{ $json.body.session_id }} in n8n
-        payload.put("usecase_id", useCaseId); // Maps to {{ $json.body.usecase_id }} in n8n
+        payload.put("message", message);
+        payload.put("session_id", chatSessionId);
+
+        if (useCaseId != null && useCaseId > 0) {
+            payload.put("usecase_id", useCaseId);
+        } else {
+            payload.put("usecase_id", null);
+        }
 
         setAgentTyping(true);
 
