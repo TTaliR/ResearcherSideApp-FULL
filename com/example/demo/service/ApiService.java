@@ -374,7 +374,7 @@ public class ApiService {
                 if (response.isArray()) {
                     for (JsonNode node : response) {
                         String sensorName = node.get("name").asText();
-                        int sensorId = node.get("sensorid").asInt();
+                        int sensorId = node.get("usecase_id").asInt();
                         sensorMap.put(sensorName, sensorId);
                     }
                 }
