@@ -170,8 +170,11 @@
                                         <Button fx:id="clearRuleButton" text="Clear" styleClass="cancel-button" onAction="#clearRuleInputFields" />
                                     </VBox>
                                 </HBox>
-                                <HBox>
+                                <HBox alignment="CENTER_LEFT" spacing="10.0">
                                     <Button fx:id="refreshRuleButton" text="Refresh Mappings" onAction="#refreshMappings" styleClass="secondary-button" />
+                                    <Label text="Logging Interval:" styleClass="topbar-label" />
+                                    <Label fx:id="loggingIntervalValueLabel" text="Not set" styleClass="topbar-value" />
+                                    <Button fx:id="editLoggingIntervalButton" text="Edit Logging Interval" onAction="#onEditLoggingInterval" styleClass="secondary-button" />
                                 </HBox>
 
                                 <StackPane VBox.vgrow="ALWAYS">

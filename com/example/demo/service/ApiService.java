@@ -24,8 +24,8 @@ import java.util.stream.Collectors;
 public class ApiService {
 
     //should be replaced with ngrok link
-    //private static final String BASE_URL = "http://localhost:5678/webhook"; //for local testing
-    private static final String BASE_URL = "https://marcella-unguerdoned-ayanna.ngrok-free.dev/webhook";  //tali
+    private static final String BASE_URL = "http://localhost:5678/webhook"; //for local testing
+    //private static final String BASE_URL = "https://marcella-unguerdoned-ayanna.ngrok-free.dev/webhook";  //tali
     //private static final String BASE_URL = "https://vacantly-holmic-etta.ngrok-free.dev/webhook";  //liran
 
     public static final String EP_GET_USERS = "/get-users";
@@ -38,6 +38,7 @@ public class ApiService {
     public static final String EP_SET_HEART = "/set-heart-rate-threshold";
     public static final String EP_SET_RULES = "/set-rules";
     public static final String EP_DELETE_MAPPING = "/deactivate-mapping";
+    public static final String EP_SET_LOGGING_INTERVAL = "/set-logging-interval";
     public static final String EP_CHAT_CONFIG = "/chat";
     public static final String EP_CHECK_CONNECTION = "/check-connection";
 
@@ -120,6 +121,17 @@ public class ApiService {
         Map<String, Object> payload = new HashMap<>();
         payload.put("mappingId", mappingId);
         return post(EP_DELETE_MAPPING, payload);
+    }
+
+    public CompletableFuture<Boolean> setLoggingInterval(int usecaseId, String interval) {
+        if (usecaseId <= 0 || interval == null || interval.isBlank()) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("usecase_id", usecaseId);
+        payload.put("interval", interval.trim());
+        return post(EP_SET_LOGGING_INTERVAL, payload);
     }
 
     private String normalizeRuleType(String ruleType) {

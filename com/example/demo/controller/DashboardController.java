@@ -14,13 +14,18 @@ import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.DatePicker;
+import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Spinner;
+import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TextField;
@@ -60,12 +65,16 @@ import java.util.UUID;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class DashboardController {
     private static final List<String> DEFAULT_USE_CASES = List.of("HeartRate", "MoonAzimuth", "SunAzimuth", "Pollution");
     private static final String DELETE_ICON_PATH = "/com/example/demo/images/delete.png";
     private static final String FEEDBACK_GRAPH_TEMPLATE_PATH = "/com/example/demo/view/templates/feedbackGraph.html";
     private static final String MINI_GRAPH_TEMPLATE_PATH = "/com/example/demo/view/templates/miniFeedbackGraph.html";
+    private static final Pattern LOG_INTERVAL_PATTERN = Pattern.compile("^\\d+(\\.\\d+)?\\s+(second|seconds|minute|minutes|hour|hours|day|days)$", Pattern.CASE_INSENSITIVE);
 
     @FXML
     private ToggleButton useCasesNavButton;
@@ -168,6 +177,10 @@ public class DashboardController {
     @FXML
     private Button refreshRuleButton;
     @FXML
+    private Label loggingIntervalValueLabel;
+    @FXML
+    private Button editLoggingIntervalButton;
+    @FXML
     private Button refreshRuleSummaryButton;
     @FXML
     private Label agentTypingLabel;
@@ -178,6 +191,7 @@ public class DashboardController {
     private final Map<String, String> useCaseDescriptions = new HashMap<>();
     private final Map<String, String> useCaseDisplayNames = new HashMap<>();
     private final Map<String, Integer> useCaseIdsByNormalizedName = new HashMap<>();
+    private final Map<String, String> useCaseLoggingInterval = new HashMap<>();
     private final List<RuleCardData> allRules = new ArrayList<>();
     private final String chatSessionId = UUID.randomUUID().toString();
 
@@ -487,12 +501,13 @@ public class DashboardController {
     }
 
     private void setupTabs() {
-        workspaceTabPane.getSelectionModel().select(agentChatTab);
+        workspaceTabPane.getSelectionModel().select(mappingsTab);
         workspaceTabPane.getSelectionModel().selectedItemProperty().addListener(onNewValueChanged(newValue -> {
             if (newValue == graphTab) {
                 scheduleGraphUpdate();
             } else if (newValue == mappingsTab) {
                 renderMappingsForUseCase(state.getSelectedUseCase());
+                updateLoggingIntervalDisplay(state.getSelectedUseCase());
             } else if (newValue == agentChatTab) {
                 refreshRuleSummary();
                 renderMiniGraphFromData(latestGraphData);
@@ -687,6 +702,7 @@ public class DashboardController {
                 LinkedHashMap<String, String> normalizedToDisplay = new LinkedHashMap<>();
                 Map<String, String> loadedDescriptions = new HashMap<>();
                 Map<String, Integer> loadedUseCaseIds = new HashMap<>();
+                Map<String, String> loadedLoggingIntervals = new HashMap<>();
 
                 if (useCaseArray != null && useCaseArray.isArray()) {
                     for (JsonNode useCaseNode : useCaseArray) {
@@ -703,6 +719,10 @@ public class DashboardController {
                             String normalizedName = normalizeUseCaseName(rawName);
                             normalizedToDisplay.putIfAbsent(normalizedName, rawName);
                             loadedDescriptions.put(normalizedName, description);
+                            String loggingInterval = extractLoggingInterval(useCaseNode);
+                            if (!loggingInterval.isEmpty()) {
+                                loadedLoggingIntervals.put(normalizedName, loggingInterval);
+                            }
                             if (useCaseId > 0) {
                                 loadedUseCaseIds.putIfAbsent(normalizedName, useCaseId);
                             }
@@ -724,6 +744,8 @@ public class DashboardController {
                     useCaseDisplayNames.putAll(normalizedToDisplay);
                     useCaseIdsByNormalizedName.clear();
                     useCaseIdsByNormalizedName.putAll(loadedUseCaseIds);
+                    useCaseLoggingInterval.clear();
+                    useCaseLoggingInterval.putAll(loadedLoggingIntervals);
                     String selected = state.getSelectedUseCase();
                     if (selected == null || selected.isBlank() || !useCases.contains(selected)) {
                         selected = useCases.isEmpty() ? null : useCases.get(0);
@@ -772,23 +794,146 @@ public class DashboardController {
         }
 
         updateRuleBuilderUseCaseDisplay(selectedUseCase);
+        updateLoggingIntervalDisplay(selectedUseCase);
         refreshRuleSummary();
         renderMappingsForUseCase(selectedUseCase);
         clearChatMessages();
         addChatMessage("Selected use case: " + selectedUseCase, false);
     }
 
-    private static <T> ChangeListener<T> onChanged(BiConsumer<T, T> handler) {
-        return (observable, oldValue, newValue) -> {
-            if (observable == null || Objects.equals(oldValue, newValue)) {
-                return;
+    private void updateLoggingIntervalDisplay(String selectedUseCase) {
+        if (loggingIntervalValueLabel == null) {
+            return;
+        }
+
+        String displayText = "Not set";
+        if (selectedUseCase != null && !selectedUseCase.isBlank()) {
+            String normalizedKey = normalizeUseCaseName(selectedUseCase);
+            String configuredInterval = useCaseLoggingInterval.getOrDefault(normalizedKey, "").trim();
+            if (!configuredInterval.isEmpty()) {
+                displayText = configuredInterval;
             }
-            handler.accept(oldValue, newValue);
-        };
+        }
+
+        loggingIntervalValueLabel.setText(displayText);
+        loggingIntervalValueLabel.setTooltip("Not set".equals(displayText) ? null : new Tooltip(displayText));
+
+        if (editLoggingIntervalButton != null) {
+            Integer useCaseId = state.getSelectedUseCaseId();
+            editLoggingIntervalButton.setDisable(useCaseId == null || useCaseId <= 0);
+        }
     }
 
-    private static <T> ChangeListener<T> onNewValueChanged(Consumer<T> handler) {
-        return onChanged((oldValue, newValue) -> handler.accept(newValue));
+    private boolean isValidLoggingInterval(String interval) {
+        return interval != null && LOG_INTERVAL_PATTERN.matcher(interval.trim()).matches();
+    }
+
+    private String formatLoggingInterval(int amount, String baseUnit) {
+        int safeAmount = Math.max(1, amount);
+        String safeUnit = (baseUnit == null || baseUnit.isBlank()) ? "minute" : baseUnit.trim().toLowerCase(Locale.ROOT);
+        String unit = safeAmount == 1 ? safeUnit : safeUnit + "s";
+        return safeAmount + " " + unit;
+    }
+
+    private LoggingIntervalDraft parseLoggingIntervalDraft(String intervalText) {
+        LoggingIntervalDraft fallback = new LoggingIntervalDraft(1, "minute");
+        if (intervalText == null || intervalText.isBlank()) {
+            return fallback;
+        }
+
+        Matcher matcher = LOG_INTERVAL_PATTERN.matcher(intervalText.trim());
+        if (!matcher.matches()) {
+            return fallback;
+        }
+
+        int amount = 1;
+        try {
+            amount = Integer.parseInt(matcher.group(0).split("\\s+")[0].split("\\.")[0]);
+        } catch (Exception ignored) {
+            amount = 1;
+        }
+
+        String unit = matcher.group(2).toLowerCase(Locale.ROOT);
+        if (unit.endsWith("s")) {
+            unit = unit.substring(0, unit.length() - 1);
+        }
+
+        return new LoggingIntervalDraft(Math.max(1, amount), unit);
+    }
+
+    @FXML
+    private void onEditLoggingInterval() {
+        String selectedUseCase = state.getSelectedUseCase();
+        if (selectedUseCase == null || selectedUseCase.isBlank()) {
+            showErrorAlert("Missing Use Case", "Please select a use case before editing logging interval.");
+            return;
+        }
+
+        String selectedKey = normalizeUseCaseName(selectedUseCase);
+        Integer useCaseId = state.getSelectedUseCaseId();
+        if (useCaseId == null || useCaseId <= 0) {
+            useCaseId = useCaseIdsByNormalizedName.get(selectedKey);
+            state.setSelectedUseCaseId((useCaseId != null && useCaseId > 0) ? useCaseId : null);
+        }
+
+        if (useCaseId == null || useCaseId <= 0) {
+            showErrorAlert("Missing Use Case Id", "Could not resolve use case id. Refresh use cases and try again.");
+            return;
+        }
+
+        LoggingIntervalDraft initialDraft = parseLoggingIntervalDraft(useCaseLoggingInterval.get(selectedKey));
+
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Edit Logging Interval");
+        dialog.setHeaderText("Set logging interval for " + selectedUseCase + ".");
+
+        ButtonType saveButtonType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+
+        Spinner<Integer> amountSpinner = new Spinner<>();
+        amountSpinner.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(1, 100000, initialDraft.amount));
+        amountSpinner.setEditable(true);
+        amountSpinner.setPrefWidth(120);
+
+        ComboBox<String> unitComboBox = new ComboBox<>();
+        unitComboBox.getItems().setAll("second", "minute", "hour", "day");
+        unitComboBox.setValue(initialDraft.baseUnit);
+        unitComboBox.setPrefWidth(140);
+
+        HBox content = new HBox(10, amountSpinner, unitComboBox);
+        content.setAlignment(Pos.CENTER_LEFT);
+        dialog.getDialogPane().setContent(content);
+
+        Optional<ButtonType> result = dialog.showAndWait();
+        if (result.isEmpty() || result.get() != saveButtonType) {
+            return;
+        }
+
+        int amount = amountSpinner.getValue();
+        String baseUnit = unitComboBox.getValue();
+        String interval = formatLoggingInterval(amount, baseUnit);
+        if (!isValidLoggingInterval(interval)) {
+            showErrorAlert("Invalid Interval", "Interval must match: number + second(s)/minute(s)/hour(s)/day(s).");
+            return;
+        }
+
+        final int resolvedUseCaseId = useCaseId;
+        ApiService.getInstance().setLoggingInterval(resolvedUseCaseId, interval)
+            .thenAccept(success -> Platform.runLater(() -> {
+                if (!success) {
+                    showErrorAlert("Update Failed", "Could not update logging interval. Please try again.");
+                    return;
+                }
+
+                useCaseLoggingInterval.put(selectedKey, interval);
+                updateLoggingIntervalDisplay(selectedUseCase);
+                showInfoAlert("Interval Updated", "Logging interval set to " + interval + " for " + selectedUseCase + ".");
+                loadUseCases();
+            }))
+            .exceptionally(ex -> {
+                showErrorAlert("Update Failed", "Failed to update logging interval: " + ex.getMessage());
+                return null;
+            });
     }
 
     private void loadMappings() {
@@ -1427,6 +1572,44 @@ public class DashboardController {
         return fallback;
     }
 
+    private String extractLoggingInterval(JsonNode useCaseNode) {
+        if (useCaseNode == null || !useCaseNode.isObject()) {
+            return "";
+        }
+
+        JsonNode intervalNode = useCaseNode.path("log_interval");
+        if (intervalNode.isMissingNode() || intervalNode.isNull()) {
+            intervalNode = useCaseNode.path("loginterval");
+        }
+
+        if (intervalNode.isMissingNode() || intervalNode.isNull()) {
+            return "";
+        }
+
+        if (intervalNode.isTextual()) {
+            return intervalNode.asText("").trim();
+        }
+
+        if (!intervalNode.isObject()) {
+            return "";
+        }
+
+        String[] unitOrder = new String[] {"seconds", "minutes", "hours", "days"};
+        for (String unit : unitOrder) {
+            JsonNode valueNode = intervalNode.path(unit);
+            if (valueNode.isNumber()) {
+                double value = valueNode.asDouble();
+                String normalizedUnit = value == 1.0 ? unit.substring(0, unit.length() - 1) : unit;
+                String amount = Math.floor(value) == value
+                    ? String.valueOf((long) value)
+                    : String.valueOf(value);
+                return amount + " " + normalizedUnit;
+            }
+        }
+
+        return "";
+    }
+
     private int readMappingId(JsonNode node) {
         if (node == null || !node.isObject()) {
             return 0;
@@ -1475,6 +1658,19 @@ public class DashboardController {
         });
     }
 
+    private static <T> ChangeListener<T> onChanged(BiConsumer<T, T> handler) {
+        return (observable, oldValue, newValue) -> {
+            if (observable == null || Objects.equals(oldValue, newValue)) {
+                return;
+            }
+            handler.accept(oldValue, newValue);
+        };
+    }
+
+    private static <T> ChangeListener<T> onNewValueChanged(Consumer<T> handler) {
+        return onChanged((oldValue, newValue) -> handler.accept(newValue));
+    }
+
     private static class RuleCardData {
         int mappingId;
         String configKey;
@@ -1485,6 +1681,16 @@ public class DashboardController {
         String intensityLabel;
         String durationLabel;
         String intervalLabel;
+    }
+
+    private static class LoggingIntervalDraft {
+        final int amount;
+        final String baseUnit;
+
+        private LoggingIntervalDraft(int amount, String baseUnit) {
+            this.amount = amount;
+            this.baseUnit = baseUnit;
+        }
     }
 }
 
