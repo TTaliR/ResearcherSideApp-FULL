@@ -37,7 +37,6 @@
 
         <VBox fx:id="UsersSidebarPane" spacing="8.0" visible="false" managed="false" VBox.vgrow="ALWAYS">
             <Label styleClass="sidebar-section-title" text="Users List" />
-            <Label text="Read-only mode" styleClass="sidebar-muted-text" />
             <Label text="Total Userss:" styleClass="sidebar-muted-text" />
             <Label fx:id="UsersCountLabel" text="0" styleClass="sidebar-count" />
             <ListView fx:id="UsersSidebarList" VBox.vgrow="ALWAYS" />
