@@ -12,7 +12,9 @@ import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
+import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
@@ -72,6 +74,7 @@ import java.util.regex.Pattern;
 public class DashboardController {
     private static final List<String> DEFAULT_USE_CASES = List.of("HeartRate", "MoonAzimuth", "SunAzimuth", "Pollution");
     private static final String DELETE_ICON_PATH = "/com/example/demo/images/delete.png";
+    private static final String SETTINGS_ICON_PATH = "/com/example/demo/images/settings.png";
     private static final String FEEDBACK_GRAPH_TEMPLATE_PATH = "/com/example/demo/view/templates/feedbackGraph.html";
     private static final String MINI_GRAPH_TEMPLATE_PATH = "/com/example/demo/view/templates/miniFeedbackGraph.html";
     private static final Pattern LOG_INTERVAL_PATTERN = Pattern.compile("^\\d+(\\.\\d+)?\\s+(second|seconds|minute|minutes|hour|hours|day|days)$", Pattern.CASE_INSENSITIVE);
@@ -79,22 +82,22 @@ public class DashboardController {
     @FXML
     private ToggleButton useCasesNavButton;
     @FXML
-    private ToggleButton participantManagementNavButton;
+    private ToggleButton UsersNavButton;
     @FXML
     private VBox useCasesSidebarPane;
     @FXML
-    private VBox participantManagementSidebarPane;
+    private VBox UsersSidebarPane;
     @FXML
     private ListView<String> useCaseListView;
     @FXML
-    private ListView<String> participantSidebarList;
+    private ListView<User> UsersSidebarList;
     @FXML
-    private Label participantCountLabel;
+    private Label UsersCountLabel;
 
     @FXML
     private Label selectedUseCaseLabel;
     @FXML
-    private ComboBox<User> participantComboBox;
+    private ComboBox<User> UsersComboBox;
     @FXML
     private ComboBox<String> timeRangeComboBox;
     @FXML
@@ -126,7 +129,7 @@ public class DashboardController {
     @FXML
     private Label contextUseCaseLabel;
     @FXML
-    private Label contextParticipantLabel;
+    private Label contextUsersLabel;
     @FXML
     private VBox activeRulesSummaryBox;
     @FXML
@@ -212,7 +215,7 @@ public class DashboardController {
         setupMappingsRuleBuilder();
         setupStateListeners();
 
-        loadParticipants();
+        loadUserss();
         loadUseCases();
         loadMappings();
     }
@@ -418,8 +421,10 @@ public class DashboardController {
 
     private void setupSidebar() {
         useCasesNavButton.setOnAction(ignored -> setSidebarMode(true));
-        participantManagementNavButton.setOnAction(ignored -> setSidebarMode(false));
+        UsersNavButton.setOnAction(ignored -> setSidebarMode(false));
         setSidebarMode(true);
+
+        setupUsersSidebarListCellFactory();
 
         useCaseListView.setItems(useCases);
         useCaseListView.getSelectionModel().selectedItemProperty().addListener(onNewValueChanged(newValue -> {
@@ -429,43 +434,72 @@ public class DashboardController {
             state.setSelectedUseCase(newValue);
         }));
 
-        participantSidebarList.getSelectionModel().selectedItemProperty().addListener(onNewValueChanged(newValue -> {
+        UsersSidebarList.getSelectionModel().selectedItemProperty().addListener(onNewValueChanged(newValue -> {
             if (newValue == null) {
                 return;
             }
-            User selected = parseSidebarUser(newValue);
-            if (selected != null && selected != participantComboBox.getValue()) {
-                participantComboBox.setValue(selected);
+            if (newValue != UsersComboBox.getValue()) {
+                UsersComboBox.setValue(newValue);
             }
         }));
     }
 
+    private void setupUsersSidebarListCellFactory() {
+        UsersSidebarList.setCellFactory(listView -> new ListCell<>() {
+            private final Label userLabel = new Label();
+            private final Region spacer = new Region();
+            private final Button editButton = createEditUserButton();
+            private final HBox content = new HBox(8, userLabel, spacer, editButton);
+
+            {
+                content.setAlignment(Pos.CENTER_LEFT);
+                HBox.setHgrow(spacer, Priority.ALWAYS);
+                userLabel.getStyleClass().add("sidebar-user-row-label");
+                editButton.setFocusTraversable(false);
+            }
+
+            @Override
+            protected void updateItem(User item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setGraphic(null);
+                    setText(null);
+                    return;
+                }
+
+                userLabel.setText(formatUser(item));
+                editButton.setOnAction(ignored -> onEditUserRequested(item));
+                setText(null);
+                setGraphic(content);
+            }
+        });
+    }
+
     private void setupTopbar() {
-        participantComboBox.setItems(users);
-        participantComboBox.setCellFactory(_ -> new ListCell<>() {
+        UsersComboBox.setItems(users);
+        UsersComboBox.setCellFactory(listView -> new ListCell<>() {
             @Override
             protected void updateItem(User item, boolean empty) {
                 super.updateItem(item, empty);
                 setText(empty || item == null ? null : formatUser(item));
             }
         });
-        participantComboBox.setButtonCell(new ListCell<>() {
+        UsersComboBox.setButtonCell(new ListCell<>() {
             @Override
             protected void updateItem(User item, boolean empty) {
                 super.updateItem(item, empty);
-                setText(empty || item == null ? "Select participant" : formatUser(item));
+                setText(empty || item == null ? "Select Users" : formatUser(item));
             }
         });
 
-        participantComboBox.valueProperty().addListener(onNewValueChanged(newValue -> {
+        UsersComboBox.valueProperty().addListener(onNewValueChanged(newValue -> {
             if (newValue == null) {
                 return;
             }
-            state.setSelectedParticipant(newValue);
-            contextParticipantLabel.setText(formatUser(newValue));
-            String listValue = formatUser(newValue);
-            if (!listValue.equals(participantSidebarList.getSelectionModel().getSelectedItem())) {
-                participantSidebarList.getSelectionModel().select(listValue);
+            state.setSelectedUsers(newValue);
+            contextUsersLabel.setText(formatUser(newValue));
+            if (UsersSidebarList.getSelectionModel().getSelectedItem() != newValue) {
+                UsersSidebarList.getSelectionModel().select(newValue);
             }
             scheduleGraphUpdate();
         }));
@@ -546,17 +580,17 @@ public class DashboardController {
         ensureMiniGraphWebView();
         setGraphLoadingVisible(false);
         setMiniGraphLoadingVisible(false);
-        renderGraphPlaceholder("Select a use case and participant to render graph data.");
+        renderGraphPlaceholder("Select a use case and Users to render graph data.");
         renderMiniGraphPlaceholder("Graph preview appears here.");
     }
 
     private void exportGraphData(String format) {
-        User user = state.getSelectedParticipant();
+        User user = state.getSelectedUsers();
         String useCase = state.getSelectedUseCase();
         String range = state.getSelectedTimeRange();
 
         if (user == null || useCase == null || useCase.isBlank() || range == null || range.isBlank()) {
-            showErrorAlert("Missing Selection", "Please select a participant, use case, and time range before exporting.");
+            showErrorAlert("Missing Selection", "Please select a Users, use case, and time range before exporting.");
             return;
         }
 
@@ -653,10 +687,12 @@ public class DashboardController {
             scheduleGraphUpdate();
         }));
 
-        state.selectedParticipantProperty().addListener(onNewValueChanged(newValue -> refreshRuleSummary()));
+        state.selectedUsersProperty().addListener(onNewValueChanged(newValue -> refreshRuleSummary()));
     }
 
-    private void loadParticipants() {
+    private void loadUserss() {
+        User currentSelection = UsersComboBox.getValue();
+        Integer selectedUserId = currentSelection == null ? null : currentSelection.getUserID();
         users.clear();
         ApiService.getInstance().get(ApiService.EP_GET_USERS, null)
             .thenAccept(response -> {
@@ -678,13 +714,18 @@ public class DashboardController {
 
                 Platform.runLater(() -> {
                     users.setAll(loaded);
-                    participantCountLabel.setText(String.valueOf(users.size()));
+                    UsersCountLabel.setText(String.valueOf(users.size()));
 
-                    List<String> sidebarUsers = users.stream().map(this::formatUser).toList();
-                    participantSidebarList.getItems().setAll(sidebarUsers);
+                    UsersSidebarList.getItems().setAll(users);
 
-                    if (!users.isEmpty() && participantComboBox.getValue() == null) {
-                        participantComboBox.setValue(users.get(0));
+                    User restoredSelection = findUserById(selectedUserId);
+                    if (restoredSelection != null) {
+                        UsersComboBox.setValue(restoredSelection);
+                    } else if (!users.isEmpty()) {
+                        UsersComboBox.setValue(users.get(0));
+                    } else {
+                        UsersComboBox.setValue(null);
+                        contextUsersLabel.setText("-");
                     }
                 });
             })
@@ -1200,7 +1241,7 @@ public class DashboardController {
     }
 
     private void refreshGraphData() {
-        User user = state.getSelectedParticipant();
+        User user = state.getSelectedUsers();
         String useCase = state.getSelectedUseCase();
         String range = state.getSelectedTimeRange();
 
@@ -1208,7 +1249,7 @@ public class DashboardController {
         setMiniGraphLoadingVisible(true);
 
         if (user == null || useCase == null || useCase.isBlank() || range == null) {
-            renderGraphPlaceholder("Select a use case and participant to render graph data.");
+            renderGraphPlaceholder("Select a use case and Users to render graph data.");
             renderMiniGraphPlaceholder("Graph preview appears here.");
             setGraphLoadingVisible(false);
             setMiniGraphLoadingVisible(false);
@@ -1465,27 +1506,128 @@ public class DashboardController {
         return user.getUserID() + " - " + user.getFName() + " " + user.getLName();
     }
 
-    private User parseSidebarUser(String text) {
-        if (text == null || text.isBlank()) {
+    private User findUserById(Integer userId) {
+        if (userId == null || userId <= 0) {
             return null;
         }
+        return users.stream().filter(user -> user.getUserID() == userId).findFirst().orElse(null);
+    }
+
+    private Button createEditUserButton() {
+        Button button = new Button();
+        button.getStyleClass().add("sidebar-user-settings-button");
+        button.setTooltip(new Tooltip("Edit user name"));
+
+        Image icon = null;
         try {
-            int userId = Integer.parseInt(text.split("-")[0].trim());
-            return users.stream().filter(user -> user.getUserID() == userId).findFirst().orElse(null);
-        } catch (Exception ex) {
-            return null;
+            icon = new Image(Objects.requireNonNull(getClass().getResourceAsStream(SETTINGS_ICON_PATH)));
+        } catch (Exception ignored) {
+            // Fallback text keeps control usable if image is missing from classpath.
         }
+
+        if (icon != null && !icon.isError()) {
+            ImageView imageView = new ImageView(icon);
+            imageView.setPreserveRatio(true);
+            imageView.setFitWidth(14);
+            imageView.setFitHeight(14);
+            button.setGraphic(imageView);
+        } else {
+            button.setText("Edit");
+        }
+
+        return button;
+    }
+
+    private void onEditUserRequested(User user) {
+        if (user == null) {
+            return;
+        }
+
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Edit User Name");
+        dialog.setHeaderText("Update name for user " + user.getUserID() + ".");
+
+        ButtonType saveButtonType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+
+        TextField firstNameField = new TextField(user.getFName());
+        firstNameField.setPromptText("First Name");
+        firstNameField.setPrefWidth(260);
+        TextField lastNameField = new TextField(user.getLName());
+        lastNameField.setPromptText("Last Name");
+        lastNameField.setPrefWidth(260);
+
+        VBox content = new VBox(10,
+            new Label("First Name"),
+            firstNameField,
+            new Label("Last Name"),
+            lastNameField
+        );
+        content.setPadding(new Insets(12, 12, 4, 12));
+        content.setPrefWidth(320);
+        dialog.getDialogPane().setContent(content);
+
+        Node saveButtonNode = dialog.getDialogPane().lookupButton(saveButtonType);
+        if (!(saveButtonNode instanceof Button saveButton)) {
+            return;
+        }
+        Runnable updateSaveState = () -> {
+            String fName = firstNameField.getText() == null ? "" : firstNameField.getText().trim();
+            String lName = lastNameField.getText() == null ? "" : lastNameField.getText().trim();
+            saveButton.setDisable(fName.isBlank() || lName.isBlank());
+        };
+        firstNameField.textProperty().addListener((obs, oldValue, newValue) -> updateSaveState.run());
+        lastNameField.textProperty().addListener((obs, oldValue, newValue) -> updateSaveState.run());
+        updateSaveState.run();
+
+        saveButton.setDefaultButton(true);
+        Runnable fireSaveIfValid = () -> {
+            if (!saveButton.isDisable()) {
+                saveButton.fire();
+            }
+        };
+        firstNameField.setOnAction(ignored -> fireSaveIfValid.run());
+        lastNameField.setOnAction(ignored -> fireSaveIfValid.run());
+
+        Platform.runLater(firstNameField::requestFocus);
+
+        Optional<ButtonType> result = dialog.showAndWait();
+        if (result.isEmpty() || result.get() != saveButtonType) {
+            return;
+        }
+
+        String newFirstName = firstNameField.getText() == null ? "" : firstNameField.getText().trim();
+        String newLastName = lastNameField.getText() == null ? "" : lastNameField.getText().trim();
+        if (newFirstName.isBlank() || newLastName.isBlank()) {
+            showErrorAlert("Invalid Name", "First and last name cannot be empty.");
+            return;
+        }
+
+        ApiService.getInstance().setUserName(user.getUserID(), newFirstName, newLastName)
+            .thenAccept(success -> Platform.runLater(() -> {
+                if (!success) {
+                    showErrorAlert("Update Failed", "Could not update the user name. Please try again.");
+                    return;
+                }
+
+                showInfoAlert("User Updated", "Updated user " + user.getUserID() + " to " + newFirstName + " " + newLastName + ".");
+                loadUserss();
+            }))
+            .exceptionally(ex -> {
+                showErrorAlert("Update Failed", "Failed to update user name: " + ex.getMessage());
+                return null;
+            });
     }
 
     private void setSidebarMode(boolean useCasesMode) {
         useCasesNavButton.setSelected(useCasesMode);
-        participantManagementNavButton.setSelected(!useCasesMode);
+        UsersNavButton.setSelected(!useCasesMode);
 
         useCasesSidebarPane.setVisible(useCasesMode);
         useCasesSidebarPane.setManaged(useCasesMode);
 
-        participantManagementSidebarPane.setVisible(!useCasesMode);
-        participantManagementSidebarPane.setManaged(!useCasesMode);
+        UsersSidebarPane.setVisible(!useCasesMode);
+        UsersSidebarPane.setManaged(!useCasesMode);
     }
 
     private void updateDatePickerVisibility() {

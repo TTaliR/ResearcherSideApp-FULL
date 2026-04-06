@@ -41,6 +41,7 @@ public class ApiService {
     public static final String EP_SET_LOGGING_INTERVAL = "/set-logging-interval";
     public static final String EP_CHAT_CONFIG = "/chat";
     public static final String EP_CHECK_CONNECTION = "/check-connection";
+    public static final String EP_SET_USERS = "/edit-users";
 
     private static final ApiService INSTANCE = new ApiService();
     private final ObjectMapper mapper;
@@ -132,6 +133,20 @@ public class ApiService {
         payload.put("usecase_id", usecaseId);
         payload.put("interval", interval.trim());
         return post(EP_SET_LOGGING_INTERVAL, payload);
+    }
+
+    public CompletableFuture<Boolean> setUserName(int userId, String fName, String lName) {
+        String trimmedFirstName = fName == null ? "" : fName.trim();
+        String trimmedLastName = lName == null ? "" : lName.trim();
+        if (userId <= 0 || trimmedFirstName.isBlank() || trimmedLastName.isBlank()) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("userId", userId);
+        payload.put("fName", trimmedFirstName);
+        payload.put("lName", trimmedLastName);
+        return post(EP_SET_USERS, payload);
     }
 
     private String normalizeRuleType(String ruleType) {

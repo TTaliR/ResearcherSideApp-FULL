@@ -11,7 +11,7 @@ import java.time.LocalDate;
 public class DashboardState {
     private static final DashboardState INSTANCE = new DashboardState();
 
-    private final ObjectProperty<User> selectedParticipant = new SimpleObjectProperty<>();
+    private final ObjectProperty<User> selectedUsers = new SimpleObjectProperty<>();
     private final StringProperty selectedUseCase = new SimpleStringProperty();
     private final ObjectProperty<Integer> selectedUseCaseId = new SimpleObjectProperty<>(null);
     private final StringProperty selectedTimeRange = new SimpleStringProperty("Last 24 Hours");
@@ -25,16 +25,16 @@ public class DashboardState {
         return INSTANCE;
     }
 
-    public ObjectProperty<User> selectedParticipantProperty() {
-        return selectedParticipant;
+    public ObjectProperty<User> selectedUsersProperty() {
+        return selectedUsers;
     }
 
-    public User getSelectedParticipant() {
-        return selectedParticipant.get();
+    public User getSelectedUsers() {
+        return selectedUsers.get();
     }
 
-    public void setSelectedParticipant(User selectedParticipant) {
-        this.selectedParticipant.set(selectedParticipant);
+    public void setSelectedUsers(User selectedUsers) {
+        this.selectedUsers.set(selectedUsers);
     }
 
     public StringProperty selectedUseCaseProperty() {

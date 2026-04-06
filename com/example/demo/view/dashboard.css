@@ -63,6 +63,22 @@
     -fx-padding: 8;
 }
 
+.sidebar-user-row-label {
+    -fx-text-fill: #d9e4f5;
+}
+
+.sidebar-user-settings-button {
+    -fx-background-color: transparent;
+    -fx-padding: 2;
+    -fx-background-radius: 6;
+    -fx-border-color: transparent;
+    -fx-cursor: hand;
+}
+
+.sidebar-user-settings-button:hover {
+    -fx-background-color: #2c3f59;
+}
+
 .sidebar .list-cell:filled:selected,
 .sidebar .list-cell:filled:hover {
     -fx-background-color: #2c3f59;

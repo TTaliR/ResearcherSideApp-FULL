@@ -25,7 +25,7 @@
 
         <VBox spacing="8.0" styleClass="sidebar-nav">
             <ToggleButton fx:id="useCasesNavButton" styleClass="sidebar-nav-button" text="Use Cases" />
-            <ToggleButton fx:id="participantManagementNavButton" styleClass="sidebar-nav-button" text="Participant Management" />
+            <ToggleButton fx:id="UsersNavButton" styleClass="sidebar-nav-button" text="Users" />
         </VBox>
 
         <Separator />
@@ -35,12 +35,12 @@
             <ListView fx:id="useCaseListView" VBox.vgrow="ALWAYS" />
         </VBox>
 
-        <VBox fx:id="participantManagementSidebarPane" spacing="8.0" visible="false" managed="false" VBox.vgrow="ALWAYS">
-            <Label styleClass="sidebar-section-title" text="Participant List" />
+        <VBox fx:id="UsersSidebarPane" spacing="8.0" visible="false" managed="false" VBox.vgrow="ALWAYS">
+            <Label styleClass="sidebar-section-title" text="Users List" />
             <Label text="Read-only mode" styleClass="sidebar-muted-text" />
-            <Label text="Total Participants:" styleClass="sidebar-muted-text" />
-            <Label fx:id="participantCountLabel" text="0" styleClass="sidebar-count" />
-            <ListView fx:id="participantSidebarList" VBox.vgrow="ALWAYS" />
+            <Label text="Total Userss:" styleClass="sidebar-muted-text" />
+            <Label fx:id="UsersCountLabel" text="0" styleClass="sidebar-count" />
+            <ListView fx:id="UsersSidebarList" VBox.vgrow="ALWAYS" />
         </VBox>
     </VBox>
 
@@ -53,8 +53,8 @@
 
                     <Separator orientation="VERTICAL" prefHeight="22.0" />
 
-                    <Label text="Participant:" styleClass="topbar-label" />
-                    <ComboBox fx:id="participantComboBox" prefWidth="260.0" promptText="Select participant" />
+                    <Label text="Users:" styleClass="topbar-label" />
+                    <ComboBox fx:id="UsersComboBox" prefWidth="260.0" promptText="Select Users" />
 
                     <Label text="Date Range:" styleClass="topbar-label" />
                     <ComboBox fx:id="timeRangeComboBox" prefWidth="170.0" />
@@ -88,8 +88,8 @@
                                         <Label text="Context Drawer" styleClass="drawer-title" />
                                         <Label text="Use Case" styleClass="drawer-label" />
                                         <Label fx:id="contextUseCaseLabel" text="-" />
-                                        <Label text="Participant" styleClass="drawer-label" />
-                                        <Label fx:id="contextParticipantLabel" text="-" />
+                                        <Label text="Users" styleClass="drawer-label" />
+                                        <Label fx:id="contextUsersLabel" text="-" />
                                         <Separator />
                                         <Label text="Simplified Graph" styleClass="drawer-label" />
                                         <AnchorPane fx:id="miniGraphAnchor" prefHeight="180.0" />
