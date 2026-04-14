@@ -34,6 +34,7 @@ public class ApiService {
     public static final String EP_SENSOR_DATA = "/sensor-data";
     public static final String EP_CURRENT_CONFIGURATION = "/current-configurations";
     public static final String EP_SET_MONITORING_TYPE = "/set-monitoring-type";
+    public static final String EP_GET_MONITORING_CONFIG = "/monitoring-config";
     public static final String EP_SET_SUN = "/set-sun-azimuth-threshold";
     public static final String EP_SET_MOON = "/set-moon-azimuth-threshold";
     public static final String EP_SET_HEART = "/set-heart-rate-threshold";
@@ -148,6 +149,116 @@ public class ApiService {
         payload.put("fName", trimmedFirstName);
         payload.put("lName", trimmedLastName);
         return post(EP_SET_USERS, payload);
+    }
+
+    public CompletableFuture<String> getMonitoringType() {
+        return get(EP_GET_MONITORING_CONFIG, null)
+            .thenApply(this::extractMonitoringTypeFromResponse)
+            .thenCompose(type -> {
+                if (type != null && !type.isBlank()) {
+                    return CompletableFuture.completedFuture(type);
+                }
+
+                // Some webhook configurations only return monitoring config on POST.
+                return postWithResponse(EP_GET_MONITORING_CONFIG, new HashMap<>())
+                    .thenApply(this::extractMonitoringTypeFromResponse)
+                    .exceptionally(ignored -> "");
+            })
+            .exceptionally(ignored -> "");
+    }
+
+    public CompletableFuture<Boolean> setMonitoringType(String monitoringType) {
+        String trimmedType = monitoringType == null ? "" : monitoringType.trim();
+        if (trimmedType.isEmpty()) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("monitoringType", trimmedType);
+        return post(EP_SET_MONITORING_TYPE, payload);
+    }
+
+    private String extractMonitoringTypeFromResponse(JsonNode response) {
+        if (response == null) {
+            return "";
+        }
+
+        if (response.isObject() && response.has("error")) {
+            return "";
+        }
+
+        String directValue = extractMonitoringTypeValue(response);
+        if (!directValue.isEmpty()) {
+            return directValue;
+        }
+
+        JsonNode configNode = response;
+        if (response.has("data")) {
+            configNode = response.get("data");
+        } else if (response.has("payload")) {
+            configNode = response.get("payload");
+        }
+
+        return extractMonitoringTypeValue(configNode);
+    }
+
+    private String extractMonitoringTypeValue(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return "";
+        }
+
+        if (node.isTextual()) {
+            return node.asText("").trim();
+        }
+
+        if (node.isArray()) {
+            for (JsonNode element : node) {
+                String value = extractMonitoringTypeValue(element);
+                if (!value.isEmpty()) {
+                    return value;
+                }
+            }
+            return "";
+        }
+
+        if (!node.isObject()) {
+            return "";
+        }
+
+        String[] possibleKeys = new String[] {
+            "monitoringType",
+            "monitoring_type",
+            "activeMonitoringType",
+            "active_monitoring_type",
+            "type",
+            "name"
+        };
+
+        for (String key : possibleKeys) {
+            JsonNode valueNode = node.path(key);
+            if (valueNode.isTextual()) {
+                String value = valueNode.asText("").trim();
+                if (!value.isEmpty()) {
+                    return value;
+                }
+            }
+        }
+
+        // Fallback: search nested objects/arrays for any known key.
+        if (node.has("data")) {
+            String nested = extractMonitoringTypeValue(node.get("data"));
+            if (!nested.isEmpty()) {
+                return nested;
+            }
+        }
+        if (node.has("payload")) {
+            String nested = extractMonitoringTypeValue(node.get("payload"));
+            if (!nested.isEmpty()) {
+                return nested;
+            }
+        }
+
+        return "";
     }
 
     private String normalizeRuleType(String ruleType) {

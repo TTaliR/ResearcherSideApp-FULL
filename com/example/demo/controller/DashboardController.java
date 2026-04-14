@@ -90,6 +90,12 @@ public class DashboardController {
     @FXML
     private ListView<String> useCaseListView;
     @FXML
+    private Label activeMonitoringTypeValueLabel;
+    @FXML
+    private ComboBox<String> monitoringTypeComboBox;
+    @FXML
+    private Button saveMonitoringTypeButton;
+    @FXML
     private ListView<User> UsersSidebarList;
     @FXML
     private Label UsersCountLabel;
@@ -197,6 +203,7 @@ public class DashboardController {
     private final Map<String, String> useCaseLoggingInterval = new HashMap<>();
     private final List<RuleCardData> allRules = new ArrayList<>();
     private final String chatSessionId = UUID.randomUUID().toString();
+    private String activeMonitoringTypeKey = "";
 
     private WebView graphWebView;
     private WebView miniGraphWebView;
@@ -217,6 +224,7 @@ public class DashboardController {
 
         loadUserss();
         loadUseCases();
+        loadActiveMonitoringType();
         loadMappings();
     }
 
@@ -433,6 +441,15 @@ public class DashboardController {
             }
             state.setSelectedUseCase(newValue);
         }));
+
+        if (monitoringTypeComboBox != null) {
+            monitoringTypeComboBox.setItems(useCases);
+            monitoringTypeComboBox.valueProperty().addListener(onNewValueChanged(ignored -> updateMonitoringTypeSaveButtonState()));
+        }
+        if (activeMonitoringTypeValueLabel != null) {
+            activeMonitoringTypeValueLabel.setText("Loading...");
+        }
+        updateMonitoringTypeSaveButtonState();
 
         UsersSidebarList.getSelectionModel().selectedItemProperty().addListener(onNewValueChanged(newValue -> {
             if (newValue == null) {
@@ -793,10 +810,139 @@ public class DashboardController {
                     }
                     state.setSelectedUseCase(selected);
                     applySelectedUseCaseUi(selected);
+                    syncMonitoringTypeEditorSelection();
                 });
             })
             .exceptionally(ex -> {
                 ex.printStackTrace();
+                return null;
+            });
+    }
+
+    private void loadActiveMonitoringType() {
+        ApiService.getInstance().getMonitoringType()
+            .thenAccept(type -> Platform.runLater(() -> {
+                if (type == null || type.isBlank()) {
+                    activeMonitoringTypeKey = "";
+                    if (activeMonitoringTypeValueLabel != null) {
+                        activeMonitoringTypeValueLabel.setText("Unavailable");
+                    }
+                    updateMonitoringTypeSaveButtonState();
+                    return;
+                }
+
+                String resolvedDisplayName = resolveUseCaseDisplayName(type);
+                activeMonitoringTypeKey = normalizeUseCaseName(resolvedDisplayName);
+                if (activeMonitoringTypeValueLabel != null) {
+                    activeMonitoringTypeValueLabel.setText(resolvedDisplayName);
+                }
+                syncMonitoringTypeEditorSelection();
+            }))
+            .exceptionally(ignored -> {
+                Platform.runLater(() -> {
+                    activeMonitoringTypeKey = "";
+                    if (activeMonitoringTypeValueLabel != null) {
+                        activeMonitoringTypeValueLabel.setText("Unavailable");
+                    }
+                    updateMonitoringTypeSaveButtonState();
+                });
+                return null;
+            });
+    }
+
+    private String resolveUseCaseDisplayName(String rawUseCase) {
+        if (rawUseCase == null || rawUseCase.isBlank()) {
+            return "-";
+        }
+
+        String normalized = normalizeUseCaseName(rawUseCase);
+        for (String candidate : useCases) {
+            if (normalized.equals(normalizeUseCaseName(candidate))) {
+                return candidate;
+            }
+        }
+
+        String fromMap = useCaseDisplayNames.get(normalized);
+        if (fromMap != null && !fromMap.isBlank()) {
+            return fromMap;
+        }
+
+        String fallback = toUseCaseLabel(normalized);
+        return (fallback == null || fallback.isBlank()) ? rawUseCase.trim() : fallback;
+    }
+
+    private void syncMonitoringTypeEditorSelection() {
+        if (monitoringTypeComboBox == null) {
+            return;
+        }
+
+        if (!activeMonitoringTypeKey.isBlank()) {
+            for (String option : monitoringTypeComboBox.getItems()) {
+                if (activeMonitoringTypeKey.equals(normalizeUseCaseName(option))) {
+                    if (!Objects.equals(monitoringTypeComboBox.getValue(), option)) {
+                        monitoringTypeComboBox.setValue(option);
+                    }
+                    updateMonitoringTypeSaveButtonState();
+                    return;
+                }
+            }
+        }
+
+        if (monitoringTypeComboBox.getValue() == null && !monitoringTypeComboBox.getItems().isEmpty()) {
+            monitoringTypeComboBox.setValue(monitoringTypeComboBox.getItems().get(0));
+        }
+        updateMonitoringTypeSaveButtonState();
+    }
+
+    private void updateMonitoringTypeSaveButtonState() {
+        if (saveMonitoringTypeButton == null) {
+            return;
+        }
+        String selected = monitoringTypeComboBox == null ? null : monitoringTypeComboBox.getValue();
+        if (selected == null || selected.isBlank()) {
+            saveMonitoringTypeButton.setDisable(true);
+            return;
+        }
+        boolean unchanged = !activeMonitoringTypeKey.isBlank()
+            && activeMonitoringTypeKey.equals(normalizeUseCaseName(selected));
+        saveMonitoringTypeButton.setDisable(unchanged);
+    }
+
+    @FXML
+    private void onSaveMonitoringType() {
+        if (monitoringTypeComboBox == null) {
+            return;
+        }
+
+        String selectedMonitoringType = monitoringTypeComboBox.getValue();
+        if (selectedMonitoringType == null || selectedMonitoringType.isBlank()) {
+            showErrorAlert("Missing Monitoring Type", "Please choose a use case before saving monitoring type.");
+            return;
+        }
+
+        if (saveMonitoringTypeButton != null) {
+            saveMonitoringTypeButton.setDisable(true);
+        }
+
+        ApiService.getInstance().setMonitoringType(selectedMonitoringType)
+            .thenAccept(success -> Platform.runLater(() -> {
+                if (!success) {
+                    showErrorAlert("Update Failed", "Could not update monitoring type. Please try again.");
+                    updateMonitoringTypeSaveButtonState();
+                    return;
+                }
+
+                String resolvedDisplayName = resolveUseCaseDisplayName(selectedMonitoringType);
+                activeMonitoringTypeKey = normalizeUseCaseName(resolvedDisplayName);
+                if (activeMonitoringTypeValueLabel != null) {
+                    activeMonitoringTypeValueLabel.setText(resolvedDisplayName);
+                }
+                showInfoAlert("Monitoring Updated", "Active monitoring type is now " + resolvedDisplayName + ".");
+                updateMonitoringTypeSaveButtonState();
+            }))
+            .exceptionally(ex -> {
+                showErrorAlert("Update Failed", "Failed to update monitoring type: " + ex.getMessage());
+                Platform.runLater(this::updateMonitoringTypeSaveButtonState);
                 return null;
             });
     }

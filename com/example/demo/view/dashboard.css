@@ -50,6 +50,16 @@
     -fx-font-weight: bold;
 }
 
+.sidebar-monitoring-value {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+}
+
+.sidebar .combo-box {
+    -fx-pref-width: 220;
+}
+
 .sidebar .list-view {
     -fx-background-color: #1f2a3a;
     -fx-background-radius: 8;
