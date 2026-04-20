@@ -299,7 +299,10 @@ public class visPageController {
                         int id = userNode.get("userid").asInt();
                         String firstName = userNode.hasNonNull("fname") ? userNode.get("fname").asText() : "";
                         String lastName = userNode.hasNonNull("lname") ? userNode.get("lname").asText() : "";
-                        this.userData.add(new User(id, firstName, lastName));
+                        int activeUsecaseId = userNode.get("active_usecase_id").asInt();
+                        String usecaseName = userNode.hasNonNull("usecase_name") ? userNode.get("usecase_name").asText() : "";
+
+                        this.userData.add(new User(id, firstName, lastName, activeUsecaseId, usecaseName));
                         loadedCount++;
                      } else {
                         System.err.println("WARNING: User node missing userid field");

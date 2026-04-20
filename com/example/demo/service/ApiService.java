@@ -25,9 +25,10 @@ public class ApiService {
 
     //should be replaced with ngrok link
     private static final String BASE_URL = "http://localhost:5678/webhook"; //for local testing
-    //private static final String BASE_URL = "https://marcella-unguerdoned-ayanna.ngrok-free.dev/webhook";  //tali
+    //private static final String BASE_URL = "https://marcella-unguerdoned-ayanna.ngrok-free.dev/webhook";  //server
     //private static final String BASE_URL = "https://vacantly-holmic-etta.ngrok-free.dev/webhook";  //liran
     //private static final String BASE_URL = "https://barbera-astrophotographic-jairo.ngrok-free.dev/webhook";  //tom
+    //private static final String BASE_URL = "https://entomb-imprudent-diffusion.ngrok-free.dev"; //tali
 
     public static final String EP_GET_USERS = "/get-users";
     public static final String EP_GET_USECASES = "/get-sensor-types";
@@ -167,13 +168,14 @@ public class ApiService {
             .exceptionally(ignored -> "");
     }
 
-    public CompletableFuture<Boolean> setMonitoringType(String monitoringType) {
+    public CompletableFuture<Boolean> setMonitoringType(int userId, String monitoringType) {
         String trimmedType = monitoringType == null ? "" : monitoringType.trim();
-        if (trimmedType.isEmpty()) {
+        if (userId <= 0 || trimmedType.isEmpty()) {
             return CompletableFuture.completedFuture(false);
         }
 
         Map<String, Object> payload = new HashMap<>();
+        payload.put("userId", userId);
         payload.put("monitoringType", trimmedType);
         return post(EP_SET_MONITORING_TYPE, payload);
     }

@@ -224,7 +224,6 @@ public class DashboardController {
 
         loadUserss();
         loadUseCases();
-        loadActiveMonitoringType();
         loadMappings();
     }
 
@@ -518,6 +517,8 @@ public class DashboardController {
             if (UsersSidebarList.getSelectionModel().getSelectedItem() != newValue) {
                 UsersSidebarList.getSelectionModel().select(newValue);
             }
+
+            syncMonitoringEditorToSelectedUser(newValue);
             scheduleGraphUpdate();
         }));
 
@@ -726,7 +727,10 @@ public class DashboardController {
                     int id = node.path("userid").asInt();
                     String firstName = node.path("fname").asText("");
                     String lastName = node.path("lname").asText("");
-                    loaded.add(new User(id, firstName, lastName));
+                    int activeUsecaseId = node.path("active_usecase_id").asInt(0);
+                    String usecaseName = node.path("usecase_name").asText("");
+
+                    loaded.add(new User(id, firstName, lastName, activeUsecaseId, usecaseName));
                 }
 
                 Platform.runLater(() -> {
@@ -738,10 +742,13 @@ public class DashboardController {
                     User restoredSelection = findUserById(selectedUserId);
                     if (restoredSelection != null) {
                         UsersComboBox.setValue(restoredSelection);
+                        syncMonitoringEditorToSelectedUser(UsersComboBox.getValue());
                     } else if (!users.isEmpty()) {
                         UsersComboBox.setValue(users.get(0));
+                        syncMonitoringEditorToSelectedUser(UsersComboBox.getValue());
                     } else {
                         UsersComboBox.setValue(null);
+                        syncMonitoringEditorToSelectedUser(UsersComboBox.getValue());
                         contextUsersLabel.setText("-");
                     }
                 });
@@ -810,7 +817,8 @@ public class DashboardController {
                     }
                     state.setSelectedUseCase(selected);
                     applySelectedUseCaseUi(selected);
-                    syncMonitoringTypeEditorSelection();
+                    User selectedUser = UsersComboBox == null ? null : UsersComboBox.getValue();
+                    syncMonitoringEditorToSelectedUser(selectedUser);
                 });
             })
             .exceptionally(ex -> {
@@ -819,36 +827,7 @@ public class DashboardController {
             });
     }
 
-    private void loadActiveMonitoringType() {
-        ApiService.getInstance().getMonitoringType()
-            .thenAccept(type -> Platform.runLater(() -> {
-                if (type == null || type.isBlank()) {
-                    activeMonitoringTypeKey = "";
-                    if (activeMonitoringTypeValueLabel != null) {
-                        activeMonitoringTypeValueLabel.setText("Unavailable");
-                    }
-                    updateMonitoringTypeSaveButtonState();
-                    return;
-                }
 
-                String resolvedDisplayName = resolveUseCaseDisplayName(type);
-                activeMonitoringTypeKey = normalizeUseCaseName(resolvedDisplayName);
-                if (activeMonitoringTypeValueLabel != null) {
-                    activeMonitoringTypeValueLabel.setText(resolvedDisplayName);
-                }
-                syncMonitoringTypeEditorSelection();
-            }))
-            .exceptionally(ignored -> {
-                Platform.runLater(() -> {
-                    activeMonitoringTypeKey = "";
-                    if (activeMonitoringTypeValueLabel != null) {
-                        activeMonitoringTypeValueLabel.setText("Unavailable");
-                    }
-                    updateMonitoringTypeSaveButtonState();
-                });
-                return null;
-            });
-    }
 
     private String resolveUseCaseDisplayName(String rawUseCase) {
         if (rawUseCase == null || rawUseCase.isBlank()) {
@@ -871,26 +850,23 @@ public class DashboardController {
         return (fallback == null || fallback.isBlank()) ? rawUseCase.trim() : fallback;
     }
 
-    private void syncMonitoringTypeEditorSelection() {
-        if (monitoringTypeComboBox == null) {
+    private void syncMonitoringEditorToSelectedUser(User user) {
+        if (user == null) {
+            activeMonitoringTypeValueLabel.setText("Unavailable");
+            monitoringTypeComboBox.setValue(null);
+            updateMonitoringTypeSaveButtonState();
             return;
         }
 
-        if (!activeMonitoringTypeKey.isBlank()) {
-            for (String option : monitoringTypeComboBox.getItems()) {
-                if (activeMonitoringTypeKey.equals(normalizeUseCaseName(option))) {
-                    if (!Objects.equals(monitoringTypeComboBox.getValue(), option)) {
-                        monitoringTypeComboBox.setValue(option);
-                    }
-                    updateMonitoringTypeSaveButtonState();
-                    return;
-                }
-            }
-        }
+        String displayUsecase = resolveUseCaseDisplayName(user.getUsecaseName());
+        activeMonitoringTypeValueLabel.setText(displayUsecase);
 
-        if (monitoringTypeComboBox.getValue() == null && !monitoringTypeComboBox.getItems().isEmpty()) {
+        if (displayUsecase != null && !displayUsecase.isBlank()) {
+            monitoringTypeComboBox.setValue(displayUsecase);
+        } else if (!monitoringTypeComboBox.getItems().isEmpty()) {
             monitoringTypeComboBox.setValue(monitoringTypeComboBox.getItems().get(0));
         }
+
         updateMonitoringTypeSaveButtonState();
     }
 
@@ -898,13 +874,18 @@ public class DashboardController {
         if (saveMonitoringTypeButton == null) {
             return;
         }
+
+        User selectedUser = UsersComboBox == null ? null : UsersComboBox.getValue();
         String selected = monitoringTypeComboBox == null ? null : monitoringTypeComboBox.getValue();
-        if (selected == null || selected.isBlank()) {
+
+        if (selectedUser == null || selected == null || selected.isBlank()) {
             saveMonitoringTypeButton.setDisable(true);
             return;
         }
-        boolean unchanged = !activeMonitoringTypeKey.isBlank()
-            && activeMonitoringTypeKey.equals(normalizeUseCaseName(selected));
+
+        boolean unchanged =
+                normalizeUseCaseName(selected).equals(normalizeUseCaseName(selectedUser.getUsecaseName()));
+
         saveMonitoringTypeButton.setDisable(unchanged);
     }
 
@@ -914,9 +895,15 @@ public class DashboardController {
             return;
         }
 
+        User selectedUser = UsersComboBox == null ? null : UsersComboBox.getValue();
+        if (selectedUser == null) {
+            showErrorAlert("Missing User", "Please choose a user before saving monitoring type.");
+            return;
+        }
+
         String selectedMonitoringType = monitoringTypeComboBox.getValue();
         if (selectedMonitoringType == null || selectedMonitoringType.isBlank()) {
-            showErrorAlert("Missing Monitoring Type", "Please choose a use case before saving monitoring type.");
+            showErrorAlert("Missing Monitoring Type", "Please choose a use case before saving.");
             return;
         }
 
@@ -924,27 +911,32 @@ public class DashboardController {
             saveMonitoringTypeButton.setDisable(true);
         }
 
-        ApiService.getInstance().setMonitoringType(selectedMonitoringType)
-            .thenAccept(success -> Platform.runLater(() -> {
-                if (!success) {
-                    showErrorAlert("Update Failed", "Could not update monitoring type. Please try again.");
-                    updateMonitoringTypeSaveButtonState();
-                    return;
-                }
 
-                String resolvedDisplayName = resolveUseCaseDisplayName(selectedMonitoringType);
-                activeMonitoringTypeKey = normalizeUseCaseName(resolvedDisplayName);
-                if (activeMonitoringTypeValueLabel != null) {
+        ApiService.getInstance().setMonitoringType(selectedUser.getUserID(), selectedMonitoringType)
+                .thenAccept(success -> Platform.runLater(() -> {
+                    if (!success) {
+                        showErrorAlert("Update Failed", "Could not update monitoring type. Please try again.");
+                        updateMonitoringTypeSaveButtonState();
+                        return;
+                    }
+
+                    String resolvedDisplayName = resolveUseCaseDisplayName(selectedMonitoringType);
                     activeMonitoringTypeValueLabel.setText(resolvedDisplayName);
-                }
-                showInfoAlert("Monitoring Updated", "Active monitoring type is now " + resolvedDisplayName + ".");
-                updateMonitoringTypeSaveButtonState();
-            }))
-            .exceptionally(ex -> {
-                showErrorAlert("Update Failed", "Failed to update monitoring type: " + ex.getMessage());
-                Platform.runLater(this::updateMonitoringTypeSaveButtonState);
-                return null;
-            });
+
+                    selectedUser.setUsecaseName(resolvedDisplayName);
+
+                    showInfoAlert(
+                            "Monitoring Updated",
+                            "User " + selectedUser.getUserID() + " will now use " + resolvedDisplayName + "."
+                    );
+
+                    loadUserss(); // safest way to refresh from DB
+                }))
+                .exceptionally(ex -> {
+                    showErrorAlert("Update Failed", "Failed to update monitoring type: " + ex.getMessage());
+                    Platform.runLater(this::updateMonitoringTypeSaveButtonState);
+                    return null;
+                });
     }
 
     private void resolveSelectedUseCaseId(String selectedUseCase) {
@@ -1980,5 +1972,7 @@ public class DashboardController {
             this.baseUnit = baseUnit;
         }
     }
+
+
 }
 
