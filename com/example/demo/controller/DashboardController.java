@@ -37,6 +37,11 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableView;
+import javafx.scene.control.cell.PropertyValueFactory;
+import com.example.demo.model.Schedule;
+import com.example.demo.model.ScheduleApiResponse;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
@@ -194,6 +199,36 @@ public class DashboardController {
     @FXML
     private Label agentTypingLabel;
 
+    // Scheduling UI
+    @FXML
+    private TableView<Schedule> schedulesTable;
+    @FXML
+    private TableColumn<Schedule, Integer> colScheduleId;
+    @FXML
+    private TableColumn<Schedule, Integer> colUserId;
+    @FXML
+    private TableColumn<Schedule, String> colMeasureType;
+    @FXML
+    private TableColumn<Schedule, Double> colTrigger;
+    @FXML
+    private TableColumn<Schedule, String> colNextCheck;
+    @FXML
+    private TableColumn<Schedule, Integer> colInterval;
+    @FXML
+    private TableColumn<Schedule, Boolean> colActive;
+    @FXML
+    private TextField scheduleIdField;
+    @FXML
+    private TextField userIdField;
+    @FXML
+    private TextField intervalDaysField;
+    @FXML
+    private TextField measureTypeField;
+    @FXML
+    private TextField triggerPercentageField;
+    @FXML
+    private Label scheduleStatusLabel;
+
     private final DashboardState state = DashboardState.getInstance();
     private final ObservableList<User> users = FXCollections.observableArrayList();
     private final ObservableList<String> useCases = FXCollections.observableArrayList();
@@ -220,6 +255,7 @@ public class DashboardController {
         setupChat();
         setupGraph();
         setupMappingsRuleBuilder();
+        setupSchedulesTable();
         setupStateListeners();
 
         loadUserss();
@@ -242,6 +278,134 @@ public class DashboardController {
         enforceIntegerInput(ruleMaxDurationField);
         enforceIntegerInput(ruleMinIntervalField);
         enforceIntegerInput(ruleMaxIntervalField);
+    }
+
+    private void setupSchedulesTable() {
+        try {
+            if (colScheduleId != null) colScheduleId.setCellValueFactory(new PropertyValueFactory<>("scheduleId"));
+            if (colUserId != null) colUserId.setCellValueFactory(new PropertyValueFactory<>("userId"));
+            if (colMeasureType != null) colMeasureType.setCellValueFactory(new PropertyValueFactory<>("measureType"));
+            if (colTrigger != null) colTrigger.setCellValueFactory(new PropertyValueFactory<>("triggerPercentage"));
+            if (colNextCheck != null) colNextCheck.setCellValueFactory(new PropertyValueFactory<>("nextCheck"));
+            if (colInterval != null) colInterval.setCellValueFactory(new PropertyValueFactory<>("intervalDays"));
+            if (colActive != null) colActive.setCellValueFactory(new PropertyValueFactory<>("active"));
+            
+            // Add selection listener to populate text fields when a row is clicked
+            if (schedulesTable != null) {
+                schedulesTable.getSelectionModel().selectedItemProperty().addListener(onNewValueChanged(selectedSchedule -> {
+                    if (selectedSchedule != null) {
+                        populateScheduleFields(selectedSchedule);
+                    }
+                }));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    
+    private void populateScheduleFields(Schedule schedule) {
+        if (schedule == null) {
+            return;
+        }
+        
+        if (scheduleIdField != null) {
+            scheduleIdField.setText(String.valueOf(schedule.getScheduleId()));
+        }
+        if (userIdField != null) {
+            userIdField.setText(String.valueOf(schedule.getUserId()));
+        }
+        if (intervalDaysField != null) {
+            intervalDaysField.setText(String.valueOf(schedule.getIntervalDays()));
+        }
+        if (measureTypeField != null) {
+            measureTypeField.setText(schedule.getMeasureType());
+        }
+        if (triggerPercentageField != null) {
+            triggerPercentageField.setText(String.valueOf(schedule.getTriggerPercentage()));
+        }
+    }
+
+    private void updateSchedulesTable(ScheduleApiResponse resp) {
+        if (resp == null) return;
+        ObservableList<Schedule> list = FXCollections.observableArrayList(resp.getSchedules());
+        if (schedulesTable != null) schedulesTable.setItems(list);
+        if (scheduleStatusLabel != null) scheduleStatusLabel.setText(resp.getReply() != null && !resp.getReply().isEmpty() ? resp.getReply() : (resp.isSuccess() ? "OK" : resp.getErrorMessage()));
+    }
+
+    @FXML
+    private void onListAllSchedules() {
+        String uc = this.getSelectedUsecaseName();
+        ApiService.getInstance().listAllSchedules(uc).thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
+    }
+
+    @FXML
+    private void onListActiveSchedules() {
+        String uc = this.getSelectedUsecaseName();
+        ApiService.getInstance().listActiveSchedules(uc).thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
+    }
+
+    @FXML
+    private void onAddSchedule() {
+        try {
+            int userId = Integer.parseInt(userIdField.getText().trim());
+            int interval = Integer.parseInt(intervalDaysField.getText().trim());
+            String measure = measureTypeField.getText().trim();
+            double trigger = Double.parseDouble(triggerPercentageField.getText().trim());
+            String uc = this.getSelectedUsecaseName();
+            ApiService.getInstance().addSchedule(userId, interval, measure, trigger, uc)
+                .thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
+        } catch (Exception e) {
+            showErrorAlert("Input Error", "Please make sure all schedule fields are valid numbers/text.");
+        }
+    }
+
+    @FXML
+    private void onChangeSchedule() {
+        try {
+            int schedId = Integer.parseInt(scheduleIdField.getText().trim());
+            int userId = Integer.parseInt(userIdField.getText().trim());
+            int interval = Integer.parseInt(intervalDaysField.getText().trim());
+            String measure = measureTypeField.getText().trim();
+            double trigger = Double.parseDouble(triggerPercentageField.getText().trim());
+            String uc = this.getSelectedUsecaseName();
+            ApiService.getInstance().changeSchedule(schedId, userId, interval, measure, trigger, uc)
+                .thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
+        } catch (Exception e) {
+            showErrorAlert("Input Error", "Please make sure schedule id and other fields are valid.");
+        }
+    }
+
+    @FXML
+    private void onActivateSchedule() {
+        try {
+            int schedId = Integer.parseInt(scheduleIdField.getText().trim());
+            String uc = this.getSelectedUsecaseName();
+            ApiService.getInstance().activateSchedule(schedId, uc)
+                .thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
+        } catch (Exception e) {
+            showErrorAlert("Input Error", "Please provide a valid schedule id to activate.");
+        }
+    }
+
+    @FXML
+    private void onDeactivateSchedule() {
+        try {
+            int schedId = Integer.parseInt(scheduleIdField.getText().trim());
+            String uc = this.getSelectedUsecaseName();
+            ApiService.getInstance().deactivateSchedule(schedId, uc)
+                .thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
+        } catch (Exception e) {
+            showErrorAlert("Input Error", "Please provide a valid schedule id to deactivate.");
+        }
+    }
+
+    private String getSelectedUsecaseName() {
+        // prefer explicit selectedUseCaseLabel, fallback to monitoringTypeComboBox
+        String uc = selectedUseCaseLabel == null ? "" : selectedUseCaseLabel.getText();
+        if (uc == null || uc.trim().isEmpty()) {
+            uc = (monitoringTypeComboBox == null || monitoringTypeComboBox.getValue() == null) ? "" : monitoringTypeComboBox.getValue();
+        }
+        return uc == null ? "" : uc.trim();
     }
 
     private void updateRuleBuilderUseCaseDisplay(String selectedUseCase) {

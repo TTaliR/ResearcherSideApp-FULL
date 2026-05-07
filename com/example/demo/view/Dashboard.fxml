@@ -10,6 +10,8 @@
 <?import javafx.scene.control.Separator?>
 <?import javafx.scene.control.Tab?>
 <?import javafx.scene.control.TabPane?>
+<?import javafx.scene.control.TableColumn?>
+<?import javafx.scene.control.TableView?>
 <?import javafx.scene.control.TextField?>
 <?import javafx.scene.control.ToggleButton?>
 <?import javafx.scene.layout.AnchorPane?>
@@ -114,6 +116,45 @@
                                     </VBox>
                                 </right>
                             </BorderPane>
+                        </content>
+                    </Tab>
+                    <Tab fx:id="schedulingTab" text="Schedules">
+                        <content>
+                            <VBox spacing="10.0" styleClass="tab-content-root">
+                                <HBox spacing="8.0" alignment="CENTER_LEFT">
+                                    <Button text="List All" onAction="#onListAllSchedules" />
+                                    <Button text="List Active" onAction="#onListActiveSchedules" />
+                                </HBox>
+                                <TableView fx:id="schedulesTable" prefHeight="220.0" prefWidth="760.0">
+                                    <columns>
+                                        <TableColumn fx:id="colScheduleId" text="ID" prefWidth="60" />
+                                        <TableColumn fx:id="colUserId" text="User ID" prefWidth="80" />
+                                        <TableColumn fx:id="colMeasureType" text="Measure" prefWidth="140" />
+                                        <TableColumn fx:id="colTrigger" text="Trigger %" prefWidth="80" />
+                                        <TableColumn fx:id="colNextCheck" text="Next Check" prefWidth="140" />
+                                        <TableColumn fx:id="colInterval" text="Interval Days" prefWidth="100" />
+                                        <TableColumn fx:id="colActive" text="Active" prefWidth="60" />
+                                    </columns>
+                                </TableView>
+                                <HBox spacing="8.0" alignment="CENTER_LEFT">
+                                    <Label text="Schedule ID:" />
+                                    <TextField fx:id="scheduleIdField" promptText="(for edit/activate)" prefWidth="90" />
+                                    <Label text="User ID:" />
+                                    <TextField fx:id="userIdField" promptText="e.g. 100" prefWidth="80" />
+                                    <Label text="Interval:" />
+                                    <TextField fx:id="intervalDaysField" promptText="days" prefWidth="80" />
+                                    <Label text="Measure:" />
+                                    <TextField fx:id="measureTypeField" promptText="average" prefWidth="120" />
+                                    <Label text="Trigger %:" />
+                                    <TextField fx:id="triggerPercentageField" promptText="e.g. 15" prefWidth="70" />
+                                </HBox>
+                                <HBox spacing="8.0">
+                                    <Button text="Add" onAction="#onAddSchedule" styleClass="primary-button" />
+                                    <Button text="Change" onAction="#onChangeSchedule" />
+                                    <Button text="Activate" onAction="#onActivateSchedule" />
+                                    <Button text="Deactivate" onAction="#onDeactivateSchedule" />
+                                </HBox>
+                            </VBox>
                         </content>
                     </Tab>
 

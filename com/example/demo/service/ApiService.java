@@ -1,5 +1,7 @@
 package com.example.demo.service;
 
+import com.example.demo.model.Schedule;
+import com.example.demo.model.ScheduleApiResponse;
 import com.example.demo.model.SensorRuleConfig;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -45,6 +47,7 @@ public class ApiService {
     public static final String EP_CHAT_CONFIG = "/chat";
     public static final String EP_CHECK_CONNECTION = "/check-connection";
     public static final String EP_SET_USERS = "/edit-users";
+    public static final String EP_SCHEDULE = "/schedule";
 
     private static final ApiService INSTANCE = new ApiService();
     private final ObjectMapper mapper;
@@ -150,6 +153,235 @@ public class ApiService {
         payload.put("fName", trimmedFirstName);
         payload.put("lName", trimmedLastName);
         return post(EP_SET_USERS, payload);
+    }
+
+    public CompletableFuture<ScheduleApiResponse> listAllSchedules(String usecaseName) {
+        return sendScheduleRequest("listAll", new HashMap<>(), usecaseName,
+            "manual schedule list from researcher UI");
+    }
+
+    public CompletableFuture<ScheduleApiResponse> listActiveSchedules(String usecaseName) {
+        return sendScheduleRequest("listActive", new HashMap<>(), usecaseName,
+            "manual schedule active list from researcher UI");
+    }
+
+    public CompletableFuture<ScheduleApiResponse> addSchedule(int userId, int intervalDays, String measureType,
+                                                              double triggerPercentage, String usecaseName) {
+        String trimmedMeasureType = measureType == null ? "" : measureType.trim();
+        if (userId <= 0 || intervalDays <= 0 || trimmedMeasureType.isEmpty() || triggerPercentage < 0) {
+            return CompletableFuture.completedFuture(
+                failedScheduleResponse("Invalid schedule add request: userId, intervalDays, measureType, and triggerPercentage must be valid")
+            );
+        }
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("user_id", userId);
+        params.put("interval_days", intervalDays);
+        params.put("measure_type", trimmedMeasureType);
+        params.put("trigger_percentage", triggerPercentage);
+        return sendScheduleRequest("add", params, usecaseName, "manual schedule add from researcher UI");
+    }
+
+    public CompletableFuture<ScheduleApiResponse> changeSchedule(int scheduleId, int userId, int intervalDays,
+                                                                 String measureType, double triggerPercentage,
+                                                                 String usecaseName) {
+        String trimmedMeasureType = measureType == null ? "" : measureType.trim();
+        if (scheduleId <= 0 || userId <= 0 || intervalDays <= 0 || trimmedMeasureType.isEmpty() || triggerPercentage < 0) {
+            return CompletableFuture.completedFuture(
+                failedScheduleResponse("Invalid schedule change request: scheduleId, userId, intervalDays, measureType, and triggerPercentage must be valid")
+            );
+        }
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("schedule_id", scheduleId);
+        params.put("user_id", userId);
+        params.put("interval_days", intervalDays);
+        params.put("measure_type", trimmedMeasureType);
+        params.put("trigger_percentage", triggerPercentage);
+        return sendScheduleRequest("change", params, usecaseName, "manual schedule edit from researcher UI");
+    }
+
+    public CompletableFuture<ScheduleApiResponse> deactivateSchedule(int scheduleId, String usecaseName) {
+        if (scheduleId <= 0) {
+            return CompletableFuture.completedFuture(failedScheduleResponse("Invalid schedule deactivate request: scheduleId must be valid"));
+        }
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("schedule_id", scheduleId);
+        return sendScheduleRequest("deactivate", params, usecaseName, "manual schedule deactivate from researcher UI");
+    }
+
+    public CompletableFuture<ScheduleApiResponse> activateSchedule(int scheduleId, String usecaseName) {
+        if (scheduleId <= 0) {
+            return CompletableFuture.completedFuture(failedScheduleResponse("Invalid schedule activate request: scheduleId must be valid"));
+        }
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("schedule_id", scheduleId);
+        return sendScheduleRequest("activate", params, usecaseName, "manual schedule activate from researcher UI");
+    }
+
+    private CompletableFuture<ScheduleApiResponse> sendScheduleRequest(String action, Map<String, Object> params,
+                                                                       String usecaseName, String message) {
+        String trimmedUsecaseName = usecaseName == null ? "" : usecaseName.trim();
+        if (trimmedUsecaseName.isEmpty()) {
+            return CompletableFuture.completedFuture(failedScheduleResponse("usecaseName is required"));
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("action", action);
+        payload.put("params", params == null ? new HashMap<>() : params);
+        payload.put("session_id", "researcher-ui");
+        payload.put("usecase_id", 0);
+        payload.put("usecase_name", trimmedUsecaseName);
+        payload.put("message", message == null ? "" : message);
+
+        return postWithResponse(EP_SCHEDULE, payload)
+            .thenApply(this::parseScheduleResponse)
+            .exceptionally(ex -> failedScheduleResponse("Schedule request failed: " + ex.getMessage()));
+    }
+
+    private ScheduleApiResponse parseScheduleResponse(JsonNode response) {
+        ScheduleApiResponse result = new ScheduleApiResponse();
+        result.setRawResponse(response);
+        result.setRawJsonResponse(response == null ? "" : response.toString());
+
+        if (response == null || response.isNull()) {
+            result.setSuccess(false);
+            result.setErrorMessage("Empty schedule response");
+            return result;
+        }
+
+        boolean hasSchedules = false;
+        JsonNode scheduleArray = extractScheduleArrayNode(response);
+        if (scheduleArray != null && scheduleArray.isArray()) {
+            hasSchedules = true;
+            result.setSchedules(parseSchedules(scheduleArray));
+        } else {
+            result.setSchedules(new java.util.ArrayList<>());
+        }
+
+        String reply = extractTextField(response, "reply");
+        String message = extractTextField(response, "message");
+        String error = extractTextField(response, "error");
+
+        if (!reply.isBlank()) {
+            result.setReply(reply);
+        } else if (!message.isBlank() && (response.path("success").isBoolean() ? response.path("success").asBoolean(false) : true)) {
+            result.setReply(message);
+        }
+
+        boolean explicitSuccess = response.has("success") ? response.path("success").asBoolean(false) : (hasSchedules || !reply.isBlank() || !message.isBlank());
+        if (response.has("success") && !response.path("success").asBoolean(false)) {
+            explicitSuccess = false;
+        }
+        if (!error.isBlank()) {
+            explicitSuccess = false;
+        }
+
+        result.setSuccess(explicitSuccess);
+
+        if (!result.isSuccess()) {
+            String errorMessage = firstNonBlank(error, message, reply, "Schedule request failed");
+            result.setErrorMessage(errorMessage);
+        } else {
+            result.setErrorMessage("");
+        }
+
+        if (!hasSchedules && reply.isBlank() && message.isBlank() && error.isBlank()) {
+            result.setSuccess(false);
+            result.setErrorMessage("Invalid schedule response format");
+        }
+
+        return result;
+    }
+
+    private JsonNode extractScheduleArrayNode(JsonNode response) {
+        if (response == null) {
+            return null;
+        }
+
+        if (response.isArray()) {
+            return response;
+        }
+
+        if (response.has("data") && response.get("data").isArray()) {
+            return response.get("data");
+        }
+
+        if (response.has("payload") && response.get("payload").isArray()) {
+            return response.get("payload");
+        }
+
+        return null;
+    }
+
+    private List<Schedule> parseSchedules(JsonNode scheduleArray) {
+        List<Schedule> schedules = new java.util.ArrayList<>();
+        if (scheduleArray == null || !scheduleArray.isArray()) {
+            return schedules;
+        }
+
+        for (JsonNode node : scheduleArray) {
+            schedules.add(parseSchedule(node));
+        }
+        return schedules;
+    }
+
+    private Schedule parseSchedule(JsonNode node) {
+        Schedule schedule = new Schedule();
+        if (node == null || node.isNull() || !node.isObject()) {
+            return schedule;
+        }
+
+        schedule.setScheduleId(node.path("schedule_id").asInt(node.path("id").asInt(0)));
+        schedule.setUserId(node.path("user_id").asInt(node.path("userId").asInt(0)));
+        schedule.setMeasureType(node.path("measure_type").asText(node.path("measureType").asText("")));
+        schedule.setTriggerPercentage(node.path("trigger_percentage").asDouble(node.path("triggerPercentage").asDouble(0.0)));
+        schedule.setNextCheck(node.path("next_check").asText(node.path("nextCheck").asText("")));
+        schedule.setIntervalDays(node.path("interval_days").asInt(node.path("intervalDays").asInt(0)));
+        schedule.setActive(node.path("active").asBoolean(node.path("isActive").asBoolean(false)));
+        return schedule;
+    }
+
+    private String extractTextField(JsonNode response, String fieldName) {
+        if (response == null || fieldName == null || !response.has(fieldName)) {
+            return "";
+        }
+
+        JsonNode node = response.get(fieldName);
+        if (node == null || node.isNull()) {
+            return "";
+        }
+
+        if (node.isTextual()) {
+            return node.asText("").trim();
+        }
+
+        return node.asText("").trim();
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return "";
+        }
+
+        for (String value : values) {
+            if (value != null && !value.trim().isEmpty()) {
+                return value.trim();
+            }
+        }
+        return "";
+    }
+
+    private ScheduleApiResponse failedScheduleResponse(String message) {
+        ScheduleApiResponse response = new ScheduleApiResponse();
+        response.setSuccess(false);
+        response.setSchedules(new java.util.ArrayList<>());
+        response.setErrorMessage(message == null ? "Schedule request failed" : message);
+        response.setReply("");
+        response.setRawJsonResponse("");
+        return response;
     }
 
     public CompletableFuture<String> getMonitoringType() {
