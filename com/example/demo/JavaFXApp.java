@@ -18,19 +18,13 @@ import java.util.Optional;
 public class JavaFXApp extends Application {
    public void start(Stage primaryStage) {
       try {
-         FXMLLoader fxmlLoader = new FXMLLoader(this.getClass().getResource("/com/example/demo/view/Dashboard.fxml"));
-         Scene scene = new Scene((Parent)fxmlLoader.load());
-         scene.getStylesheets().add(this.getClass().getResource("/com/example/demo/view/dashboard.css").toExternalForm());
-         primaryStage.getIcons().add(new Image(this.getClass().getResourceAsStream("/com/example/demo/images/app-icon.png")));
          primaryStage.setTitle("Smart Watch Haptic System");
-         primaryStage.setScene(scene);
-         primaryStage.show();
+         primaryStage.getIcons().add(new Image(this.getClass().getResourceAsStream("/com/example/demo/images/app-icon.png")));
 
-         // Show a modal dialog that blocks user interaction until connection is available or the app is closed
+         // Check connection first, before loading Dashboard
          while (!ApiService.getInstance().checkConnection()) {
             Alert alert = new Alert(Alert.AlertType.NONE);
-            alert.initOwner(primaryStage);
-            alert.initModality(Modality.WINDOW_MODAL);
+            alert.initModality(Modality.APPLICATION_MODAL);
             alert.setTitle("No Connection");
             alert.setHeaderText("No connection to the server");
             alert.setContentText("Please check your network or n8n server.\nYou can retry or close the application.");
@@ -46,6 +40,14 @@ public class JavaFXApp extends Application {
             // If Retry selected, loop continues and re-checks connection
          }
          System.out.println("Connection Established!");
+
+         // Load Dashboard after connection is verified
+         FXMLLoader fxmlLoader = new FXMLLoader(this.getClass().getResource("/com/example/demo/view/Dashboard.fxml"));
+         Scene scene = new Scene((Parent)fxmlLoader.load());
+         scene.getStylesheets().add(this.getClass().getResource("/com/example/demo/view/dashboard.css").toExternalForm());
+         primaryStage.setScene(scene);
+         primaryStage.setMaximized(true);
+         primaryStage.show();
       } catch (Exception var4) {
          var4.printStackTrace();
       }
