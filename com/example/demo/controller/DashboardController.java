@@ -30,6 +30,7 @@ import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
+import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.control.ToggleButton;
@@ -679,7 +680,7 @@ public class DashboardController {
         TextField descriptionField = new TextField();
         descriptionField.setPromptText("Use case description (optional)");
 
-        Label feedbackNote = new Label("To receive feedback, follow the n8n side instructions in 'Vibration Orchastrator': create a new rule and assign it to a user.");
+        Label feedbackNote = new Label("To receive feedback, follow the n8n side instructions in 'Vibration Orchastrator', create a new rule and assign it to a user.");
         feedbackNote.setWrapText(true);
 
         VBox content = new VBox(8,
@@ -1589,15 +1590,18 @@ public class DashboardController {
     }
 
     private void addChatMessage(String text, boolean userMessage) {
-        Label bubble = new Label(text);
+        TextArea bubble = new TextArea(text);
         bubble.setWrapText(true);
+        bubble.setPrefRowCount(Math.max(1, (int) Math.ceil(text.length() / 50.0)));
         bubble.setMaxWidth(580);
+        bubble.setEditable(false);
+        bubble.setStyle("-fx-focus-color: transparent; -fx-faint-focus-color: transparent;");
         bubble.getStyleClass().add(userMessage ? "chat-bubble-user" : "chat-bubble-ai");
 
         HBox row = new HBox(bubble);
         row.getStyleClass().add("chat-message-row");
         row.setFillHeight(true);
-        HBox.setHgrow(bubble, Priority.NEVER);
+        HBox.setHgrow(bubble, Priority.ALWAYS);
         row.setAlignment(userMessage ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
 
         chatHistoryBox.getChildren().add(row);

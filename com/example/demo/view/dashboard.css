@@ -206,6 +206,9 @@
     -fx-padding: 10;
     -fx-background-radius: 10;
     -fx-border-radius: 10;
+    -fx-text-fill: #1f2f43;
+    -fx-font-size: 13px;
+    -fx-control-inner-background: #dbeafe;
 }
 
 .chat-bubble-ai {
@@ -214,6 +217,9 @@
     -fx-padding: 10;
     -fx-background-radius: 10;
     -fx-border-radius: 10;
+    -fx-text-fill: #1f2f43;
+    -fx-font-size: 13px;
+    -fx-control-inner-background: #f3f4f6;
 }
 
 .context-drawer {
