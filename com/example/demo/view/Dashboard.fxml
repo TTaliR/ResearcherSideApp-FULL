@@ -35,19 +35,22 @@
         <VBox fx:id="useCasesSidebarPane" spacing="8.0" VBox.vgrow="ALWAYS">
             <Label styleClass="sidebar-section-title" text="Available Use Cases" />
             <ListView fx:id="useCaseListView" VBox.vgrow="ALWAYS" />
-            <Separator />
-            <Label styleClass="sidebar-section-title" text="Active Monitoring" />
-            <Label text="Current:" styleClass="sidebar-muted-text" />
-            <Label fx:id="activeMonitoringTypeValueLabel" text="Loading..." styleClass="sidebar-monitoring-value" style="-fx-text-fill: #ffffff; -fx-font-size: 14px; -fx-font-weight: bold;" />
-            <ComboBox fx:id="monitoringTypeComboBox" promptText="Select use case" />
-            <Button fx:id="saveMonitoringTypeButton" text="Save Monitoring Type" styleClass="secondary-button" onAction="#onSaveMonitoringType" />
         </VBox>
 
         <VBox fx:id="UsersSidebarPane" spacing="8.0" visible="false" managed="false" VBox.vgrow="ALWAYS">
             <Label styleClass="sidebar-section-title" text="Users List" />
-            <Label text="Total Userss:" styleClass="sidebar-muted-text" />
+            <Label text="Total Users:" styleClass="sidebar-muted-text" />
             <Label fx:id="UsersCountLabel" text="0" styleClass="sidebar-count" />
             <ListView fx:id="UsersSidebarList" VBox.vgrow="ALWAYS" />
+            <Separator />
+            <Label styleClass="sidebar-section-title" text="Assign Use Case" />
+            <Label text="Selected User:" styleClass="sidebar-muted-text" />
+            <Label fx:id="selectedUserForAssignmentLabel" text="-" styleClass="sidebar-user-value" style="-fx-text-fill: #ffffff; -fx-font-size: 13px; -fx-font-weight: bold;" />
+            <Label text="Current Use Case:" styleClass="sidebar-muted-text" />
+            <Label fx:id="currentUserUseCaseLabel" text="-" styleClass="sidebar-value" style="-fx-text-fill: #e5e7eb; -fx-font-size: 12px;" />
+            <Label text="Assign to:" styleClass="sidebar-muted-text" />
+            <ComboBox fx:id="userUseCaseComboBox" promptText="Select use case" />
+            <Button fx:id="assignUserUseCaseButton" text="Assign Use Case" styleClass="primary-button" onAction="#onAssignUserUseCase" />
         </VBox>
 
         <Separator />
