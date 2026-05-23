@@ -35,6 +35,8 @@
         <VBox fx:id="useCasesSidebarPane" spacing="8.0" VBox.vgrow="ALWAYS">
             <Label styleClass="sidebar-section-title" text="Available Use Cases" />
             <ListView fx:id="useCaseListView" VBox.vgrow="ALWAYS" />
+            <Button fx:id="addUseCaseButton" text="Add Use Case" styleClass="primary-button" onAction="#onAddUseCaseRequested" />
+            <Label text="To receive feedback, follow the n8n side instructions in 'Vibration Orchastrator': create a new rule and assign it to a user." wrapText="true" styleClass="sidebar-muted-text" />
         </VBox>
 
         <VBox fx:id="UsersSidebarPane" spacing="8.0" visible="false" managed="false" VBox.vgrow="ALWAYS">

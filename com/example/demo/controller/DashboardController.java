@@ -663,6 +663,71 @@ public class DashboardController {
         });
     }
 
+
+    @FXML
+    private void onAddUseCaseRequested() {
+        Dialog<ButtonType> dialog = new Dialog<>();
+        dialog.setTitle("Add Use Case");
+        dialog.setHeaderText("Create a new use case. Name is required.");
+
+        ButtonType addButtonType = new ButtonType("Add", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(addButtonType, ButtonType.CANCEL);
+
+        TextField nameField = new TextField();
+        nameField.setPromptText("Use case name");
+
+        TextField descriptionField = new TextField();
+        descriptionField.setPromptText("Use case description (optional)");
+
+        Label feedbackNote = new Label("To receive feedback, follow the n8n side instructions in 'Vibration Orchastrator': create a new rule and assign it to a user.");
+        feedbackNote.setWrapText(true);
+
+        VBox content = new VBox(8,
+                new Label("Name *"),
+                nameField,
+                new Label("Description"),
+                descriptionField,
+                feedbackNote
+        );
+        content.setPadding(new Insets(10));
+        dialog.getDialogPane().setContent(content);
+
+        Node addButton = dialog.getDialogPane().lookupButton(addButtonType);
+        addButton.setDisable(true);
+        nameField.textProperty().addListener((obs, oldValue, newValue) ->
+                addButton.setDisable(newValue == null || newValue.trim().isEmpty()));
+
+        Optional<ButtonType> result = dialog.showAndWait();
+        if (result.isEmpty() || result.get() != addButtonType) {
+            return;
+        }
+
+        String name = nameField.getText() == null ? "" : nameField.getText().trim();
+        String description = descriptionField.getText() == null ? "" : descriptionField.getText().trim();
+        if (name.isBlank()) {
+            showErrorAlert("Validation Error", "Use case name is required.");
+            return;
+        }
+
+        ApiService.getInstance().createUseCase(name, description)
+                .thenAccept(success -> Platform.runLater(() -> {
+                    if (!success) {
+                        showErrorAlert("Create Failed", "Could not create the use case. Please try again.");
+                        return;
+                    }
+
+                    state.setSelectedUseCase(name);
+                    showInfoAlert(
+                            "Use Case Created",
+                            "Use case '" + name + "' was created.\n\nTo receive feedback, follow the instructions on the n8n side ('Vibration Orchastrator'), create a new rule, and assign it to a user."
+                    );
+                    loadUseCases();
+                }))
+                .exceptionally(ex -> {
+                    showErrorAlert("Create Failed", "Failed to create use case: " + ex.getMessage());
+                    return null;
+                });
+    }
     private void setupTopbar() {
         UsersComboBox.setItems(users);
         UsersComboBox.setCellFactory(listView -> new ListCell<>() {

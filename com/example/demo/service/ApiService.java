@@ -48,6 +48,7 @@ public class ApiService {
     public static final String EP_CHECK_CONNECTION = "/check-connection";
     public static final String EP_SET_USERS = "/edit-users";
     public static final String EP_SCHEDULE = "/schedule";
+    public static final String EP_CREATE_USECASE = "/create-usecase";
 
     private static final ApiService INSTANCE = new ApiService();
     private final ObjectMapper mapper;
@@ -118,6 +119,18 @@ public class ApiService {
             }
         }
         return CompletableFuture.completedFuture(allSuccessful);
+    }
+
+    public CompletableFuture<Boolean> createUseCase(String name, String description) {
+        String trimmedName = name == null ? "" : name.trim();
+        if (trimmedName.isEmpty()) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("name", trimmedName);
+        payload.put("description", description == null ? "" : description.trim());
+        return post(EP_CREATE_USECASE, payload);
     }
 
     public CompletableFuture<Boolean> deleteMapping(int mappingId) {
