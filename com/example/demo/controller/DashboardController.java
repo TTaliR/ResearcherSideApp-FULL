@@ -30,7 +30,7 @@ import javafx.scene.control.Spinner;
 import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
-import javafx.scene.control.TextArea;
+import javafx.concurrent.Worker;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.control.ToggleButton;
@@ -51,6 +51,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.web.WebView;
+import javafx.scene.paint.Color;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.util.Duration;
@@ -1590,21 +1591,355 @@ public class DashboardController {
     }
 
     private void addChatMessage(String text, boolean userMessage) {
-        TextArea bubble = new TextArea(text);
-        bubble.setWrapText(true);
-        bubble.setPrefRowCount(Math.max(1, (int) Math.ceil(text.length() / 50.0)));
-        bubble.setMaxWidth(580);
-        bubble.setEditable(false);
-        bubble.setStyle("-fx-focus-color: transparent; -fx-faint-focus-color: transparent;");
-        bubble.getStyleClass().add(userMessage ? "chat-bubble-user" : "chat-bubble-ai");
+        WebView bubble = createChatBubbleView(text, userMessage);
 
         HBox row = new HBox(bubble);
         row.getStyleClass().add("chat-message-row");
         row.setFillHeight(true);
-        HBox.setHgrow(bubble, Priority.ALWAYS);
         row.setAlignment(userMessage ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
 
         chatHistoryBox.getChildren().add(row);
+    }
+
+    private static final Pattern MARKDOWN_INLINE = Pattern.compile("\\[([^]]+)]\\(([^)]+)\\)|\\*\\*(.+?)\\*\\*|\\*(.+?)\\*|`([^`]+)`");
+    private static final double CHAT_BUBBLE_MIN_WIDTH = 80.0;
+    private static final double CHAT_BUBBLE_MAX_WIDTH = 560.0;
+    private static final double CHAT_BUBBLE_MIN_HEIGHT = 44.0;
+
+    private WebView createChatBubbleView(String text, boolean userMessage) {
+        WebView webView = new WebView();
+        webView.setContextMenuEnabled(true);
+        webView.setFocusTraversable(false);
+        webView.setMinWidth(CHAT_BUBBLE_MIN_WIDTH);
+        webView.setPrefWidth(CHAT_BUBBLE_MAX_WIDTH);
+        webView.setMaxWidth(CHAT_BUBBLE_MAX_WIDTH);
+        webView.setMinHeight(CHAT_BUBBLE_MIN_HEIGHT);
+        webView.setStyle("-fx-background-color: transparent;");
+        webView.setPageFill(Color.TRANSPARENT);
+
+        webView.getEngine().loadContent(buildChatBubbleHtml(text, userMessage), "text/html");
+        webView.getEngine().getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
+            if (newState == Worker.State.SUCCEEDED) {
+                Platform.runLater(() -> adjustChatBubbleSize(webView, false));
+            }
+        });
+
+        return webView;
+    }
+
+    private void adjustChatBubbleSize(WebView webView, boolean secondPass) {
+        try {
+            Object metrics = webView.getEngine().executeScript("(() => {"
+                + "const bubble = document.querySelector('.bubble');"
+                + "if (!bubble) return JSON.stringify({width: 0, height: 0});"
+                + "const rect = bubble.getBoundingClientRect();"
+                + "return JSON.stringify({width: Math.ceil(rect.width), height: Math.ceil(rect.height)});"
+                + "})()");
+
+            if (metrics instanceof String metricJson && !metricJson.isBlank()) {
+                JsonNode metricNode = ApiService.getInstance().getMapper().readTree(metricJson);
+                double measuredWidth = metricNode.path("width").asDouble(0.0);
+                double measuredHeight = metricNode.path("height").asDouble(0.0);
+
+                double targetWidth = clamp(measuredWidth + 2, CHAT_BUBBLE_MIN_WIDTH, CHAT_BUBBLE_MAX_WIDTH);
+                double targetHeight = Math.max(CHAT_BUBBLE_MIN_HEIGHT, measuredHeight + 18);
+
+                boolean widthChanged = Math.abs(webView.getPrefWidth() - targetWidth) > 1.0;
+                webView.setMinWidth(targetWidth);
+                webView.setPrefWidth(targetWidth);
+                webView.setMaxWidth(targetWidth);
+                webView.setMinHeight(targetHeight);
+                webView.setPrefHeight(targetHeight);
+
+                // Re-measure once after the width is applied so wrapped long messages get the correct height.
+                if (widthChanged && !secondPass) {
+                    Platform.runLater(() -> adjustChatBubbleSize(webView, true));
+                }
+            }
+        } catch (Exception ignored) {
+            webView.setMinWidth(CHAT_BUBBLE_MIN_WIDTH);
+            webView.setPrefWidth(CHAT_BUBBLE_MIN_WIDTH);
+            webView.setMaxWidth(CHAT_BUBBLE_MAX_WIDTH);
+            webView.setPrefHeight(120);
+        }
+    }
+
+    private String buildChatBubbleHtml(String markdown, boolean userMessage) {
+        String renderedMarkdown = markdownToHtml(markdown);
+        String bubbleBg = userMessage ? "#2563eb" : "#f8fafc";
+        String bubbleText = userMessage ? "#ffffff" : "#111827";
+        String bubbleBorder = userMessage ? "#1d4ed8" : "#d1d5db";
+        String codeBg = userMessage ? "rgba(255,255,255,0.16)" : "#e5e7eb";
+        String linkColor = userMessage ? "#dbeafe" : "#1d4ed8";
+        String quoteColor = userMessage ? "#e5e7eb" : "#4b5563";
+
+        return """
+            <html>
+              <head>
+                <meta charset="UTF-8">
+                <style>
+                  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+                  body {
+                    font-family: 'Segoe UI', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
+                    display: inline-block;
+                    width: auto;
+                  }
+                  .bubble {
+                    box-sizing: border-box;
+                    display: inline-block;
+                    width: auto;
+                    max-width: 560px;
+                    padding: 10px 12px;
+                    border-radius: 12px;
+                    background: %s;
+                    color: %s;
+                    border: 1px solid %s;
+                    white-space: normal;
+                    overflow-wrap: anywhere;
+                    word-break: break-word;
+                    user-select: text;
+                    -webkit-user-select: text;
+                  }
+                  .bubble p { margin: 0 0 8px 0; }
+                  .bubble p:last-child { margin-bottom: 0; }
+                  .bubble pre {
+                    margin: 8px 0;
+                    padding: 10px;
+                    border-radius: 8px;
+                    background: %s;
+                    color: %s;
+                    overflow-x: auto;
+                    white-space: pre-wrap;
+                    word-break: break-word;
+                    font-family: Consolas, 'Courier New', 'Segoe UI Emoji', monospace;
+                    font-size: 13px;
+                  }
+                  .bubble code {
+                    font-family: Consolas, 'Courier New', 'Segoe UI Emoji', monospace;
+                    background: %s;
+                    padding: 1px 4px;
+                    border-radius: 4px;
+                  }
+                  .bubble a { color: %s; }
+                  .bubble ul, .bubble ol { margin: 0 0 8px 22px; padding: 0; }
+                  .bubble li { margin: 0 0 4px 0; }
+                  .bubble blockquote {
+                    margin: 8px 0;
+                    padding: 0 0 0 10px;
+                    border-left: 3px solid rgba(156, 163, 175, 0.8);
+                    color: %s;
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="bubble">%s</div>
+              </body>
+            </html>
+            """.formatted(bubbleBg, bubbleText, bubbleBorder, codeBg, bubbleText, codeBg, linkColor, quoteColor, renderedMarkdown);
+    }
+
+    private String markdownToHtml(String markdown) {
+        if (markdown == null || markdown.isBlank()) {
+            return "";
+        }
+
+        String normalized = markdown.replace("\r\n", "\n").replace('\r', '\n');
+        StringBuilder html = new StringBuilder();
+        StringBuilder paragraph = new StringBuilder();
+        boolean inCodeBlock = false;
+        boolean inUl = false;
+        boolean inOl = false;
+
+        String[] lines = normalized.split("\n", -1);
+        for (String line : lines) {
+            String trimmed = line.trim();
+
+            if (trimmed.startsWith("```")) {
+                if (paragraph.length() > 0) {
+                    html.append("<p>").append(renderInlineMarkdown(paragraph.toString())).append("</p>");
+                    paragraph.setLength(0);
+                }
+                if (inUl) {
+                    html.append("</ul>");
+                    inUl = false;
+                }
+                if (inOl) {
+                    html.append("</ol>");
+                    inOl = false;
+                }
+
+                if (!inCodeBlock) {
+                    html.append("<pre><code>");
+                    inCodeBlock = true;
+                } else {
+                    html.append("</code></pre>");
+                    inCodeBlock = false;
+                }
+                continue;
+            }
+
+            if (inCodeBlock) {
+                html.append(escapeHtml(line)).append("\n");
+                continue;
+            }
+
+            if (trimmed.isEmpty()) {
+                if (paragraph.length() > 0) {
+                    html.append("<p>").append(renderInlineMarkdown(paragraph.toString())).append("</p>");
+                    paragraph.setLength(0);
+                }
+                if (inUl) {
+                    html.append("</ul>");
+                    inUl = false;
+                }
+                if (inOl) {
+                    html.append("</ol>");
+                    inOl = false;
+                }
+                continue;
+            }
+
+            if (trimmed.matches("^(?:[-*+])\\s+.+")) {
+                if (paragraph.length() > 0) {
+                    html.append("<p>").append(renderInlineMarkdown(paragraph.toString())).append("</p>");
+                    paragraph.setLength(0);
+                }
+                if (inOl) {
+                    html.append("</ol>");
+                    inOl = false;
+                }
+                if (!inUl) {
+                    html.append("<ul>");
+                    inUl = true;
+                }
+                html.append("<li>").append(renderInlineMarkdown(trimmed.substring(1).trim())).append("</li>");
+                continue;
+            }
+
+            if (trimmed.matches("^\\d+\\.\\s+.+")) {
+                if (paragraph.length() > 0) {
+                    html.append("<p>").append(renderInlineMarkdown(paragraph.toString())).append("</p>");
+                    paragraph.setLength(0);
+                }
+                if (inUl) {
+                    html.append("</ul>");
+                    inUl = false;
+                }
+                if (!inOl) {
+                    html.append("<ol>");
+                    inOl = true;
+                }
+                int dotIndex = trimmed.indexOf('.');
+                html.append("<li>").append(renderInlineMarkdown(trimmed.substring(dotIndex + 1).trim())).append("</li>");
+                continue;
+            }
+
+            if (inUl) {
+                html.append("</ul>");
+                inUl = false;
+            }
+            if (inOl) {
+                html.append("</ol>");
+                inOl = false;
+            }
+
+            if (paragraph.length() > 0) {
+                paragraph.append('\n');
+            }
+            paragraph.append(trimmed);
+        }
+
+        if (paragraph.length() > 0) {
+            html.append("<p>").append(renderInlineMarkdown(paragraph.toString())).append("</p>");
+        }
+        if (inUl) {
+            html.append("</ul>");
+        }
+        if (inOl) {
+            html.append("</ol>");
+        }
+        if (inCodeBlock) {
+            html.append("</code></pre>");
+        }
+
+        return html.toString();
+    }
+
+    private String renderInlineMarkdown(String text) {
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder html = new StringBuilder();
+
+        String[] lines = text.split("\\n", -1);
+        for (int lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+            String line = lines[lineIndex];
+            Matcher matcher = MARKDOWN_INLINE.matcher(line);
+            int lastIndex = 0;
+
+            while (matcher.find()) {
+                html.append(escapeHtml(line.substring(lastIndex, matcher.start())));
+
+                if (matcher.group(1) != null && matcher.group(2) != null) {
+                    String label = escapeHtml(matcher.group(1));
+                    String href = sanitizeHref(matcher.group(2));
+                    if (href.isBlank()) {
+                        html.append(escapeHtml(matcher.group(0)));
+                    } else {
+                        html.append("<a href=\"")
+                            .append(escapeHtml(href))
+                            .append("\" target=\"_blank\" rel=\"noopener noreferrer\">")
+                            .append(label)
+                            .append("</a>");
+                    }
+                } else if (matcher.group(3) != null) {
+                    html.append("<strong>").append(escapeHtml(matcher.group(3))).append("</strong>");
+                } else if (matcher.group(4) != null) {
+                    html.append("<em>").append(escapeHtml(matcher.group(4))).append("</em>");
+                } else if (matcher.group(5) != null) {
+                    html.append("<code>").append(escapeHtml(matcher.group(5))).append("</code>");
+                }
+
+                lastIndex = matcher.end();
+            }
+
+            html.append(escapeHtml(line.substring(lastIndex)));
+            if (lineIndex < lines.length - 1) {
+                html.append("<br>");
+            }
+        }
+        return html.toString();
+    }
+
+    private double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private String sanitizeHref(String href) {
+        if (href == null) {
+            return "";
+        }
+
+        String trimmed = href.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+
+        try {
+            java.net.URI uri = java.net.URI.create(trimmed);
+            String scheme = uri.getScheme();
+            if (scheme == null || scheme.isBlank()) {
+                return trimmed;
+            }
+            if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme) || "mailto".equalsIgnoreCase(scheme)) {
+                return trimmed;
+            }
+        } catch (Exception ignored) {
+            return "";
+        }
+
+        return "";
     }
 
     private void clearChatMessages() {

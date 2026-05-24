@@ -193,32 +193,32 @@
 }
 
 .chat-history {
-    -fx-padding: 12;
+    -fx-padding: 6 10 6 10;
 }
 
 .chat-message-row {
-    -fx-padding: 2 0 2 0;
+    -fx-padding: 0;
 }
 
 .chat-bubble-user {
     -fx-background-color: #dbeafe;
     -fx-border-color: #92c5ff;
-    -fx-padding: 10;
+    -fx-padding: 8 10 8 10;
     -fx-background-radius: 10;
     -fx-border-radius: 10;
     -fx-text-fill: #1f2f43;
-    -fx-font-size: 13px;
+    -fx-font-size: 12px;
     -fx-control-inner-background: #dbeafe;
 }
 
 .chat-bubble-ai {
     -fx-background-color: #f3f4f6;
     -fx-border-color: #d0d7e2;
-    -fx-padding: 10;
+    -fx-padding: 8 10 8 10;
     -fx-background-radius: 10;
     -fx-border-radius: 10;
     -fx-text-fill: #1f2f43;
-    -fx-font-size: 13px;
+    -fx-font-size: 12px;
     -fx-control-inner-background: #f3f4f6;
 }
 

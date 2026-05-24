@@ -236,7 +236,7 @@ const dataLayer = g.append("g")
     const maxPulses = d3.max(data, d => d.pulses || 0) || 1;
     const radius = d3.scaleSqrt()
     .domain([0, maxPulses])
-    .range([4, 14]);
+    .range([2, 10]);
 
     const tooltip = d3.select(".tooltip");
 
