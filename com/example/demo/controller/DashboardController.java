@@ -50,6 +50,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.scene.web.WebEvent;
 import javafx.scene.web.WebView;
 import javafx.scene.paint.Color;
 import javafx.stage.FileChooser;
@@ -62,6 +63,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -71,6 +73,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.Base64;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
@@ -252,6 +255,7 @@ public class DashboardController {
     private StackPane miniGraphLoadingOverlay;
     private JsonNode latestGraphData;
     private final PauseTransition graphUpdateDebounce = new PauseTransition(Duration.millis(250));
+    private static final String GRAPH_EXPORT_ALERT_PREFIX = "__GRAPH_EXPORT__";
 
     @FXML
     private void initialize() {
@@ -2125,8 +2129,11 @@ public class DashboardController {
             return;
         }
         graphWebView = new WebView();
+        graphWebView.getEngine().setOnAlert((WebEvent<String> event) -> handleGraphAlert(event == null ? null : event.getData()));
         graphWebView.getEngine().getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
-            if (newState == javafx.concurrent.Worker.State.SUCCEEDED || newState == javafx.concurrent.Worker.State.FAILED || newState == javafx.concurrent.Worker.State.CANCELLED) {
+            if (newState == javafx.concurrent.Worker.State.SUCCEEDED) {
+                setGraphLoadingVisible(false);
+            } else if (newState == javafx.concurrent.Worker.State.FAILED || newState == javafx.concurrent.Worker.State.CANCELLED) {
                 setGraphLoadingVisible(false);
             }
         });
@@ -2136,6 +2143,70 @@ public class DashboardController {
         AnchorPane.setLeftAnchor(graphWebView, 0.0);
         graphAnchor.getChildren().setAll(graphWebView);
         ensureGraphLoadingOverlay();
+    }
+
+    private void handleGraphAlert(String payload) {
+        if (payload == null || !payload.startsWith(GRAPH_EXPORT_ALERT_PREFIX)) {
+            return;
+        }
+        try {
+            String json = payload.substring(GRAPH_EXPORT_ALERT_PREFIX.length());
+            JsonNode root = ApiService.getInstance().getMapper().readTree(json);
+            if (!"png-export".equals(root.path("type").asText(""))) {
+                return;
+            }
+            String dataUrl = root.path("dataUrl").asText("");
+            String filename = root.path("filename").asText("sensor_chart.png");
+            saveGraphPngFromDataUrl(dataUrl, filename);
+        } catch (Exception ex) {
+            showErrorAlert("Export Failed", "Could not parse export payload from chart.");
+        }
+    }
+
+    private void saveGraphPngFromDataUrl(String dataUrl, String suggestedFilename) {
+        if (dataUrl == null || !dataUrl.startsWith("data:image/png;base64,")) {
+            showErrorAlert("Export Failed", "Received invalid image data from chart export.");
+            return;
+        }
+
+        String base64Payload = dataUrl.substring("data:image/png;base64,".length());
+        byte[] imageBytes;
+        try {
+            imageBytes = Base64.getDecoder().decode(base64Payload);
+        } catch (IllegalArgumentException ex) {
+            showErrorAlert("Export Failed", "Could not decode generated PNG data.");
+            return;
+        }
+
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Save Graph PNG");
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PNG Files", "*.png"));
+        fileChooser.setInitialDirectory(ExportService.getDefaultExportDirectory());
+        fileChooser.setInitialFileName(ensurePngExtension(suggestedFilename));
+
+        Stage stage = (graphAnchor != null && graphAnchor.getScene() != null)
+            ? (Stage) graphAnchor.getScene().getWindow()
+            : null;
+        File selectedFile = fileChooser.showSaveDialog(stage);
+        if (selectedFile == null) {
+            return;
+        }
+
+        try {
+            Files.write(selectedFile.toPath(), imageBytes);
+            showInfoAlert("Export Successful", "Saved to:\n" + selectedFile.getAbsolutePath());
+        } catch (IOException ex) {
+            showErrorAlert("Export Failed", "Could not save PNG file: " + ex.getMessage());
+        }
+    }
+
+    private String ensurePngExtension(String filename) {
+        String fallbackName = "sensor_chart.png";
+        if (filename == null || filename.isBlank()) {
+            return fallbackName;
+        }
+        String trimmed = filename.trim();
+        return trimmed.toLowerCase(Locale.ROOT).endsWith(".png") ? trimmed : trimmed + ".png";
     }
 
     private void ensureMiniGraphWebView() {

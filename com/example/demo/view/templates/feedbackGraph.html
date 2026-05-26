@@ -572,17 +572,13 @@ function exportToPng() {
       // Get base64 data URL
       const dataUrl = canvas.toDataURL('image/png');
 
-      // Call Java bridge to save file (JavaFX WebView)
-      if (typeof javaExportBridge !== 'undefined' && javaExportBridge !== null) {
-        try {
-          javaExportBridge.saveImage(dataUrl, filename);
-        } catch (e) {
-          console.error('Java bridge error:', e);
-          alert('Export failed. Please try again.');
-        }
-      } else {
-        // Fallback: show alert with instructions
-        alert('Export not available. The Java export bridge is not initialized.');
+      // Send export payload to JavaFX through window.alert handler.
+      try {
+        const payload = JSON.stringify({ type: 'png-export', filename, dataUrl });
+        alert(`__GRAPH_EXPORT__${payload}`);
+      } catch (e) {
+        console.error('Export bridge payload error:', e);
+        alert('Export failed. Please try again.');
       }
 
       exportBtn.disabled = false;
