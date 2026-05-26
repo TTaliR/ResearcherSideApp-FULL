@@ -150,8 +150,27 @@
 */
 const data = DATA_PLACEHOLDER;
 
+// Parse timestamps from ISO string to Date objects (UTC)
+const parseTime = d3.utcParse("%Y-%m-%dT%H:%M:%S.%LZ");
+const formatTime = d3.timeFormat("%Y-%m-%d %H:%M");
 
-console.log(data.map(d => d.time));
+if (!Array.isArray(data) || data.length === 0) {
+  document.body.innerHTML = '<div style="font-family:sans-serif;text-align:center;padding:40px;color:#6b7280;">No data</div>';
+  throw new Error("No chart data available");
+}
+
+const normalizedData = data
+  .map(d => ({
+    ...d,
+    parsedTime: parseTime(d.time),
+    value: d.value == null ? null : Number(d.value)
+  }))
+  .filter(d => d.parsedTime && d.value != null && !Number.isNaN(d.value));
+
+if (normalizedData.length === 0) {
+  document.body.innerHTML = '<div style="font-family:sans-serif;text-align:center;padding:40px;color:#6b7280;">No valid time/value points</div>';
+  throw new Error("No valid chart points available");
+}
 
     // Basic meta values injected by runtime
     const userId = USER_ID_PLACEHOLDER; //
@@ -159,10 +178,6 @@ console.log(data.map(d => d.time));
 
     // Show basic context for the chart
     document.getElementById("meta-info").textContent = `User ID: ${userId} | Sensor: ${sensorType}`;
-
-    // Parse timestamps from ISO string to Date objects (UTC)
-const parseTime = d3.utcParse("%Y-%m-%dT%H:%M:%S.%LZ");
-const formatTime = d3.timeFormat("%Y-%m-%d %H:%M");
 
 // Multi-scale time formatter - adapts to zoom level
 const multiFormat = (date) => {
@@ -174,8 +189,6 @@ const multiFormat = (date) => {
   if (d3.timeYear(date) < date) return d3.timeFormat("%B")(date);
   return d3.timeFormat("%Y")(date);
 };
-
-    data.forEach(d => d.parsedTime = parseTime(d.time));
 
     // Prepare SVG + margins and compute inner drawing width/height
     const svg = d3.select("svg");
@@ -203,16 +216,16 @@ const dataLayer = g.append("g")
 
     // X scale (time) and Y scale (value)
     const x = d3.scaleTime()
-      .domain(d3.extent(data, d => d.parsedTime))
+      .domain(d3.extent(normalizedData, d => d.parsedTime))
       .range([0, width]);
 
     const y = d3.scaleLinear()
     .domain([
         (() => {
-            const minVal = d3.min(data, d => d.value);
+            const minVal = d3.min(normalizedData, d => d.value);
             return minVal === 0 ? 0 : minVal - 10; // pad lower bound (unless zero)
         })(),
-        d3.max(data, d => d.value) + 10 // add top padding
+        d3.max(normalizedData, d => d.value) + 10 // add top padding
     ])
     .nice()
     .range([height, 0]);
@@ -261,9 +274,9 @@ xAxisG.selectAll("text")
   .attr("dy", "0.15em");
 
 // Show data statistics
-const alertCount = data.filter(d => d.alert_type).length;
-const timeRange = d3.extent(data, d => d.parsedTime);
-const statsText = `${data.length} data points | ${alertCount} alerts | ` +
+const alertCount = normalizedData.filter(d => d.alert_type).length;
+const timeRange = d3.extent(normalizedData, d => d.parsedTime);
+const statsText = `${normalizedData.length} data points | ${alertCount} alerts | ` +
   `Range: ${d3.timeFormat("%b %d, %Y")(timeRange[0])} – ${d3.timeFormat("%b %d, %Y")(timeRange[1])}`;
 document.getElementById("data-stats").textContent = statsText;
 
@@ -278,6 +291,7 @@ document.getElementById("data-stats").textContent = statsText;
 
     // Line generator (monotone curve for smoothness)
     const line = d3.line()
+      .defined(d => d.parsedTime && d.value != null && !Number.isNaN(d.value))
       .x(d => x(d.parsedTime))
       .y(d => y(d.value))
       .curve(d3.curveMonotoneX);
@@ -285,15 +299,15 @@ document.getElementById("data-stats").textContent = statsText;
     // Group time-series points into per-minute buckets to avoid overplotting
     // reducedData will contain one representative per minute (preferentially an alert)
     // Filter to only include points with pulses > 0
-    const filteredData = data.filter(d => d.pulses > 0);
+    const filteredData = normalizedData.filter(d => d.pulses > 0);
     const bucketedData = d3.groups(filteredData, d => d3.timeMinute(d.parsedTime));
-    const reducedData = bucketedData.map(([minute, group]) =>
+    const reducedData = bucketedData.map(([, group]) =>
       group.find(d => d.alert_type) || group[0]
     );
 
     // Draw animated path for the full data (smooth curve)
 const linePath = dataLayer.append("path")
-      .datum(data)
+      .datum(normalizedData)
       .attr("fill", "none")
       .attr("stroke", "#4682B4")
       .attr("stroke-width", 2)
@@ -361,7 +375,7 @@ dataLayer.selectAll("circle")
         .style("transform", "translateY(0px)");
     tooltip.html(
             `<strong>Time:</strong> ${formatTime(d.parsedTime)}<br>
-            <strong>Value:</strong> ${d.value}<br>
+            <strong>Value:</strong> ${d.value ?? "N/A"}<br>
             <strong>Intensity:</strong> ${d.intensity}<br>
             <strong>Pulses:</strong> ${d.pulses}<br>
             <strong>Duration:</strong> ${d.duration || 0} ms<br>
@@ -430,7 +444,7 @@ dataLayer.selectAll("circle")
 const pulseValues = [2, 4, 6, 8, 10];
 let currentY = 150; // starting y-position for pulse legend entries
 const pulsePadding = 6; // gap between legend circles
-pulseValues.forEach((v, i) => {
+pulseValues.forEach((v) => {
   const r = radius(v);
 
   legend.append("circle")
@@ -477,6 +491,7 @@ function zoomed(event) {
 
   // Recompute the line path using the rescaled x
   const lineWithZoom = d3.line()
+    .defined(d => d.parsedTime && d.value != null && !Number.isNaN(d.value))
     .x(d => zx(d.parsedTime))
     .y(d => y(d.value))
     .curve(d3.curveMonotoneX);
@@ -485,7 +500,7 @@ function zoomed(event) {
   linePath
     .attr("stroke-dasharray", null)
     .attr("stroke-dashoffset", null)
-    .datum(data)
+    .datum(normalizedData)
     .attr("d", lineWithZoom);
 
   // Move circles horizontally according to zoom/pan
