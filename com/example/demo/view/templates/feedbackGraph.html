@@ -628,21 +628,54 @@ function exportToPng() {
     const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(svgBlob);
 
-    // Create canvas and draw SVG onto it
+    // Extract header information from page
+    const titleText = document.querySelector('h2').textContent;
+    const metaInfoText = document.getElementById('meta-info').textContent;
+    const dataStatsText = document.getElementById('data-stats').textContent;
+
+    // Header dimensions and layout
+    const headerHeight = 90;
+    const headerPadding = 15;
+    const lineHeight = 22;
+
+    // Create canvas with extra height for header
     const canvas = document.createElement('canvas');
     const scale = 2; // Higher resolution for better quality
     canvas.width = svgRect.width * scale;
-    canvas.height = svgRect.height * scale;
+    canvas.height = (svgRect.height + headerHeight) * scale;
 
     const ctx = canvas.getContext('2d');
     ctx.scale(scale, scale);
     ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, canvas.width / scale, canvas.height / scale);
+
+    // Draw header text on canvas
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillText(titleText, headerPadding, headerPadding);
+
+    ctx.font = '13px sans-serif';
+    ctx.fillStyle = '#555';
+    ctx.fillText(metaInfoText, headerPadding, headerPadding + lineHeight);
+
+    ctx.fillStyle = '#777';
+    ctx.font = '12px sans-serif';
+    ctx.fillText(dataStatsText, headerPadding, headerPadding + lineHeight * 2);
+
+    // Draw separator line below header
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, headerHeight - 5);
+    ctx.lineTo(canvas.width / scale, headerHeight - 5);
+    ctx.stroke();
 
     const img = new Image();
 
     img.onload = function() {
-      ctx.drawImage(img, 0, 0);
+      // Draw SVG image below the header (offset by headerHeight)
+      ctx.drawImage(img, 0, headerHeight);
       URL.revokeObjectURL(url);
 
       // Generate filename with timestamp
