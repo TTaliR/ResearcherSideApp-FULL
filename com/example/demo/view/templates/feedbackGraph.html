@@ -118,6 +118,24 @@
       cursor: not-allowed;
       transform: none;
     }
+
+    .graph-filters {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 14px;
+      margin: 8px 0 4px 0;
+      font-size: 13px;
+      color: #374151;
+    }
+
+    .graph-filters label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none;
+    }
   </style>
 </head>
 <body>
@@ -130,6 +148,12 @@
 
   <!-- zoom hint for users -->
   <p class="zoom-hint">Tip: Use mouse scroll to zoom in/out on the timeline, drag to pan</p>
+
+  <!-- graph visibility filters -->
+  <div class="graph-filters" aria-label="Graph display filters">
+    <label><input type="checkbox" id="toggleLine" checked> Show line graph</label>
+    <label><input type="checkbox" id="toggleCircles" checked> Show pulses circles</label>
+  </div>
 
   <!-- Export button -->
   <button id="exportBtn" class="export-btn">Save as PNG</button>
@@ -252,6 +276,39 @@ const dataLayer = g.append("g")
     .range([2, 10]);
 
     const tooltip = d3.select(".tooltip");
+        const toggleLine = document.getElementById("toggleLine");
+        const toggleCircles = document.getElementById("toggleCircles");
+
+        const graphVisibility = {
+          line: toggleLine ? toggleLine.checked : true,
+          circles: toggleCircles ? toggleCircles.checked : true
+        };
+
+        function applyGraphVisibility() {
+          if (linePath) {
+            linePath
+              .attr("opacity", graphVisibility.line ? 1 : 0)
+              .style("pointer-events", graphVisibility.line ? "auto" : "none");
+          }
+
+          dataLayer.selectAll("circle")
+            .attr("opacity", graphVisibility.circles ? 1 : 0)
+            .style("pointer-events", graphVisibility.circles ? "auto" : "none");
+        }
+
+        if (toggleLine) {
+          toggleLine.addEventListener("change", (event) => {
+            graphVisibility.line = !!event.target.checked;
+            applyGraphVisibility();
+          });
+        }
+
+        if (toggleCircles) {
+          toggleCircles.addEventListener("change", (event) => {
+            graphVisibility.circles = !!event.target.checked;
+            applyGraphVisibility();
+          });
+        }
 
     // Calculate appropriate number of ticks based on width
     const tickCount = Math.max(4, Math.min(10, Math.floor(width / 120)));
@@ -289,6 +346,26 @@ document.getElementById("data-stats").textContent = statsText;
           .tickSize(-width)
       );
 
+    // Axis labels
+    g.append("text")
+      .attr("class", "axis-label y-axis-label")
+      .attr("transform", "rotate(-90)")
+      .attr("x", -height / 2)
+      .attr("y", -60)
+      .attr("text-anchor", "middle")
+      .attr("fill", "#374151")
+      .attr("font-size", "13px")
+      .text("Value");
+
+    g.append("text")
+      .attr("class", "axis-label x-axis-label")
+      .attr("x", width / 2)
+      .attr("y", height + 65)
+      .attr("text-anchor", "middle")
+      .attr("fill", "#374151")
+      .attr("font-size", "13px")
+      .text("Time");
+
     // Line generator (monotone curve for smoothness)
     const line = d3.line()
       .defined(d => d.parsedTime && d.value != null && !Number.isNaN(d.value))
@@ -324,6 +401,8 @@ const linePath = dataLayer.append("path")
       .ease(d3.easeLinear)
       .attr("stroke-dashoffset", 0);
 
+    applyGraphVisibility();
+
     // Draw feedback circles only for points marked as alerts
     // Animated grow-in and staggered delays for clarity
 dataLayer.selectAll("circle")
@@ -340,6 +419,8 @@ dataLayer.selectAll("circle")
       .delay((d, i) => i * 250)
       .attr("r", d => radius(d.pulses))
       .attr("opacity", 1);
+
+    applyGraphVisibility();
 
     // Re-select circles to add interactive hover handlers (tooltip + scale up)
 dataLayer.selectAll("circle")
