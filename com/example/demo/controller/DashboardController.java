@@ -196,9 +196,13 @@ public class DashboardController {
     @FXML
     private Button saveRuleButton;
     @FXML
+    private Button changeRuleButton;
+    @FXML
     private Button clearRuleButton;
     @FXML
     private Button refreshRuleButton;
+    @FXML
+    private Label selectedMappingLabel;
     @FXML
     private Label loggingIntervalValueLabel;
     @FXML
@@ -248,6 +252,7 @@ public class DashboardController {
     private final List<RuleCardData> allRules = new ArrayList<>();
     private final String chatSessionId = UUID.randomUUID().toString();
     private String activeMonitoringTypeKey = "";
+    private RuleCardData selectedMappingForEdit;
 
     private WebView graphWebView;
     private WebView miniGraphWebView;
@@ -288,6 +293,7 @@ public class DashboardController {
         enforceIntegerInput(ruleMaxDurationField);
         enforceIntegerInput(ruleMinIntervalField);
         enforceIntegerInput(ruleMaxIntervalField);
+        updateSelectedMappingForEdit(null);
     }
 
     private void setupSchedulesTable() {
@@ -461,6 +467,7 @@ public class DashboardController {
                     }
 
                     clearRuleBuilderForm();
+                    updateSelectedMappingForEdit(null);
                     loadMappings();
                     String savedUseCase = toUseCaseLabel(normalizeUseCaseName(ruleConfig.getType()));
                     showInfoAlert("Save Successful", "Saved mapping for " + savedUseCase + ".");
@@ -477,16 +484,8 @@ public class DashboardController {
 
     @FXML
     private void clearRuleInputFields() {
-        ruleMinValueField.clear();
-        ruleMaxValueField.clear();
-        ruleMinPulsesField.clear();
-        ruleMaxPulsesField.clear();
-        ruleMinIntensityField.clear();
-        ruleMaxIntensityField.clear();
-        ruleMinDurationField.clear();
-        ruleMaxDurationField.clear();
-        ruleMinIntervalField.clear();
-        ruleMaxIntervalField.clear();
+        clearRuleBuilderForm();
+        updateSelectedMappingForEdit(null);
     }
 
     @FXML
@@ -555,6 +554,51 @@ public class DashboardController {
         return rule;
     }
 
+    @FXML
+    private void changeSelectedMappingConfig() {
+        if (selectedMappingForEdit == null || selectedMappingForEdit.mappingId <= 0) {
+            showErrorAlert("Missing Mapping", "Select an active mapping card before changing it.");
+            return;
+        }
+
+        try {
+            SensorRuleConfig ruleConfig = buildRuleConfigFromForm();
+            ruleConfig.setId(selectedMappingForEdit.mappingId);
+
+            Integer useCaseId = state.getSelectedUseCaseId();
+            if (useCaseId == null || useCaseId <= 0) {
+                showErrorAlert("Missing Use Case Id", "Could not resolve use case id. Refresh use cases and try again.");
+                return;
+            }
+
+            final RuleCardData editingRule = selectedMappingForEdit;
+            ApiService.getInstance().changeMapping(
+                    editingRule.mappingId,
+                    ruleConfig,
+                    useCaseId,
+                    getSelectedUsecaseName(),
+                    chatSessionId
+                )
+                .thenAccept(success -> Platform.runLater(() -> {
+                    if (!success) {
+                        showErrorAlert("Update Failed", "Could not change mapping ID " + editingRule.mappingId + ".");
+                        return;
+                    }
+
+                    clearRuleBuilderForm();
+                    updateSelectedMappingForEdit(null);
+                    loadMappings();
+                    showInfoAlert("Mapping Updated", "Updated mapping ID " + editingRule.mappingId + ".");
+                }))
+                .exceptionally(ex -> {
+                    showErrorAlert("Update Failed", "Failed to change mapping: " + ex.getMessage());
+                    return null;
+                });
+        } catch (IllegalArgumentException ex) {
+            showErrorAlert("Validation Error", ex.getMessage());
+        }
+    }
+
     private int parseRequiredInt(TextField field, String fieldName) {
         if (field == null || field.getText() == null || field.getText().trim().isEmpty()) {
             throw new IllegalArgumentException(fieldName + " is required.");
@@ -597,6 +641,29 @@ public class DashboardController {
         }
         if (ruleMaxIntervalField != null) {
             ruleMaxIntervalField.clear();
+        }
+    }
+
+    private void populateRuleBuilderFromMapping(RuleCardData rule) {
+        if (rule == null) {
+            return;
+        }
+
+        setText(ruleMinValueField, rule.minValue);
+        setText(ruleMaxValueField, rule.maxValue);
+        setText(ruleMinPulsesField, rule.minPulses);
+        setText(ruleMaxPulsesField, rule.maxPulses);
+        setText(ruleMinIntensityField, rule.minIntensity);
+        setText(ruleMaxIntensityField, rule.maxIntensity);
+        setText(ruleMinDurationField, rule.minDuration);
+        setText(ruleMaxDurationField, rule.maxDuration);
+        setText(ruleMinIntervalField, rule.minInterval);
+        setText(ruleMaxIntervalField, rule.maxInterval);
+    }
+
+    private void setText(TextField field, int value) {
+        if (field != null) {
+            field.setText(String.valueOf(value));
         }
     }
 
@@ -1241,10 +1308,23 @@ public class DashboardController {
 
         updateRuleBuilderUseCaseDisplay(selectedUseCase);
         updateLoggingIntervalDisplay(selectedUseCase);
+        updateSelectedMappingForEdit(null);
         refreshRuleSummary();
         renderMappingsForUseCase(selectedUseCase);
         clearChatMessages();
         addChatMessage("Selected use case: " + selectedUseCase, false);
+    }
+
+    private void updateSelectedMappingForEdit(RuleCardData rule) {
+        selectedMappingForEdit = rule;
+
+        if (selectedMappingLabel != null) {
+            selectedMappingLabel.setText(rule == null ? "None selected" : "Editing ID " + rule.mappingId);
+        }
+
+        if (changeRuleButton != null) {
+            changeRuleButton.setDisable(rule == null || rule.mappingId <= 0);
+        }
     }
 
     private void updateLoggingIntervalDisplay(String selectedUseCase) {
@@ -1423,6 +1503,16 @@ public class DashboardController {
             rule.configKey = configKey;
             rule.useCaseKey = useCaseKey;
             rule.useCaseLabel = useCaseLabel;
+            rule.minValue = readInt(node, "minvalue", "min", 0);
+            rule.maxValue = readInt(node, "maxvalue", "max", 0);
+            rule.minPulses = readInt(node, "minpulses", "", 0);
+            rule.maxPulses = readInt(node, "maxpulses", "", 0);
+            rule.minIntensity = readInt(node, "minintensity", "", 0);
+            rule.maxIntensity = readInt(node, "maxintensity", "", 0);
+            rule.minDuration = readInt(node, "minduration", "", 0);
+            rule.maxDuration = readInt(node, "maxduration", "", 0);
+            rule.minInterval = readInt(node, "mininterval", "", 0);
+            rule.maxInterval = readInt(node, "maxinterval", "", 0);
             rule.rangeLabel = readRangeLabel(node, useCaseLabel);
             rule.pulseLabel = readRangeValue(node, "minpulses", "maxpulses", "N/A");
             rule.intensityLabel = readRangeValue(node, "minintensity", "maxintensity", "N/A");
@@ -1464,6 +1554,9 @@ public class DashboardController {
         for (RuleCardData rule : filtered) {
             VBox card = new VBox(8);
             card.getStyleClass().add("mapping-card");
+            if (selectedMappingForEdit != null && selectedMappingForEdit.mappingId == rule.mappingId) {
+                card.getStyleClass().add("mapping-card-selected");
+            }
 
             Label title = new Label(rule.rangeLabel);
             title.getStyleClass().add("mapping-card-title");
@@ -1474,8 +1567,9 @@ public class DashboardController {
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
 
+            Button selectButton = createSelectMappingButton(rule);
             Button deleteButton = createDeleteMappingButton(rule);
-            titleRow.getChildren().addAll(title, spacer, deleteButton);
+            titleRow.getChildren().addAll(title, spacer, selectButton, deleteButton);
 
             Label pulses = new Label("Pulse count: " + rule.pulseLabel);
             Label intensity = new Label("Intensity: " + rule.intensityLabel);
@@ -1483,8 +1577,33 @@ public class DashboardController {
             Label interval = new Label("Interval: " + rule.intervalLabel);
 
             card.getChildren().addAll(titleRow, pulses, intensity, duration, interval);
+            card.setOnMouseClicked(event -> {
+                if (event.getTarget() instanceof Button) {
+                    return;
+                }
+                selectMappingForEdit(rule);
+            });
             mappingsFlowPane.getChildren().add(card);
         }
+    }
+
+    private Button createSelectMappingButton(RuleCardData rule) {
+        Button button = new Button("Edit");
+        button.getStyleClass().add("mapping-edit-button");
+        button.setTooltip(new Tooltip("Edit mapping"));
+        button.setOnMouseClicked(event -> event.consume());
+        button.setOnAction(ignored -> selectMappingForEdit(rule));
+        return button;
+    }
+
+    private void selectMappingForEdit(RuleCardData rule) {
+        if (rule == null) {
+            return;
+        }
+
+        updateSelectedMappingForEdit(rule);
+        populateRuleBuilderFromMapping(rule);
+        renderMappingsForUseCase(state.getSelectedUseCase());
     }
 
     private Button createDeleteMappingButton(RuleCardData rule) {
@@ -1510,6 +1629,7 @@ public class DashboardController {
         }
 
         button.setOnAction(ignored -> onDeleteMappingRequested(rule));
+        button.setOnMouseClicked(event -> event.consume());
         return button;
     }
 
@@ -2523,6 +2643,19 @@ public class DashboardController {
         return fallback;
     }
 
+    private int readInt(JsonNode node, String primaryField, String fallbackField, int fallback) {
+        if (node == null || !node.isObject()) {
+            return fallback;
+        }
+        if (primaryField != null && !primaryField.isBlank() && node.has(primaryField)) {
+            return node.path(primaryField).asInt(fallback);
+        }
+        if (fallbackField != null && !fallbackField.isBlank() && node.has(fallbackField)) {
+            return node.path(fallbackField).asInt(fallback);
+        }
+        return fallback;
+    }
+
     private String extractLoggingInterval(JsonNode useCaseNode) {
         if (useCaseNode == null || !useCaseNode.isObject()) {
             return "";
@@ -2632,6 +2765,16 @@ public class DashboardController {
         String intensityLabel;
         String durationLabel;
         String intervalLabel;
+        int minValue;
+        int maxValue;
+        int minPulses;
+        int maxPulses;
+        int minIntensity;
+        int maxIntensity;
+        int minDuration;
+        int maxDuration;
+        int minInterval;
+        int maxInterval;
     }
 
     private static class LoggingIntervalDraft {

@@ -266,10 +266,29 @@
     -fx-pref-width: 280;
 }
 
+.mapping-card-selected {
+    -fx-border-color: #2563eb;
+    -fx-background-color: #f8fbff;
+}
+
 .mapping-card-title {
     -fx-font-size: 13px;
     -fx-font-weight: bold;
     -fx-text-fill: #1f2f43;
+}
+
+.mapping-edit-button {
+    -fx-background-color: #eef4ff;
+    -fx-text-fill: #1d4ed8;
+    -fx-font-size: 11px;
+    -fx-padding: 2 8;
+    -fx-background-radius: 6;
+    -fx-border-color: transparent;
+    -fx-cursor: hand;
+}
+
+.mapping-edit-button:hover {
+    -fx-background-color: #dbeafe;
 }
 
 .mapping-delete-button {
