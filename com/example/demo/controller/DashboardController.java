@@ -1599,11 +1599,7 @@ public class DashboardController {
 
         User selectedUser = state.getSelectedUsers();
         String selectedUseCase = state.getSelectedUseCase();
-        if (selectedUser == null) {
-            showErrorAlert("Missing User", "Please select a user assigned to " + selectedUseCase + " before chatting.");
-            return;
-        }
-        if (!isUserAssignedToUseCase(selectedUser, selectedUseCase)) {
+        if (selectedUser != null && !isUserAssignedToUseCase(selectedUser, selectedUseCase)) {
             showErrorAlert("Invalid User", "Please select a user assigned to " + selectedUseCase + " before chatting.");
             refreshUsersForSelectedUseCase(null);
             return;
@@ -1615,13 +1611,15 @@ public class DashboardController {
         // Keys must match webhook body fields used by n8n.
         Map<String, Object> payload = new HashMap<>();
         Integer useCaseId = state.getSelectedUseCaseId();
+        boolean hasSelectedUser = selectedUser != null;
 
-        payload.put("message", buildUserScopedChatMessage(message, selectedUser, selectedUseCase));
-        payload.put("display_message", message);
+        payload.put("message", message);
         payload.put("session_id", chatSessionId);
-        payload.put("user_id", selectedUser.getUserID());
-        payload.put("user_name", formatUser(selectedUser));
-        payload.put("user_usecase_name", selectedUser.getUsecaseName());
+        if (hasSelectedUser) {
+            payload.put("user_id", selectedUser.getUserID());
+            payload.put("user_name", formatUser(selectedUser));
+            payload.put("user_usecase_name", selectedUser.getUsecaseName());
+        }
 
         if (useCaseId != null && useCaseId > 0) {
             payload.put("usecase_id", useCaseId);
@@ -1652,15 +1650,6 @@ public class DashboardController {
                 });
                 return null;
             });
-    }
-
-    private String buildUserScopedChatMessage(String message, User user, String useCase) {
-        return "Answer only for the selected user in the selected use case.\n"
-            + "Selected use case: " + (useCase == null ? "" : useCase) + "\n"
-            + "Selected user id: " + user.getUserID() + "\n"
-            + "Selected user name: " + formatUser(user) + "\n"
-            + "User assigned use case: " + user.getUsecaseName() + "\n\n"
-            + "Researcher question: " + message;
     }
 
     private void setAgentTyping(boolean typing) {
