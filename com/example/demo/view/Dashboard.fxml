@@ -163,6 +163,27 @@
                         </content>
                     </Tab>
 
+                    <Tab fx:id="yellowBookTab" text="Yellow book">
+                        <content>
+                            <VBox spacing="10.0" styleClass="tab-content-root">
+                                <HBox alignment="CENTER_LEFT" spacing="10.0">
+                                    <Label text="Dictionary Parameters" styleClass="drawer-title" />
+                                    <Separator orientation="VERTICAL" prefHeight="22.0" />
+                                    <Label fx:id="yellowBookStatusLabel" text="Open or refresh to load the dictionary." styleClass="topbar-muted-value" />
+                                    <StackPane HBox.hgrow="ALWAYS" />
+                                    <Button text="Refresh" styleClass="primary-button" onAction="#onRefreshYellowBook" />
+                                </HBox>
+                                <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="mappings-scroll" VBox.vgrow="ALWAYS">
+                                    <VBox fx:id="yellowBookContentBox" spacing="12.0">
+                                        <padding>
+                                            <Insets top="12.0" right="12.0" bottom="12.0" left="12.0" />
+                                        </padding>
+                                    </VBox>
+                                </ScrollPane>
+                            </VBox>
+                        </content>
+                    </Tab>
+
                     <Tab fx:id="graphTab" text="Graph">
                         <content>
                             <VBox spacing="10.0" styleClass="tab-content-root">

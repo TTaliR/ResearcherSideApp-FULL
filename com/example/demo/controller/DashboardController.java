@@ -18,6 +18,7 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.DatePicker;
 import javafx.scene.control.Dialog;
@@ -133,6 +134,8 @@ public class DashboardController {
     private Tab mappingsTab;
     @FXML
     private Tab schedulingTab;
+    @FXML
+    private Tab yellowBookTab;
 
     @FXML
     private ScrollPane chatScrollPane;
@@ -241,6 +244,10 @@ public class DashboardController {
     private TextField triggerPercentageField;
     @FXML
     private Label scheduleStatusLabel;
+    @FXML
+    private VBox yellowBookContentBox;
+    @FXML
+    private Label yellowBookStatusLabel;
 
     private final DashboardState state = DashboardState.getInstance();
     private final ObservableList<User> users = FXCollections.observableArrayList();
@@ -249,6 +256,7 @@ public class DashboardController {
     private final Map<String, String> useCaseDisplayNames = new HashMap<>();
     private final Map<String, Integer> useCaseIdsByNormalizedName = new HashMap<>();
     private final Map<String, String> useCaseLoggingInterval = new HashMap<>();
+    private final Map<String, List<DictionaryParameterData>> yellowBookEntries = new LinkedHashMap<>();
     private final List<RuleCardData> allRules = new ArrayList<>();
     private final String chatSessionId = UUID.randomUUID().toString();
     private String activeMonitoringTypeKey = "";
@@ -880,6 +888,8 @@ public class DashboardController {
             } else if (newValue == agentChatTab) {
                 refreshRuleSummary();
                 renderMiniGraphFromData(latestGraphData);
+            } else if (newValue == yellowBookTab) {
+                loadYellowBookDictionary();
             }
         }));
     }
@@ -1474,6 +1484,358 @@ public class DashboardController {
             })
             .exceptionally(ex -> {
                 ex.printStackTrace();
+                return null;
+            });
+    }
+
+    @FXML
+    private void onRefreshYellowBook() {
+        loadYellowBookDictionary();
+    }
+
+    private void loadYellowBookDictionary() {
+        Integer contextUsecaseId = resolveDictionaryContextUseCaseId();
+        if (contextUsecaseId == null || contextUsecaseId <= 0) {
+            if (yellowBookStatusLabel != null) {
+                yellowBookStatusLabel.setText("Load use cases before opening the Yellow book.");
+            }
+            return;
+        }
+
+        if (yellowBookStatusLabel != null) {
+            yellowBookStatusLabel.setText("Loading dictionary...");
+        }
+
+        String contextUsecaseName = getSelectedUsecaseName();
+        ApiService.getInstance()
+            .sendDictionaryRequest("Show me the full use case dictionary.", contextUsecaseId, contextUsecaseName, chatSessionId)
+            .thenAccept(response -> Platform.runLater(() -> {
+                if (response == null || response.has("error")) {
+                    String message = response == null ? "No response from n8n." : response.path("message").asText("Dictionary request failed.");
+                    yellowBookStatusLabel.setText(message);
+                    return;
+                }
+
+                String reply = response.path("reply").asText("");
+                yellowBookEntries.clear();
+                yellowBookEntries.putAll(parseYellowBookReply(reply));
+                renderYellowBook();
+            }))
+            .exceptionally(ex -> {
+                Platform.runLater(() -> yellowBookStatusLabel.setText("Dictionary request failed: " + ex.getMessage()));
+                return null;
+            });
+    }
+
+    private Integer resolveDictionaryContextUseCaseId() {
+        Integer selectedId = state.getSelectedUseCaseId();
+        if (selectedId != null && selectedId > 0) {
+            return selectedId;
+        }
+
+        if (!useCaseIdsByNormalizedName.isEmpty()) {
+            return useCaseIdsByNormalizedName.values().stream()
+                .filter(id -> id != null && id > 0)
+                .findFirst()
+                .orElse(null);
+        }
+
+        return null;
+    }
+
+    private Map<String, List<DictionaryParameterData>> parseYellowBookReply(String reply) {
+        LinkedHashMap<String, List<DictionaryParameterData>> parsed = new LinkedHashMap<>();
+        if (reply == null || reply.isBlank()) {
+            return parsed;
+        }
+
+        String activeUseCase = null;
+        for (String rawLine : reply.split("\\R")) {
+            String line = rawLine == null ? "" : rawLine.trim();
+            if (line.isEmpty()) {
+                continue;
+            }
+
+            Matcher headerMatcher = Pattern.compile("\\*\\*(.+?)\\*\\*").matcher(line);
+            if (line.contains("**") && headerMatcher.find() && !line.toLowerCase(Locale.ROOT).startsWith("here are")) {
+                activeUseCase = headerMatcher.group(1).trim();
+                parsed.putIfAbsent(activeUseCase, new ArrayList<>());
+                continue;
+            }
+
+            if (activeUseCase == null) {
+                continue;
+            }
+
+            DictionaryParameterData parameter = parseYellowBookParameterLine(activeUseCase, line);
+            if (parameter != null) {
+                parsed.get(activeUseCase).add(parameter);
+            }
+        }
+
+        return parsed;
+    }
+
+    private DictionaryParameterData parseYellowBookParameterLine(String useCaseName, String rawLine) {
+        String line = rawLine
+            .replaceAll("^[^A-Za-z0-9_]+", "")
+            .replace("[Required]", "")
+            .trim();
+        boolean required = rawLine.contains("[Required]");
+
+        Matcher matcher = Pattern.compile("^(.+?)\\s*\\((.*)\\)$").matcher(line);
+        if (!matcher.matches()) {
+            return null;
+        }
+
+        String parameterName = matcher.group(1).trim();
+        String formatAndValue = matcher.group(2).trim();
+        String format = formatAndValue;
+        String value = "";
+
+        int valueMarker = formatAndValue.indexOf(" [Specific value!]");
+        if (valueMarker >= 0) {
+            formatAndValue = formatAndValue.substring(0, valueMarker).trim();
+        }
+
+        int equalsIndex = formatAndValue.indexOf(" = ");
+        if (equalsIndex >= 0) {
+            format = formatAndValue.substring(0, equalsIndex).trim();
+            value = formatAndValue.substring(equalsIndex + 3).trim();
+        }
+
+        if (parameterName.isBlank()) {
+            return null;
+        }
+
+        return new DictionaryParameterData(useCaseName, parameterName, format, required, "", value);
+    }
+
+    private void renderYellowBook() {
+        if (yellowBookContentBox == null || yellowBookStatusLabel == null) {
+            return;
+        }
+
+        yellowBookContentBox.getChildren().clear();
+        if (yellowBookEntries.isEmpty()) {
+            yellowBookStatusLabel.setText("No dictionary parameters found.");
+            return;
+        }
+
+        yellowBookStatusLabel.setText("Loaded " + yellowBookEntries.size() + " use cases.");
+        yellowBookEntries.forEach((useCaseName, parameters) -> yellowBookContentBox.getChildren().add(createYellowBookUseCaseCard(useCaseName, parameters)));
+    }
+
+    private VBox createYellowBookUseCaseCard(String useCaseName, List<DictionaryParameterData> parameters) {
+        VBox card = new VBox(10);
+        card.getStyleClass().add("yellow-book-card");
+
+        HBox header = new HBox(8);
+        header.setAlignment(Pos.CENTER_LEFT);
+        Label title = new Label(useCaseName);
+        title.getStyleClass().add("yellow-book-usecase-title");
+        Label count = new Label(parameters.size() + " parameters");
+        count.getStyleClass().add("topbar-muted-value");
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        Button deleteUseCaseButton = new Button("Remove Use Case");
+        deleteUseCaseButton.getStyleClass().add("cancel-button");
+        deleteUseCaseButton.setOnAction(ignored -> onRemoveYellowBookUseCase(useCaseName));
+        header.getChildren().addAll(title, count, spacer, deleteUseCaseButton);
+
+        VBox parameterBox = new VBox(6);
+        if (parameters.isEmpty()) {
+            Label empty = new Label("No parameters registered.");
+            empty.getStyleClass().add("topbar-muted-value");
+            parameterBox.getChildren().add(empty);
+        } else {
+            for (DictionaryParameterData parameter : parameters) {
+                parameterBox.getChildren().add(createYellowBookParameterRow(parameter));
+            }
+        }
+
+        card.getChildren().addAll(header, parameterBox);
+        return card;
+    }
+
+    private HBox createYellowBookParameterRow(DictionaryParameterData parameter) {
+        HBox row = new HBox(8);
+        row.setAlignment(Pos.CENTER_LEFT);
+        row.getStyleClass().add("yellow-book-parameter-row");
+
+        VBox textBox = new VBox(2);
+        Label name = new Label(parameter.parameterName);
+        name.getStyleClass().add("mapping-card-title");
+        Label details = new Label(buildYellowBookParameterDetails(parameter));
+        details.getStyleClass().add("topbar-muted-value");
+        textBox.getChildren().addAll(name, details);
+        HBox.setHgrow(textBox, Priority.ALWAYS);
+
+        Button editButton = new Button("Edit");
+        editButton.getStyleClass().add("mapping-edit-button");
+        editButton.setOnAction(ignored -> onEditYellowBookParameter(parameter));
+
+        Button deleteButton = createDeleteIconButton("Remove parameter");
+        deleteButton.setOnAction(ignored -> onRemoveYellowBookParameter(parameter));
+
+        row.getChildren().addAll(textBox, editButton, deleteButton);
+        return row;
+    }
+
+    private String buildYellowBookParameterDetails(DictionaryParameterData parameter) {
+        List<String> parts = new ArrayList<>();
+        if (!parameter.parameterFormat.isBlank()) {
+            parts.add("Format: " + parameter.parameterFormat);
+        }
+        if (!parameter.paramValue.isBlank()) {
+            parts.add("Value: " + parameter.paramValue);
+        }
+        parts.add(parameter.required ? "Required" : "Optional");
+        return String.join(" | ", parts);
+    }
+
+    private Button createDeleteIconButton(String tooltipText) {
+        Button button = new Button();
+        button.getStyleClass().add("mapping-delete-button");
+        button.setTooltip(new Tooltip(tooltipText));
+
+        Image icon = null;
+        try {
+            icon = new Image(Objects.requireNonNull(getClass().getResourceAsStream(DELETE_ICON_PATH)));
+        } catch (Exception ignored) {
+        }
+
+        if (icon != null && !icon.isError()) {
+            ImageView imageView = new ImageView(icon);
+            imageView.setPreserveRatio(true);
+            imageView.setFitWidth(14);
+            imageView.setFitHeight(14);
+            button.setGraphic(imageView);
+        } else {
+            button.setText("X");
+        }
+
+        return button;
+    }
+
+    private void onEditYellowBookParameter(DictionaryParameterData parameter) {
+        Dialog<DictionaryParameterData> dialog = new Dialog<>();
+        dialog.setTitle("Edit Dictionary Parameter");
+        dialog.setHeaderText(parameter.useCaseName + " / " + parameter.parameterName);
+
+        ButtonType saveButtonType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+
+        TextField nameField = new TextField(parameter.parameterName);
+        TextField formatField = new TextField(parameter.parameterFormat);
+        TextField valueField = new TextField(parameter.paramValue);
+        TextField descriptionField = new TextField(parameter.description);
+        CheckBox requiredCheckBox = new CheckBox("Required");
+        requiredCheckBox.setSelected(parameter.required);
+
+        VBox content = new VBox(8,
+            new Label("Parameter Name"), nameField,
+            new Label("Format"), formatField,
+            requiredCheckBox,
+            new Label("Specific Value"), valueField,
+            new Label("Description"), descriptionField
+        );
+        content.setPadding(new Insets(12, 12, 4, 12));
+        content.setPrefWidth(360);
+        dialog.getDialogPane().setContent(content);
+
+        dialog.setResultConverter(button -> {
+            if (button != saveButtonType) {
+                return null;
+            }
+            return new DictionaryParameterData(
+                parameter.useCaseName,
+                nameField.getText() == null ? "" : nameField.getText().trim(),
+                formatField.getText() == null ? "" : formatField.getText().trim(),
+                requiredCheckBox.isSelected(),
+                descriptionField.getText() == null ? "" : descriptionField.getText().trim(),
+                valueField.getText() == null ? "" : valueField.getText().trim()
+            );
+        });
+
+        Optional<DictionaryParameterData> result = dialog.showAndWait();
+        if (result.isEmpty()) {
+            return;
+        }
+
+        DictionaryParameterData updated = result.get();
+        if (updated.parameterName.isBlank() || updated.parameterFormat.isBlank()) {
+            showErrorAlert("Invalid Parameter", "Parameter name and format are required.");
+            return;
+        }
+
+        sendYellowBookMutation(
+            "Edit dictionary parameter " + parameter.parameterName
+                + " in use case " + parameter.useCaseName
+                + ". Set usecase_parameter_name to " + updated.parameterName
+                + ", parameter_format to " + updated.parameterFormat
+                + ", is_required to " + updated.required
+                + ", Description to " + updated.description
+                + ", and param_value to " + updated.paramValue + ".",
+            "Parameter Updated"
+        );
+    }
+
+    private void onRemoveYellowBookParameter(DictionaryParameterData parameter) {
+        if (!confirmDestructiveAction("Remove Parameter", "Remove " + parameter.parameterName + " from " + parameter.useCaseName + "?")) {
+            return;
+        }
+
+        sendYellowBookMutation(
+            "Delete dictionary parameter " + parameter.parameterName + " from use case " + parameter.useCaseName + ".",
+            "Parameter Removed"
+        );
+    }
+
+    private void onRemoveYellowBookUseCase(String useCaseName) {
+        if (!confirmDestructiveAction("Remove Use Case", "Remove all dictionary parameters for " + useCaseName + "?")) {
+            return;
+        }
+
+        sendYellowBookMutation("Delete use case " + useCaseName + " from the dictionary.", "Use Case Removed");
+    }
+
+    private boolean confirmDestructiveAction(String title, String message) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle(title);
+        alert.setHeaderText(title);
+        alert.setContentText(message);
+        Optional<ButtonType> result = alert.showAndWait();
+        return result.isPresent() && result.get() == ButtonType.OK;
+    }
+
+    private void sendYellowBookMutation(String message, String successTitle) {
+        Integer contextUsecaseId = resolveDictionaryContextUseCaseId();
+        if (contextUsecaseId == null || contextUsecaseId <= 0) {
+            showErrorAlert("Missing Use Case Id", "Could not resolve a use case id for the dictionary request.");
+            return;
+        }
+
+        if (yellowBookStatusLabel != null) {
+            yellowBookStatusLabel.setText("Sending dictionary update...");
+        }
+
+        ApiService.getInstance()
+            .sendDictionaryRequest(message, contextUsecaseId, getSelectedUsecaseName(), chatSessionId)
+            .thenAccept(response -> Platform.runLater(() -> {
+                if (response == null || response.has("error")) {
+                    String error = response == null ? "No response from n8n." : response.path("message").asText("Dictionary update failed.");
+                    showErrorAlert("Dictionary Update Failed", error);
+                    yellowBookStatusLabel.setText(error);
+                    return;
+                }
+
+                String reply = response.path("reply").asText("Dictionary update completed.");
+                showInfoAlert(successTitle, reply);
+                loadYellowBookDictionary();
+            }))
+            .exceptionally(ex -> {
+                Platform.runLater(() -> showErrorAlert("Dictionary Update Failed", ex.getMessage()));
                 return null;
             });
     }
@@ -2784,6 +3146,25 @@ public class DashboardController {
         private LoggingIntervalDraft(int amount, String baseUnit) {
             this.amount = amount;
             this.baseUnit = baseUnit;
+        }
+    }
+
+    private static class DictionaryParameterData {
+        final String useCaseName;
+        final String parameterName;
+        final String parameterFormat;
+        final boolean required;
+        final String description;
+        final String paramValue;
+
+        private DictionaryParameterData(String useCaseName, String parameterName, String parameterFormat,
+                                        boolean required, String description, String paramValue) {
+            this.useCaseName = useCaseName == null ? "" : useCaseName.trim();
+            this.parameterName = parameterName == null ? "" : parameterName.trim();
+            this.parameterFormat = parameterFormat == null ? "" : parameterFormat.trim();
+            this.required = required;
+            this.description = description == null ? "" : description.trim();
+            this.paramValue = paramValue == null ? "" : paramValue.trim();
         }
     }
 

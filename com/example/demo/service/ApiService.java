@@ -208,6 +208,25 @@ public class ApiService {
         return post(EP_SET_LOGGING_INTERVAL, payload);
     }
 
+    public CompletableFuture<JsonNode> sendDictionaryRequest(String message, int contextUsecaseId,
+                                                             String contextUsecaseName, String sessionId) {
+        String trimmedMessage = message == null ? "" : message.trim();
+        String trimmedSessionId = sessionId == null ? "" : sessionId.trim();
+        String trimmedUsecaseName = contextUsecaseName == null ? "" : contextUsecaseName.trim();
+        if (trimmedMessage.isEmpty() || contextUsecaseId <= 0 || trimmedSessionId.isEmpty()) {
+            return CompletableFuture.completedFuture(
+                mapper.createObjectNode().put("error", "Invalid dictionary request")
+            );
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("session_id", trimmedSessionId);
+        payload.put("usecase_id", contextUsecaseId);
+        payload.put("usecase_name", trimmedUsecaseName);
+        payload.put("message", trimmedMessage);
+        return postWithResponse(EP_CHAT_CONFIG, payload);
+    }
+
     public CompletableFuture<Boolean> setUserName(int userId, String fName, String lName) {
         String trimmedFirstName = fName == null ? "" : fName.trim();
         String trimmedLastName = lName == null ? "" : lName.trim();
