@@ -240,6 +240,7 @@ public class DashboardController {
 
     private final DashboardState state = DashboardState.getInstance();
     private final ObservableList<User> users = FXCollections.observableArrayList();
+    private final ObservableList<User> usersForSelectedUseCase = FXCollections.observableArrayList();
     private final ObservableList<String> useCases = FXCollections.observableArrayList();
     private final Map<String, String> useCaseDescriptions = new HashMap<>();
     private final Map<String, String> useCaseDisplayNames = new HashMap<>();
@@ -735,7 +736,7 @@ public class DashboardController {
                 });
     }
     private void setupTopbar() {
-        UsersComboBox.setItems(users);
+        UsersComboBox.setItems(usersForSelectedUseCase);
         UsersComboBox.setCellFactory(listView -> new ListCell<>() {
             @Override
             protected void updateItem(User item, boolean empty) {
@@ -753,6 +754,9 @@ public class DashboardController {
 
          UsersComboBox.valueProperty().addListener(onNewValueChanged(newValue -> {
              if (newValue == null) {
+                 state.setSelectedUsers(null);
+                 contextUsersLabel.setText("-");
+                 scheduleGraphUpdate();
                  return;
              }
              state.setSelectedUsers(newValue);
@@ -988,22 +992,7 @@ public class DashboardController {
                      UsersCountLabel.setText(String.valueOf(users.size()));
 
                      UsersSidebarList.getItems().setAll(users);
-
-                     User restoredSelection = findUserById(selectedUserId);
-                     if (restoredSelection != null) {
-                         UsersComboBox.setValue(restoredSelection);
-                         UsersSidebarList.getSelectionModel().select(restoredSelection);
-                         syncMonitoringEditorToSelectedUser(UsersComboBox.getValue());
-                     } else if (!users.isEmpty()) {
-                         UsersComboBox.setValue(users.get(0));
-                         UsersSidebarList.getSelectionModel().select(users.get(0));
-                         syncMonitoringEditorToSelectedUser(UsersComboBox.getValue());
-                     } else {
-                         UsersComboBox.setValue(null);
-                         UsersSidebarList.getSelectionModel().clearSelection();
-                         syncMonitoringEditorToSelectedUser(UsersComboBox.getValue());
-                         contextUsersLabel.setText("-");
-                     }
+                     refreshUsersForSelectedUseCase(selectedUserId);
                  });
             })
             .exceptionally(ex -> {
@@ -1241,10 +1230,74 @@ public class DashboardController {
 
         updateRuleBuilderUseCaseDisplay(selectedUseCase);
         updateLoggingIntervalDisplay(selectedUseCase);
+        refreshUsersForSelectedUseCase(null);
         refreshRuleSummary();
         renderMappingsForUseCase(selectedUseCase);
         clearChatMessages();
         addChatMessage("Selected use case: " + selectedUseCase, false);
+    }
+
+    private void refreshUsersForSelectedUseCase(Integer preferredUserId) {
+        if (UsersComboBox == null) {
+            return;
+        }
+
+        Integer userIdToRestore = preferredUserId;
+        if (userIdToRestore == null) {
+            User currentSelection = UsersComboBox.getValue();
+            userIdToRestore = currentSelection == null ? null : currentSelection.getUserID();
+        }
+
+        String selectedUseCase = state.getSelectedUseCase();
+        List<User> filteredUsers = users.stream()
+            .filter(user -> isUserAssignedToUseCase(user, selectedUseCase))
+            .toList();
+
+        usersForSelectedUseCase.setAll(filteredUsers);
+
+        User nextSelection = null;
+        if (userIdToRestore != null) {
+            final int restoredUserId = userIdToRestore;
+            nextSelection = filteredUsers.stream()
+                .filter(user -> user.getUserID() == restoredUserId)
+                .findFirst()
+                .orElse(null);
+        }
+        if (nextSelection == null && !filteredUsers.isEmpty()) {
+            nextSelection = filteredUsers.get(0);
+        }
+
+        UsersComboBox.setValue(nextSelection);
+        if (nextSelection != null) {
+            state.setSelectedUsers(nextSelection);
+            if (UsersSidebarList != null) {
+                UsersSidebarList.getSelectionModel().select(nextSelection);
+            }
+            syncMonitoringEditorToSelectedUser(nextSelection);
+            contextUsersLabel.setText(formatUser(nextSelection));
+        } else {
+            state.setSelectedUsers(null);
+            if (UsersSidebarList != null) {
+                UsersSidebarList.getSelectionModel().clearSelection();
+            }
+            syncMonitoringEditorToSelectedUser(null);
+            contextUsersLabel.setText("-");
+        }
+    }
+
+    private boolean isUserAssignedToUseCase(User user, String useCase) {
+        if (user == null || useCase == null || useCase.isBlank()) {
+            return false;
+        }
+
+        String selectedKey = normalizeUseCaseName(useCase);
+        String userUseCaseKey = normalizeUseCaseName(user.getUsecaseName());
+        if (!userUseCaseKey.isBlank() && selectedKey.equals(userUseCaseKey)) {
+            return true;
+        }
+
+        Integer selectedUseCaseId = state.getSelectedUseCaseId();
+        return selectedUseCaseId != null && selectedUseCaseId > 0 && user.getActiveUsecaseId() == selectedUseCaseId;
     }
 
     private void updateLoggingIntervalDisplay(String selectedUseCase) {
@@ -1544,6 +1597,18 @@ public class DashboardController {
             return;
         }
 
+        User selectedUser = state.getSelectedUsers();
+        String selectedUseCase = state.getSelectedUseCase();
+        if (selectedUser == null) {
+            showErrorAlert("Missing User", "Please select a user assigned to " + selectedUseCase + " before chatting.");
+            return;
+        }
+        if (!isUserAssignedToUseCase(selectedUser, selectedUseCase)) {
+            showErrorAlert("Invalid User", "Please select a user assigned to " + selectedUseCase + " before chatting.");
+            refreshUsersForSelectedUseCase(null);
+            return;
+        }
+
         addChatMessage(message, true);
         chatInputField.clear();
 
@@ -1551,8 +1616,12 @@ public class DashboardController {
         Map<String, Object> payload = new HashMap<>();
         Integer useCaseId = state.getSelectedUseCaseId();
 
-        payload.put("message", message);
+        payload.put("message", buildUserScopedChatMessage(message, selectedUser, selectedUseCase));
+        payload.put("display_message", message);
         payload.put("session_id", chatSessionId);
+        payload.put("user_id", selectedUser.getUserID());
+        payload.put("user_name", formatUser(selectedUser));
+        payload.put("user_usecase_name", selectedUser.getUsecaseName());
 
         if (useCaseId != null && useCaseId > 0) {
             payload.put("usecase_id", useCaseId);
@@ -1583,6 +1652,15 @@ public class DashboardController {
                 });
                 return null;
             });
+    }
+
+    private String buildUserScopedChatMessage(String message, User user, String useCase) {
+        return "Answer only for the selected user in the selected use case.\n"
+            + "Selected use case: " + (useCase == null ? "" : useCase) + "\n"
+            + "Selected user id: " + user.getUserID() + "\n"
+            + "Selected user name: " + formatUser(user) + "\n"
+            + "User assigned use case: " + user.getUsecaseName() + "\n\n"
+            + "Researcher question: " + message;
     }
 
     private void setAgentTyping(boolean typing) {
