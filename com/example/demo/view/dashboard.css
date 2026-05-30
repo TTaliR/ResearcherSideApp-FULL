@@ -182,7 +182,7 @@
 }
 
 .chat-panel {
-    -fx-padding: 2;
+    -fx-padding: 12;
 }
 
 .chat-scroll {
@@ -190,14 +190,45 @@
     -fx-border-color: #d6dde8;
     -fx-border-radius: 8;
     -fx-background-radius: 8;
+    -fx-padding: 0;
+    -fx-focus-color: #2563eb;
+    -fx-faint-focus-color: #2563eb22;
 }
 
 .chat-history {
-    -fx-padding: 6 10 6 10;
+    -fx-padding: 8 12 8 12;
+    -fx-spacing: 8;
 }
 
 .chat-message-row {
-    -fx-padding: 0;
+    -fx-padding: 2 4 2 4;
+}
+
+/* Improved text field styling */
+.chat-input-field {
+    -fx-font-size: 13px;
+    -fx-padding: 10 12;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d6dde8;
+    -fx-text-fill: #1f2f43;
+    -fx-control-inner-background: #ffffff;
+    -fx-faint-focus-color: #2563eb22;
+    -fx-focus-color: #2563eb;
+}
+
+.chat-input-field:focused {
+    -fx-border-color: #2563eb;
+    -fx-border-width: 2;
+    -fx-padding: 10 11;
+}
+
+.chat-send-button {
+    -fx-padding: 10 20;
+    -fx-font-weight: bold;
+    -fx-font-size: 13px;
+    -fx-cursor: hand;
 }
 
 .chat-bubble-user {
@@ -302,5 +333,4 @@
 .mapping-delete-button:hover {
     -fx-background-color: #f3f4f6;
 }
-
 

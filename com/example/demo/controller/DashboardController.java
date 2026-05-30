@@ -1715,15 +1715,15 @@ public class DashboardController {
     }
 
     private void addChatMessage(String text, boolean userMessage) {
-        WebView bubble = createChatBubbleView(text, userMessage);
+         WebView bubble = createChatBubbleView(text, userMessage);
 
-        HBox row = new HBox(bubble);
-        row.getStyleClass().add("chat-message-row");
-        row.setFillHeight(true);
-        row.setAlignment(userMessage ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
+         HBox row = new HBox(bubble);
+         row.getStyleClass().add("chat-message-row");
+         row.setFillHeight(false);
+         row.setAlignment(userMessage ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
 
-        chatHistoryBox.getChildren().add(row);
-    }
+         chatHistoryBox.getChildren().add(row);
+     }
 
     private static final Pattern MARKDOWN_INLINE = Pattern.compile("\\[([^]]+)]\\(([^)]+)\\)|\\*\\*(.+?)\\*\\*|\\*(.+?)\\*|`([^`]+)`");
     private static final double CHAT_BUBBLE_MIN_WIDTH = 80.0;
@@ -1731,25 +1731,40 @@ public class DashboardController {
     private static final double CHAT_BUBBLE_MIN_HEIGHT = 44.0;
 
     private WebView createChatBubbleView(String text, boolean userMessage) {
-        WebView webView = new WebView();
-        webView.setContextMenuEnabled(true);
-        webView.setFocusTraversable(false);
-        webView.setMinWidth(CHAT_BUBBLE_MIN_WIDTH);
-        webView.setPrefWidth(CHAT_BUBBLE_MAX_WIDTH);
-        webView.setMaxWidth(CHAT_BUBBLE_MAX_WIDTH);
-        webView.setMinHeight(CHAT_BUBBLE_MIN_HEIGHT);
-        webView.setStyle("-fx-background-color: transparent;");
-        webView.setPageFill(Color.TRANSPARENT);
+         WebView webView = new WebView();
+         webView.setContextMenuEnabled(true);
+         webView.setFocusTraversable(false);
+         webView.setMinWidth(CHAT_BUBBLE_MIN_WIDTH);
+         webView.setPrefWidth(CHAT_BUBBLE_MAX_WIDTH);
+         webView.setMaxWidth(CHAT_BUBBLE_MAX_WIDTH);
+         webView.setMinHeight(CHAT_BUBBLE_MIN_HEIGHT);
+         webView.setStyle("-fx-background-color: transparent;");
+         webView.setPageFill(Color.TRANSPARENT);
 
-        webView.getEngine().loadContent(buildChatBubbleHtml(text, userMessage), "text/html");
-        webView.getEngine().getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
-            if (newState == Worker.State.SUCCEEDED) {
-                Platform.runLater(() -> adjustChatBubbleSize(webView, false));
-            }
-        });
+         // Enable mouse wheel scrolling to pass through to parent ScrollPane
+         webView.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, event -> {
+             javafx.scene.input.ScrollEvent scrollEvent = (javafx.scene.input.ScrollEvent) event;
+             if (scrollEvent.isControlDown() || scrollEvent.isShiftDown()) {
+                 event.consume();
+             } else {
+                 event.consume();
+                 // Re-fire the event on the scroll pane to let it handle scrolling
+                 javafx.scene.Parent parent = webView.getParent();
+                 if (parent != null) {
+                     parent.fireEvent(scrollEvent.copyFor(parent, parent));
+                 }
+             }
+         });
 
-        return webView;
-    }
+         webView.getEngine().loadContent(buildChatBubbleHtml(text, userMessage), "text/html");
+         webView.getEngine().getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
+             if (newState == Worker.State.SUCCEEDED) {
+                 Platform.runLater(() -> adjustChatBubbleSize(webView, false));
+             }
+         });
+
+         return webView;
+     }
 
     private void adjustChatBubbleSize(WebView webView, boolean secondPass) {
         try {

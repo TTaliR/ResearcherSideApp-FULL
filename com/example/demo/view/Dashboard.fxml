@@ -90,7 +90,7 @@
                             <BorderPane styleClass="tab-content-root">
                                 <center>
                                     <VBox spacing="10.0" styleClass="chat-panel" BorderPane.alignment="CENTER">
-                                        <ScrollPane fx:id="chatScrollPane" fitToWidth="true" styleClass="chat-scroll" VBox.vgrow="ALWAYS">
+                                        <ScrollPane fx:id="chatScrollPane" fitToWidth="true" fitToHeight="false" styleClass="chat-scroll" VBox.vgrow="ALWAYS">
                                             <VBox fx:id="chatHistoryBox" spacing="10.0" styleClass="chat-history" />
                                         </ScrollPane>
                                         <Label fx:id="agentTypingLabel" text="Agent is typing..." visible="false" managed="false" styleClass="sidebar-muted-text" />
