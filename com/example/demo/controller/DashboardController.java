@@ -1726,7 +1726,7 @@ public class DashboardController {
      }
 
     private static final Pattern MARKDOWN_INLINE = Pattern.compile("\\[([^]]+)]\\(([^)]+)\\)|\\*\\*(.+?)\\*\\*|\\*(.+?)\\*|`([^`]+)`");
-    private static final double CHAT_BUBBLE_MIN_WIDTH = 80.0;
+    private static final double CHAT_BUBBLE_VIEWPORT_WIDTH = 580.0;
     private static final double CHAT_BUBBLE_MAX_WIDTH = 560.0;
     private static final double CHAT_BUBBLE_MIN_HEIGHT = 44.0;
 
@@ -1734,10 +1734,12 @@ public class DashboardController {
          WebView webView = new WebView();
          webView.setContextMenuEnabled(true);
          webView.setFocusTraversable(false);
-         webView.setMinWidth(CHAT_BUBBLE_MIN_WIDTH);
-         webView.setPrefWidth(CHAT_BUBBLE_MAX_WIDTH);
-         webView.setMaxWidth(CHAT_BUBBLE_MAX_WIDTH);
+         webView.setMinWidth(CHAT_BUBBLE_VIEWPORT_WIDTH);
+         webView.setPrefWidth(CHAT_BUBBLE_VIEWPORT_WIDTH);
+         webView.setMaxWidth(CHAT_BUBBLE_VIEWPORT_WIDTH);
          webView.setMinHeight(CHAT_BUBBLE_MIN_HEIGHT);
+         webView.setPrefHeight(CHAT_BUBBLE_MIN_HEIGHT);
+         webView.setMaxHeight(CHAT_BUBBLE_MIN_HEIGHT);
          webView.setStyle("-fx-background-color: transparent;");
          webView.setPageFill(Color.TRANSPARENT);
 
@@ -1759,46 +1761,38 @@ public class DashboardController {
          webView.getEngine().loadContent(buildChatBubbleHtml(text, userMessage), "text/html");
          webView.getEngine().getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
              if (newState == Worker.State.SUCCEEDED) {
-                 Platform.runLater(() -> adjustChatBubbleSize(webView, false));
+                 Platform.runLater(() -> adjustChatBubbleHeight(webView, false));
              }
          });
 
          return webView;
      }
 
-    private void adjustChatBubbleSize(WebView webView, boolean secondPass) {
+    private void adjustChatBubbleHeight(WebView webView, boolean secondPass) {
         try {
             Object metrics = webView.getEngine().executeScript("(() => {"
                 + "const bubble = document.querySelector('.bubble');"
-                + "if (!bubble) return JSON.stringify({width: 0, height: 0});"
-                + "const rect = bubble.getBoundingClientRect();"
-                + "return JSON.stringify({width: Math.ceil(rect.width), height: Math.ceil(rect.height)});"
+                + "if (!bubble) return JSON.stringify({height: 0});"
+                + "const height = bubble.getBoundingClientRect().height;"
+                + "return JSON.stringify({height: Math.ceil(height)});"
                 + "})()");
 
             if (metrics instanceof String metricJson && !metricJson.isBlank()) {
                 JsonNode metricNode = ApiService.getInstance().getMapper().readTree(metricJson);
-                double measuredWidth = metricNode.path("width").asDouble(0.0);
                 double measuredHeight = metricNode.path("height").asDouble(0.0);
 
-                double targetWidth = clamp(measuredWidth + 2, CHAT_BUBBLE_MIN_WIDTH, CHAT_BUBBLE_MAX_WIDTH);
-                double targetHeight = Math.max(CHAT_BUBBLE_MIN_HEIGHT, measuredHeight + 18);
+                double targetHeight = Math.max(CHAT_BUBBLE_MIN_HEIGHT, measuredHeight + 6);
 
-                boolean widthChanged = Math.abs(webView.getPrefWidth() - targetWidth) > 1.0;
-                webView.setMinWidth(targetWidth);
-                webView.setPrefWidth(targetWidth);
-                webView.setMaxWidth(targetWidth);
                 webView.setMinHeight(targetHeight);
                 webView.setPrefHeight(targetHeight);
+                webView.setMaxHeight(targetHeight);
 
-                // Re-measure once after the width is applied so wrapped long messages get the correct height.
-                if (widthChanged && !secondPass) {
-                    Platform.runLater(() -> adjustChatBubbleSize(webView, true));
+                // Re-measure once after WebView paints; fonts and wrapping can settle one pulse later.
+                if (!secondPass) {
+                    Platform.runLater(() -> adjustChatBubbleHeight(webView, true));
                 }
             }
         } catch (Exception ignored) {
-            webView.setMinWidth(CHAT_BUBBLE_MIN_WIDTH);
-            webView.setPrefWidth(CHAT_BUBBLE_MIN_WIDTH);
-            webView.setMaxWidth(CHAT_BUBBLE_MAX_WIDTH);
             webView.setPrefHeight(120);
         }
     }
@@ -1811,6 +1805,7 @@ public class DashboardController {
         String codeBg = userMessage ? "rgba(255,255,255,0.16)" : "#e5e7eb";
         String linkColor = userMessage ? "#dbeafe" : "#1d4ed8";
         String quoteColor = userMessage ? "#e5e7eb" : "#4b5563";
+        String horizontalAlign = userMessage ? "flex-end" : "flex-start";
 
         return """
             <html>
@@ -1820,13 +1815,18 @@ public class DashboardController {
                   html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
                   body {
                     font-family: 'Segoe UI', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
-                    display: inline-block;
-                    width: auto;
+                    box-sizing: border-box;
+                    display: flex;
+                    justify-content: %s;
+                    align-items: flex-start;
+                    width: 580px;
+                    min-height: 1px;
                   }
                   .bubble {
                     box-sizing: border-box;
                     display: inline-block;
-                    width: auto;
+                    width: fit-content;
+                    min-width: 48px;
                     max-width: 560px;
                     padding: 10px 12px;
                     border-radius: 12px;
@@ -1874,7 +1874,7 @@ public class DashboardController {
                 <div class="bubble">%s</div>
               </body>
             </html>
-            """.formatted(bubbleBg, bubbleText, bubbleBorder, codeBg, bubbleText, codeBg, linkColor, quoteColor, renderedMarkdown);
+            """.formatted(horizontalAlign, bubbleBg, bubbleText, bubbleBorder, codeBg, bubbleText, codeBg, linkColor, quoteColor, renderedMarkdown);
     }
 
     private String markdownToHtml(String markdown) {
