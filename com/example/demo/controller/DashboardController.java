@@ -2211,7 +2211,8 @@ public class DashboardController {
         boolean inOl = false;
 
         String[] lines = normalized.split("\n", -1);
-        for (String line : lines) {
+        for (int lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+            String line = lines[lineIndex];
             String trimmed = line.trim();
 
             if (trimmed.startsWith("```")) {
@@ -2227,13 +2228,12 @@ public class DashboardController {
                     html.append("</ol>");
                     inOl = false;
                 }
-
-                if (!inCodeBlock) {
-                    html.append("<pre><code>");
-                    inCodeBlock = true;
-                } else {
+                if (inCodeBlock) {
                     html.append("</code></pre>");
                     inCodeBlock = false;
+                } else {
+                    html.append("<pre><code>");
+                    inCodeBlock = true;
                 }
                 continue;
             }
@@ -2248,11 +2248,24 @@ public class DashboardController {
                     html.append("<p>").append(renderInlineMarkdown(paragraph.toString())).append("</p>");
                     paragraph.setLength(0);
                 }
-                if (inUl) {
+
+                String nextNonEmpty = null;
+                for (int nextIndex = lineIndex + 1; nextIndex < lines.length; nextIndex++) {
+                    String candidate = lines[nextIndex].trim();
+                    if (!candidate.isEmpty()) {
+                        nextNonEmpty = candidate;
+                        break;
+                    }
+                }
+
+                boolean nextIsUl = nextNonEmpty != null && nextNonEmpty.matches("^(?:[-*+])\\s+.+");
+                boolean nextIsOl = nextNonEmpty != null && nextNonEmpty.matches("^\\d+\\.\\s+.+");
+
+                if (inUl && !nextIsUl) {
                     html.append("</ul>");
                     inUl = false;
                 }
-                if (inOl) {
+                if (inOl && !nextIsOl) {
                     html.append("</ol>");
                     inOl = false;
                 }
@@ -2290,7 +2303,13 @@ public class DashboardController {
                     inOl = true;
                 }
                 int dotIndex = trimmed.indexOf('.');
-                html.append("<li>").append(renderInlineMarkdown(trimmed.substring(dotIndex + 1).trim())).append("</li>");
+                String explicitNumber = trimmed.substring(0, dotIndex).trim();
+                String itemContent = trimmed.substring(dotIndex + 1).trim();
+                html.append("<li value=\"")
+                    .append(explicitNumber)
+                    .append("\">")
+                    .append(renderInlineMarkdown(itemContent))
+                    .append("</li>");
                 continue;
             }
 
