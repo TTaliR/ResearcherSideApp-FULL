@@ -2123,6 +2123,11 @@ public class DashboardController {
             return;
         }
 
+        if (!selectedYellowBookParameter.parameterName.equals(updated.parameterName)) {
+            sendYellowBookRenameMutation(selectedYellowBookParameter, updated);
+            return;
+        }
+
         sendYellowBookMutation(
             "Edit dictionary parameter " + selectedYellowBookParameter.parameterName
                 + " in use case " + selectedYellowBookParameter.useCaseName
@@ -2133,6 +2138,76 @@ public class DashboardController {
                 + ", and param_value to " + updated.paramValue + ".",
             "Parameter Updated"
         );
+    }
+
+    private void sendYellowBookRenameMutation(DictionaryParameterData original, DictionaryParameterData updated) {
+        Integer contextUsecaseId = resolveDictionaryContextUseCaseId();
+        if (contextUsecaseId == null || contextUsecaseId <= 0) {
+            showErrorAlert("Missing Use Case Id", "Could not resolve a use case id for the dictionary request.");
+            return;
+        }
+
+        if (yellowBookStatusLabel != null) {
+            yellowBookStatusLabel.setText("Renaming dictionary parameter...");
+        }
+
+        String addMessage = "Add dictionary parameter " + updated.parameterName
+            + " to use case " + updated.useCaseName
+            + " with usecase_parameter_name " + updated.parameterName
+            + ", parameter_format " + updated.parameterFormat
+            + ", is_required " + updated.required
+            + ", description " + updated.description
+            + ", and param_value " + updated.paramValue + ".";
+        String deleteMessage = "Delete dictionary parameter " + original.parameterName
+            + " from use case " + original.useCaseName + ".";
+
+        ApiService.getInstance()
+            .sendDictionaryRequest(addMessage, contextUsecaseId, getSelectedUsecaseName(), chatSessionId)
+            .thenAccept(addResponse -> {
+                if (isDictionaryErrorResponse(addResponse)) {
+                    Platform.runLater(() -> {
+                        String error = extractDictionaryError(addResponse, "Could not add the new parameter name.");
+                        yellowBookStatusLabel.setText(error);
+                        showErrorAlert("Rename Failed", error);
+                    });
+                    return;
+                }
+
+                ApiService.getInstance()
+                    .sendDictionaryRequest(deleteMessage, contextUsecaseId, getSelectedUsecaseName(), chatSessionId)
+                    .thenAccept(deleteResponse -> Platform.runLater(() -> {
+                        if (isDictionaryErrorResponse(deleteResponse)) {
+                            String error = extractDictionaryError(deleteResponse, "Added the new name, but could not remove the old parameter.");
+                            yellowBookStatusLabel.setText(error);
+                            showErrorAlert("Rename Failed", error);
+                            loadYellowBookDictionary();
+                            return;
+                        }
+
+                        showInfoAlert("Parameter Renamed", "Renamed " + original.parameterName + " to " + updated.parameterName + ".");
+                        updateYellowBookEditor(null);
+                        loadYellowBookDictionary();
+                    }))
+                    .exceptionally(ex -> {
+                        Platform.runLater(() -> showErrorAlert("Rename Failed", ex.getMessage()));
+                        return null;
+                    });
+            })
+            .exceptionally(ex -> {
+                Platform.runLater(() -> showErrorAlert("Rename Failed", ex.getMessage()));
+                return null;
+            });
+    }
+
+    private boolean isDictionaryErrorResponse(JsonNode response) {
+        return response == null || response.has("error");
+    }
+
+    private String extractDictionaryError(JsonNode response, String fallback) {
+        if (response == null) {
+            return "No response from n8n.";
+        }
+        return response.path("message").asText(fallback);
     }
 
     private void updateYellowBookEditor(DictionaryParameterData parameter) {
