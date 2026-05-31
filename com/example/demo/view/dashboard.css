@@ -342,3 +342,37 @@
     -fx-background-color: #f3f4f6;
 }
 
+.yellow-book-card {
+    -fx-background-color: #fffdf4;
+    -fx-border-color: #f2d36b;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 12;
+}
+
+.yellow-book-editor {
+    -fx-background-color: #fbfcff;
+    -fx-border-color: #d6dde8;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 10;
+}
+
+.yellow-book-usecase-title {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #4a3510;
+}
+
+.yellow-book-parameter-row {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #eadfae;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 8;
+}
+
+.yellow-book-parameter-row-selected {
+    -fx-border-color: #2563eb;
+    -fx-background-color: #f8fbff;
+}

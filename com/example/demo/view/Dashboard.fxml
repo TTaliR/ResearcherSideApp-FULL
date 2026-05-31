@@ -2,6 +2,7 @@
 
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.Button?>
+<?import javafx.scene.control.CheckBox?>
 <?import javafx.scene.control.ComboBox?>
 <?import javafx.scene.control.DatePicker?>
 <?import javafx.scene.control.Label?>
@@ -129,45 +130,6 @@
                             </BorderPane>
                         </content>
                     </Tab>
-                    <Tab fx:id="schedulingTab" text="Schedules">
-                        <content>
-                            <VBox spacing="10.0" styleClass="tab-content-root">
-                                <HBox spacing="8.0" alignment="CENTER_LEFT">
-                                    <Button text="List All" onAction="#onListAllSchedules" />
-                                    <Button text="List Active" onAction="#onListActiveSchedules" />
-                                </HBox>
-                                <TableView fx:id="schedulesTable" prefHeight="220.0" prefWidth="760.0">
-                                    <columns>
-                                        <TableColumn fx:id="colScheduleId" text="ID" prefWidth="60" />
-                                        <TableColumn fx:id="colUserId" text="User ID" prefWidth="80" />
-                                        <TableColumn fx:id="colMeasureType" text="Measure" prefWidth="140" />
-                                        <TableColumn fx:id="colTrigger" text="Trigger %" prefWidth="80" />
-                                        <TableColumn fx:id="colNextCheck" text="Next Check" prefWidth="140" />
-                                        <TableColumn fx:id="colInterval" text="Interval Days" prefWidth="100" />
-                                        <TableColumn fx:id="colActive" text="Active" prefWidth="60" />
-                                    </columns>
-                                </TableView>
-                                <HBox spacing="8.0" alignment="CENTER_LEFT">
-                                    <Label text="Schedule ID:" />
-                                    <TextField fx:id="scheduleIdField" promptText="(for edit/activate)" prefWidth="90" />
-                                    <Label text="User ID:" />
-                                    <TextField fx:id="userIdField" promptText="e.g. 100" prefWidth="80" />
-                                    <Label text="Interval:" />
-                                    <TextField fx:id="intervalDaysField" promptText="days" prefWidth="80" />
-                                    <Label text="Measure:" />
-                                    <TextField fx:id="measureTypeField" promptText="average" prefWidth="120" />
-                                    <Label text="Trigger %:" />
-                                    <TextField fx:id="triggerPercentageField" promptText="e.g. 15" prefWidth="70" />
-                                </HBox>
-                                <HBox spacing="8.0">
-                                    <Button text="Add" onAction="#onAddSchedule" styleClass="primary-button" />
-                                    <Button text="Change" onAction="#onChangeSchedule" />
-                                    <Button text="Activate" onAction="#onActivateSchedule" />
-                                    <Button text="Deactivate" onAction="#onDeactivateSchedule" />
-                                </HBox>
-                            </VBox>
-                        </content>
-                    </Tab>
 
                     <Tab fx:id="graphTab" text="Graph">
                         <content>
@@ -258,6 +220,93 @@
                                         </StackPane.margin>
                                     </Label>
                                 </StackPane>
+                            </VBox>
+                        </content>
+                    </Tab>
+                    <Tab fx:id="schedulingTab" text="Schedules">
+                        <content>
+                            <VBox spacing="10.0" styleClass="tab-content-root">
+                                <HBox spacing="8.0" alignment="CENTER_LEFT">
+                                    <Button text="List All" onAction="#onListAllSchedules" />
+                                    <Button text="List Active" onAction="#onListActiveSchedules" />
+                                </HBox>
+                                <TableView fx:id="schedulesTable" prefHeight="220.0" prefWidth="760.0">
+                                    <columns>
+                                        <TableColumn fx:id="colScheduleId" text="ID" prefWidth="60" />
+                                        <TableColumn fx:id="colUserId" text="User ID" prefWidth="80" />
+                                        <TableColumn fx:id="colMeasureType" text="Measure" prefWidth="140" />
+                                        <TableColumn fx:id="colTrigger" text="Trigger %" prefWidth="80" />
+                                        <TableColumn fx:id="colNextCheck" text="Next Check" prefWidth="140" />
+                                        <TableColumn fx:id="colInterval" text="Interval Days" prefWidth="100" />
+                                        <TableColumn fx:id="colActive" text="Active" prefWidth="60" />
+                                    </columns>
+                                </TableView>
+                                <HBox spacing="8.0" alignment="CENTER_LEFT">
+                                    <Label text="Schedule ID:" />
+                                    <TextField fx:id="scheduleIdField" promptText="(for edit/activate)" prefWidth="90" />
+                                    <Label text="User ID:" />
+                                    <TextField fx:id="userIdField" promptText="e.g. 100" prefWidth="80" />
+                                    <Label text="Interval:" />
+                                    <TextField fx:id="intervalDaysField" promptText="days" prefWidth="80" />
+                                    <Label text="Measure:" />
+                                    <ComboBox fx:id="measureTypeComboBox" prefWidth="120" promptText="Select" />
+                                    <Label text="Trigger %:" />
+                                    <TextField fx:id="triggerPercentageField" promptText="e.g. 15" prefWidth="70" />
+                                </HBox>
+                                <HBox spacing="8.0">
+                                    <Button text="Add" onAction="#onAddSchedule" styleClass="primary-button" />
+                                    <Button text="Change" onAction="#onChangeSchedule" />
+                                    <Button text="Activate" onAction="#onActivateSchedule" />
+                                    <Button text="Deactivate" onAction="#onDeactivateSchedule" />
+                                </HBox>
+                            </VBox>
+                        </content>
+                    </Tab>
+
+                    <Tab fx:id="yellowBookTab" text="Dictionary">
+                        <content>
+                            <VBox spacing="10.0" styleClass="tab-content-root">
+                                <HBox alignment="CENTER_LEFT" spacing="10.0">
+                                    <Label text="Dictionary Parameters" styleClass="drawer-title" />
+                                    <Separator orientation="VERTICAL" prefHeight="22.0" />
+                                    <Label fx:id="yellowBookStatusLabel" text="Open or refresh to load the dictionary." styleClass="topbar-muted-value" />
+                                    <StackPane HBox.hgrow="ALWAYS" />
+                                    <Button text="Refresh" styleClass="primary-button" onAction="#onRefreshYellowBook" />
+                                </HBox>
+                                <VBox spacing="10.0" styleClass="yellow-book-editor">
+                                    <HBox alignment="CENTER_LEFT" spacing="10.0">
+                                        <Label text="Selected Parameter:" styleClass="topbar-label" />
+                                        <Label fx:id="yellowBookSelectedParameterLabel" text="None selected" styleClass="topbar-value" />
+                                    </HBox>
+                                    <HBox alignment="CENTER_LEFT" spacing="8.0">
+                                        <VBox spacing="4.0">
+                                            <Label text="Name" styleClass="topbar-label" />
+                                            <TextField fx:id="yellowBookParameterNameField" prefWidth="180.0" />
+                                        </VBox>
+                                        <VBox spacing="4.0">
+                                            <Label text="Format" styleClass="topbar-label" />
+                                            <TextField fx:id="yellowBookParameterFormatField" prefWidth="150.0" />
+                                        </VBox>
+                                        <VBox spacing="4.0">
+                                            <Label text="Value" styleClass="topbar-label" />
+                                            <TextField fx:id="yellowBookParameterValueField" prefWidth="150.0" />
+                                        </VBox>
+                                        <VBox spacing="4.0" HBox.hgrow="ALWAYS">
+                                            <Label text="Description" styleClass="topbar-label" />
+                                            <TextField fx:id="yellowBookParameterDescriptionField" HBox.hgrow="ALWAYS" />
+                                        </VBox>
+                                        <CheckBox fx:id="yellowBookRequiredCheckBox" text="Required" />
+                                        <Button fx:id="yellowBookSaveButton" text="Save Changes" styleClass="primary-button" onAction="#onSaveYellowBookParameter" />
+                                        <Button fx:id="yellowBookClearButton" text="Clear" styleClass="secondary-button" onAction="#onClearYellowBookSelection" />
+                                    </HBox>
+                                </VBox>
+                                <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="mappings-scroll" VBox.vgrow="ALWAYS">
+                                    <VBox fx:id="yellowBookContentBox" spacing="12.0">
+                                        <padding>
+                                            <Insets top="12.0" right="12.0" bottom="12.0" left="12.0" />
+                                        </padding>
+                                    </VBox>
+                                </ScrollPane>
                             </VBox>
                         </content>
                     </Tab>
