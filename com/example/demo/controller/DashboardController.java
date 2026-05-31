@@ -239,7 +239,7 @@ public class DashboardController {
     @FXML
     private TextField intervalDaysField;
     @FXML
-    private TextField measureTypeField;
+    private ComboBox<String> measureTypeComboBox;
     @FXML
     private TextField triggerPercentageField;
     @FXML
@@ -340,6 +340,10 @@ public class DashboardController {
                     }
                 }));
             }
+            if (measureTypeComboBox != null) {
+                measureTypeComboBox.getItems().setAll("average", "median", "mode");
+                measureTypeComboBox.setValue("average");
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -363,8 +367,9 @@ public class DashboardController {
         if (intervalDaysField != null) {
             intervalDaysField.setText(String.valueOf(schedule.getIntervalDays()));
         }
-        if (measureTypeField != null) {
-            measureTypeField.setText(schedule.getMeasureType());
+        if (measureTypeComboBox != null) {
+            String measureType = schedule.getMeasureType() == null ? "" : schedule.getMeasureType().trim().toLowerCase(Locale.ROOT);
+            measureTypeComboBox.setValue(List.of("average", "median", "mode").contains(measureType) ? measureType : "average");
         }
         if (triggerPercentageField != null) {
             triggerPercentageField.setText(String.valueOf(schedule.getTriggerPercentage()));
@@ -395,7 +400,7 @@ public class DashboardController {
         try {
             int userId = Integer.parseInt(userIdField.getText().trim());
             int interval = Integer.parseInt(intervalDaysField.getText().trim());
-            String measure = measureTypeField.getText().trim();
+            String measure = getSelectedScheduleMeasure();
             double trigger = Double.parseDouble(triggerPercentageField.getText().trim());
             String uc = this.getSelectedUsecaseName();
             ApiService.getInstance().addSchedule(userId, interval, measure, trigger, uc)
@@ -411,7 +416,7 @@ public class DashboardController {
             int schedId = Integer.parseInt(scheduleIdField.getText().trim());
             int userId = Integer.parseInt(userIdField.getText().trim());
             int interval = Integer.parseInt(intervalDaysField.getText().trim());
-            String measure = measureTypeField.getText().trim();
+            String measure = getSelectedScheduleMeasure();
             double trigger = Double.parseDouble(triggerPercentageField.getText().trim());
             String uc = this.getSelectedUsecaseName();
             ApiService.getInstance().changeSchedule(schedId, userId, interval, measure, trigger, uc)
@@ -443,6 +448,14 @@ public class DashboardController {
         } catch (Exception e) {
             showErrorAlert("Input Error", "Please provide a valid schedule id to deactivate.");
         }
+    }
+
+    private String getSelectedScheduleMeasure() {
+        String measure = measureTypeComboBox == null ? "" : measureTypeComboBox.getValue();
+        if (measure == null || measure.isBlank()) {
+            throw new IllegalArgumentException("Please choose average, median, or mode.");
+        }
+        return measure.trim().toLowerCase(Locale.ROOT);
     }
 
      private String getSelectedUsecaseName() {
