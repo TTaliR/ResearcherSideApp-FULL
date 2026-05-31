@@ -2,6 +2,7 @@
 
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.Button?>
+<?import javafx.scene.control.CheckBox?>
 <?import javafx.scene.control.ComboBox?>
 <?import javafx.scene.control.DatePicker?>
 <?import javafx.scene.control.Label?>
@@ -173,6 +174,33 @@
                                     <StackPane HBox.hgrow="ALWAYS" />
                                     <Button text="Refresh" styleClass="primary-button" onAction="#onRefreshYellowBook" />
                                 </HBox>
+                                <VBox spacing="10.0" styleClass="yellow-book-editor">
+                                    <HBox alignment="CENTER_LEFT" spacing="10.0">
+                                        <Label text="Selected Parameter:" styleClass="topbar-label" />
+                                        <Label fx:id="yellowBookSelectedParameterLabel" text="None selected" styleClass="topbar-value" />
+                                    </HBox>
+                                    <HBox alignment="CENTER_LEFT" spacing="8.0">
+                                        <VBox spacing="4.0">
+                                            <Label text="Name" styleClass="topbar-label" />
+                                            <TextField fx:id="yellowBookParameterNameField" prefWidth="180.0" />
+                                        </VBox>
+                                        <VBox spacing="4.0">
+                                            <Label text="Format" styleClass="topbar-label" />
+                                            <TextField fx:id="yellowBookParameterFormatField" prefWidth="150.0" />
+                                        </VBox>
+                                        <VBox spacing="4.0">
+                                            <Label text="Value" styleClass="topbar-label" />
+                                            <TextField fx:id="yellowBookParameterValueField" prefWidth="150.0" />
+                                        </VBox>
+                                        <VBox spacing="4.0" HBox.hgrow="ALWAYS">
+                                            <Label text="Description" styleClass="topbar-label" />
+                                            <TextField fx:id="yellowBookParameterDescriptionField" HBox.hgrow="ALWAYS" />
+                                        </VBox>
+                                        <CheckBox fx:id="yellowBookRequiredCheckBox" text="Required" />
+                                        <Button fx:id="yellowBookSaveButton" text="Save Changes" styleClass="primary-button" onAction="#onSaveYellowBookParameter" />
+                                        <Button fx:id="yellowBookClearButton" text="Clear" styleClass="secondary-button" onAction="#onClearYellowBookSelection" />
+                                    </HBox>
+                                </VBox>
                                 <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="mappings-scroll" VBox.vgrow="ALWAYS">
                                     <VBox fx:id="yellowBookContentBox" spacing="12.0">
                                         <padding>

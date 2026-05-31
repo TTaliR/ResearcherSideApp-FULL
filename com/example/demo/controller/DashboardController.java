@@ -248,6 +248,22 @@ public class DashboardController {
     private VBox yellowBookContentBox;
     @FXML
     private Label yellowBookStatusLabel;
+    @FXML
+    private Label yellowBookSelectedParameterLabel;
+    @FXML
+    private TextField yellowBookParameterNameField;
+    @FXML
+    private TextField yellowBookParameterFormatField;
+    @FXML
+    private TextField yellowBookParameterValueField;
+    @FXML
+    private TextField yellowBookParameterDescriptionField;
+    @FXML
+    private CheckBox yellowBookRequiredCheckBox;
+    @FXML
+    private Button yellowBookSaveButton;
+    @FXML
+    private Button yellowBookClearButton;
 
     private final DashboardState state = DashboardState.getInstance();
     private final ObservableList<User> users = FXCollections.observableArrayList();
@@ -261,6 +277,7 @@ public class DashboardController {
     private final String chatSessionId = UUID.randomUUID().toString();
     private String activeMonitoringTypeKey = "";
     private RuleCardData selectedMappingForEdit;
+    private DictionaryParameterData selectedYellowBookParameter;
 
     private WebView graphWebView;
     private WebView miniGraphWebView;
@@ -279,6 +296,7 @@ public class DashboardController {
         setupGraph();
         setupMappingsRuleBuilder();
         setupSchedulesTable();
+        setupYellowBookEditor();
         setupStateListeners();
 
         loadUserss();
@@ -325,6 +343,10 @@ public class DashboardController {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private void setupYellowBookEditor() {
+        updateYellowBookEditor(null);
     }
     
     private void populateScheduleFields(Schedule schedule) {
@@ -1662,6 +1684,9 @@ public class DashboardController {
         HBox row = new HBox(8);
         row.setAlignment(Pos.CENTER_LEFT);
         row.getStyleClass().add("yellow-book-parameter-row");
+        if (isSelectedYellowBookParameter(parameter)) {
+            row.getStyleClass().add("yellow-book-parameter-row-selected");
+        }
 
         VBox textBox = new VBox(2);
         Label name = new Label(parameter.parameterName);
@@ -1679,6 +1704,12 @@ public class DashboardController {
         deleteButton.setOnAction(ignored -> onRemoveYellowBookParameter(parameter));
 
         row.getChildren().addAll(textBox, editButton, deleteButton);
+        row.setOnMouseClicked(event -> {
+            if (event.getTarget() instanceof Button) {
+                return;
+            }
+            onEditYellowBookParameter(parameter);
+        });
         return row;
     }
 
@@ -1718,60 +1749,50 @@ public class DashboardController {
         return button;
     }
 
+    private boolean isSelectedYellowBookParameter(DictionaryParameterData parameter) {
+        if (selectedYellowBookParameter == null || parameter == null) {
+            return false;
+        }
+
+        return selectedYellowBookParameter.useCaseName.equals(parameter.useCaseName)
+            && selectedYellowBookParameter.parameterName.equals(parameter.parameterName);
+    }
+
     private void onEditYellowBookParameter(DictionaryParameterData parameter) {
-        Dialog<DictionaryParameterData> dialog = new Dialog<>();
-        dialog.setTitle("Edit Dictionary Parameter");
-        dialog.setHeaderText(parameter.useCaseName + " / " + parameter.parameterName);
+        updateYellowBookEditor(parameter);
+        renderYellowBook();
+    }
 
-        ButtonType saveButtonType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
+    @FXML
+    private void onClearYellowBookSelection() {
+        updateYellowBookEditor(null);
+        renderYellowBook();
+    }
 
-        TextField nameField = new TextField(parameter.parameterName);
-        TextField formatField = new TextField(parameter.parameterFormat);
-        TextField valueField = new TextField(parameter.paramValue);
-        TextField descriptionField = new TextField(parameter.description);
-        CheckBox requiredCheckBox = new CheckBox("Required");
-        requiredCheckBox.setSelected(parameter.required);
-
-        VBox content = new VBox(8,
-            new Label("Parameter Name"), nameField,
-            new Label("Format"), formatField,
-            requiredCheckBox,
-            new Label("Specific Value"), valueField,
-            new Label("Description"), descriptionField
-        );
-        content.setPadding(new Insets(12, 12, 4, 12));
-        content.setPrefWidth(360);
-        dialog.getDialogPane().setContent(content);
-
-        dialog.setResultConverter(button -> {
-            if (button != saveButtonType) {
-                return null;
-            }
-            return new DictionaryParameterData(
-                parameter.useCaseName,
-                nameField.getText() == null ? "" : nameField.getText().trim(),
-                formatField.getText() == null ? "" : formatField.getText().trim(),
-                requiredCheckBox.isSelected(),
-                descriptionField.getText() == null ? "" : descriptionField.getText().trim(),
-                valueField.getText() == null ? "" : valueField.getText().trim()
-            );
-        });
-
-        Optional<DictionaryParameterData> result = dialog.showAndWait();
-        if (result.isEmpty()) {
+    @FXML
+    private void onSaveYellowBookParameter() {
+        if (selectedYellowBookParameter == null) {
+            showErrorAlert("Missing Parameter", "Select a dictionary parameter before saving changes.");
             return;
         }
 
-        DictionaryParameterData updated = result.get();
+        DictionaryParameterData updated = new DictionaryParameterData(
+            selectedYellowBookParameter.useCaseName,
+            readText(yellowBookParameterNameField),
+            readText(yellowBookParameterFormatField),
+            yellowBookRequiredCheckBox != null && yellowBookRequiredCheckBox.isSelected(),
+            readText(yellowBookParameterDescriptionField),
+            readText(yellowBookParameterValueField)
+        );
+
         if (updated.parameterName.isBlank() || updated.parameterFormat.isBlank()) {
             showErrorAlert("Invalid Parameter", "Parameter name and format are required.");
             return;
         }
 
         sendYellowBookMutation(
-            "Edit dictionary parameter " + parameter.parameterName
-                + " in use case " + parameter.useCaseName
+            "Edit dictionary parameter " + selectedYellowBookParameter.parameterName
+                + " in use case " + selectedYellowBookParameter.useCaseName
                 + ". Set usecase_parameter_name to " + updated.parameterName
                 + ", parameter_format to " + updated.parameterFormat
                 + ", is_required to " + updated.required
@@ -1779,6 +1800,49 @@ public class DashboardController {
                 + ", and param_value to " + updated.paramValue + ".",
             "Parameter Updated"
         );
+    }
+
+    private void updateYellowBookEditor(DictionaryParameterData parameter) {
+        selectedYellowBookParameter = parameter;
+
+        boolean hasSelection = parameter != null;
+        if (yellowBookSelectedParameterLabel != null) {
+            yellowBookSelectedParameterLabel.setText(hasSelection ? parameter.useCaseName + " / " + parameter.parameterName : "None selected");
+        }
+        setText(yellowBookParameterNameField, hasSelection ? parameter.parameterName : "");
+        setText(yellowBookParameterFormatField, hasSelection ? parameter.parameterFormat : "");
+        setText(yellowBookParameterValueField, hasSelection ? parameter.paramValue : "");
+        setText(yellowBookParameterDescriptionField, hasSelection ? parameter.description : "");
+        if (yellowBookRequiredCheckBox != null) {
+            yellowBookRequiredCheckBox.setSelected(hasSelection && parameter.required);
+            yellowBookRequiredCheckBox.setDisable(!hasSelection);
+        }
+        setDisabled(yellowBookParameterNameField, !hasSelection);
+        setDisabled(yellowBookParameterFormatField, !hasSelection);
+        setDisabled(yellowBookParameterValueField, !hasSelection);
+        setDisabled(yellowBookParameterDescriptionField, !hasSelection);
+        if (yellowBookSaveButton != null) {
+            yellowBookSaveButton.setDisable(!hasSelection);
+        }
+        if (yellowBookClearButton != null) {
+            yellowBookClearButton.setDisable(!hasSelection);
+        }
+    }
+
+    private String readText(TextField field) {
+        return field == null || field.getText() == null ? "" : field.getText().trim();
+    }
+
+    private void setText(TextField field, String value) {
+        if (field != null) {
+            field.setText(value == null ? "" : value);
+        }
+    }
+
+    private void setDisabled(Node node, boolean disabled) {
+        if (node != null) {
+            node.setDisable(disabled);
+        }
     }
 
     private void onRemoveYellowBookParameter(DictionaryParameterData parameter) {
@@ -1832,6 +1896,7 @@ public class DashboardController {
 
                 String reply = response.path("reply").asText("Dictionary update completed.");
                 showInfoAlert(successTitle, reply);
+                updateYellowBookEditor(null);
                 loadYellowBookDictionary();
             }))
             .exceptionally(ex -> {
