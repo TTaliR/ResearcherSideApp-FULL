@@ -94,11 +94,17 @@
                                             <VBox fx:id="chatHistoryBox" spacing="6.0" styleClass="chat-history" />
                                         </ScrollPane>
                                         <Label fx:id="agentTypingLabel" text="Agent is typing..." visible="false" managed="false" styleClass="sidebar-muted-text" />
-                                        <HBox spacing="10.0">
-                                            <TextField fx:id="chatInputField" promptText="Type your instruction or query..." HBox.hgrow="ALWAYS" />
-                                            <Button fx:id="chatSendButton" text="Send" styleClass="primary-button" />
-                                            <Button fx:id="contextDrawerToggleButton" text="Hide Context" styleClass="secondary-button" />
-                                        </HBox>
+                                        <VBox spacing="6.0">
+                                            <HBox spacing="10.0" alignment="CENTER_LEFT">
+                                                <TextField fx:id="chatInputField" promptText="Type your instruction or query..." HBox.hgrow="ALWAYS" />
+                                                <Button fx:id="chatSendButton" text="Send" styleClass="primary-button" />
+                                                <Button fx:id="contextDrawerToggleButton" text="Hide Context" styleClass="secondary-button" />
+                                            </HBox>
+                                            <VBox spacing="4.0">
+                                                <Label fx:id="chatCommandHintLabel" visible="false" managed="false" wrapText="true" styleClass="chat-command-hint" />
+                                                <ListView fx:id="chatCommandDropdownList" visible="false" managed="false" prefHeight="220.0" styleClass="chat-command-dropdown" />
+                                            </VBox>
+                                        </VBox>
                                     </VBox>
                                 </center>
                                 <right>

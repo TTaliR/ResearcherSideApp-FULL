@@ -185,6 +185,44 @@
     -fx-padding: 2;
 }
 
+.chat-command-hint {
+    -fx-text-fill: #5d6b7c;
+    -fx-font-size: 10px;
+    -fx-padding: 0 2 0 2;
+}
+
+.chat-command-dropdown {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #cfd8e4;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-max-height: 220;
+}
+
+.chat-command-dropdown .list-cell {
+    -fx-padding: 8 10 8 10;
+    -fx-background-insets: 0;
+}
+
+.chat-command-dropdown .list-cell:selected {
+    -fx-background-color: #dbeafe;
+}
+
+.chat-command-name {
+    -fx-text-fill: #0f172a;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+
+.chat-command-description {
+    -fx-text-fill: #64748b;
+    -fx-font-size: 11px;
+}
+
+.chat-command-cell-content {
+    -fx-spacing: 2;
+}
+
 .chat-scroll {
     -fx-background-color: #f9fbfd;
     -fx-border-color: #d6dde8;

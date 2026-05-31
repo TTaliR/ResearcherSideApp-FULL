@@ -31,6 +31,8 @@ import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.concurrent.Worker;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.control.ToggleButton;
@@ -83,11 +85,14 @@ import java.util.regex.Pattern;
 
 public class DashboardController {
     private static final List<String> DEFAULT_USE_CASES = List.of("HeartRate", "MoonAzimuth", "SunAzimuth", "Pollution");
+    private static final String DEFAULT_CHAT_COMMAND_PREFIX = "$";
     private static final String DELETE_ICON_PATH = "/com/example/demo/images/delete.png";
     private static final String SETTINGS_ICON_PATH = "/com/example/demo/images/settings.png";
     private static final String FEEDBACK_GRAPH_TEMPLATE_PATH = "/com/example/demo/view/templates/feedbackGraph.html";
     private static final String MINI_GRAPH_TEMPLATE_PATH = "/com/example/demo/view/templates/miniFeedbackGraph.html";
     private static final Pattern LOG_INTERVAL_PATTERN = Pattern.compile("^\\d+(\\.\\d+)?\\s+(second|seconds|minute|minutes|hour|hours|day|days)$", Pattern.CASE_INSENSITIVE);
+    private static final List<ChatCommandOption> CHAT_COMMAND_OPTIONS = createChatCommandOptions();
+    private static final Map<String, ChatCommandOption> CHAT_COMMAND_OPTIONS_BY_COMMAND = createChatCommandOptionMap();
 
     @FXML
     private ToggleButton useCasesNavButton;
@@ -139,9 +144,13 @@ public class DashboardController {
     @FXML
     private VBox chatHistoryBox;
     @FXML
+    private ListView<ChatCommandOption> chatCommandDropdownList;
+    @FXML
     private TextField chatInputField;
     @FXML
     private Button chatSendButton;
+    @FXML
+    private Label chatCommandHintLabel;
     @FXML
     private VBox contextDrawer;
     @FXML
@@ -885,10 +894,17 @@ public class DashboardController {
     }
 
     private void setupChat() {
+        setupChatShortcuts();
+        setupChatAutocomplete();
         chatSendButton.setOnAction(ignored -> onSendMessage());
         chatInputField.setOnAction(ignored -> onSendMessage());
 
         chatHistoryBox.heightProperty().addListener(onNewValueChanged(newValue -> chatScrollPane.setVvalue(1.0)));
+        chatInputField.textProperty().addListener((obs, oldValue, newValue) -> {
+            updateChatShortcutHint(newValue);
+            updateChatCommandSuggestions(newValue);
+        });
+        chatInputField.addEventFilter(KeyEvent.KEY_PRESSED, this::handleChatCommandKeyPress);
 
         if (agentTypingLabel != null) {
             agentTypingLabel.setVisible(false);
@@ -905,6 +921,310 @@ public class DashboardController {
             contextDrawer.setManaged(nextVisible);
             contextDrawerToggleButton.setText(nextVisible ? "Hide Context" : "Show Context");
         });
+    }
+
+    private void setupChatShortcuts() {
+        if (chatInputField != null) {
+            chatInputField.setPromptText("Type a chat message or start with $ for commands...");
+        }
+
+        updateChatShortcutHint(chatInputField == null ? "" : chatInputField.getText());
+    }
+
+    private void setupChatAutocomplete() {
+        if (chatCommandDropdownList == null) {
+            return;
+        }
+
+        chatCommandDropdownList.setItems(FXCollections.observableArrayList());
+        chatCommandDropdownList.setVisible(false);
+        chatCommandDropdownList.setManaged(false);
+        chatCommandDropdownList.setFocusTraversable(false);
+        chatCommandDropdownList.setMouseTransparent(false);
+        chatCommandDropdownList.setFixedCellSize(56.0);
+        chatCommandDropdownList.setCellFactory(listView -> new ListCell<>() {
+            private final Label commandLabel = new Label();
+            private final Label descriptionLabel = new Label();
+            private final VBox content = new VBox(2.0, commandLabel, descriptionLabel);
+
+            {
+                commandLabel.getStyleClass().add("chat-command-name");
+                descriptionLabel.getStyleClass().add("chat-command-description");
+                descriptionLabel.setWrapText(true);
+                content.getStyleClass().add("chat-command-cell-content");
+            }
+
+            @Override
+            protected void updateItem(ChatCommandOption item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                    return;
+                }
+
+                commandLabel.setText(item.command());
+                descriptionLabel.setText(item.description());
+                setText(null);
+                setGraphic(content);
+            }
+        });
+
+        chatCommandDropdownList.getSelectionModel().selectedItemProperty().addListener((observable, oldValue, newValue) -> {
+            if (newValue != null) {
+                chatCommandDropdownList.scrollTo(chatCommandDropdownList.getItems().indexOf(newValue));
+            }
+        });
+
+        chatCommandDropdownList.setOnMouseClicked(event -> {
+            if (event.getClickCount() >= 1) {
+                acceptSelectedChatCommand();
+            }
+        });
+    }
+
+    private void handleChatCommandKeyPress(KeyEvent event) {
+        if (chatCommandDropdownList == null || !chatCommandDropdownList.isVisible()) {
+            return;
+        }
+
+        if (event.getCode() == KeyCode.ESCAPE) {
+            hideChatCommandDropdown();
+            event.consume();
+            return;
+        }
+
+        if (event.getCode() == KeyCode.UP) {
+            moveChatCommandSelection(-1);
+            event.consume();
+            return;
+        }
+
+        if (event.getCode() == KeyCode.DOWN) {
+            moveChatCommandSelection(1);
+            event.consume();
+            return;
+        }
+
+        if (event.getCode() == KeyCode.ENTER) {
+            acceptSelectedChatCommand();
+            event.consume();
+        }
+    }
+
+    private void moveChatCommandSelection(int delta) {
+        if (chatCommandDropdownList == null || chatCommandDropdownList.getItems().isEmpty()) {
+            return;
+        }
+
+        int size = chatCommandDropdownList.getItems().size();
+        int currentIndex = chatCommandDropdownList.getSelectionModel().getSelectedIndex();
+        int nextIndex = currentIndex < 0 ? 0 : (currentIndex + delta + size) % size;
+        chatCommandDropdownList.getSelectionModel().select(nextIndex);
+        chatCommandDropdownList.scrollTo(nextIndex);
+    }
+
+    private void updateChatCommandSuggestions(String inputText) {
+        if (chatCommandDropdownList == null) {
+            return;
+        }
+
+        String normalized = inputText == null ? "" : inputText.stripLeading();
+        if (!normalized.startsWith(DEFAULT_CHAT_COMMAND_PREFIX)) {
+            hideChatCommandDropdown();
+            return;
+        }
+
+        String afterPrefix = normalized.substring(DEFAULT_CHAT_COMMAND_PREFIX.length());
+        String query = afterPrefix.stripLeading();
+        if (query.isEmpty()) {
+            showChatCommandDropdown(CHAT_COMMAND_OPTIONS);
+            return;
+        }
+
+        int spaceIndex = query.indexOf(' ');
+        String searchText = spaceIndex >= 0 ? query.substring(0, spaceIndex).trim() : query.trim();
+        String trailingText = spaceIndex >= 0 ? query.substring(spaceIndex).trim() : "";
+
+        if (!trailingText.isEmpty() && CHAT_COMMAND_OPTIONS_BY_COMMAND.containsKey(searchText.toLowerCase(Locale.ROOT))) {
+            hideChatCommandDropdown();
+            return;
+        }
+
+        List<ChatCommandOption> filtered = new ArrayList<>();
+        String lowerQuery = searchText.toLowerCase(Locale.ROOT);
+        for (ChatCommandOption option : CHAT_COMMAND_OPTIONS) {
+            if (option.matches(lowerQuery)) {
+                filtered.add(option);
+            }
+        }
+
+        if (filtered.isEmpty()) {
+            hideChatCommandDropdown();
+            return;
+        }
+
+        showChatCommandDropdown(filtered);
+    }
+
+    private void showChatCommandDropdown(List<ChatCommandOption> items) {
+        if (chatCommandDropdownList == null) {
+            return;
+        }
+
+        chatCommandDropdownList.getItems().setAll(items);
+        chatCommandDropdownList.setVisible(true);
+        chatCommandDropdownList.setManaged(true);
+        chatCommandDropdownList.getSelectionModel().selectFirst();
+        chatCommandDropdownList.scrollTo(0);
+
+        if (chatCommandHintLabel != null) {
+            chatCommandHintLabel.setText("Use ↑↓ Enter or click.");
+            chatCommandHintLabel.setVisible(true);
+            chatCommandHintLabel.setManaged(true);
+        }
+    }
+
+    private void hideChatCommandDropdown() {
+        if (chatCommandDropdownList != null) {
+            chatCommandDropdownList.getItems().clear();
+            chatCommandDropdownList.getSelectionModel().clearSelection();
+            chatCommandDropdownList.setVisible(false);
+            chatCommandDropdownList.setManaged(false);
+        }
+
+        if (chatCommandHintLabel != null) {
+            chatCommandHintLabel.setText("");
+            chatCommandHintLabel.setVisible(false);
+            chatCommandHintLabel.setManaged(false);
+        }
+    }
+
+    private void acceptSelectedChatCommand() {
+        if (chatCommandDropdownList == null || !chatCommandDropdownList.isVisible() || chatInputField == null) {
+            return;
+        }
+
+        ChatCommandOption selected = chatCommandDropdownList.getSelectionModel().getSelectedItem();
+        if (selected == null && !chatCommandDropdownList.getItems().isEmpty()) {
+            selected = chatCommandDropdownList.getItems().getFirst();
+        }
+
+        if (selected == null) {
+            hideChatCommandDropdown();
+            return;
+        }
+
+        String currentText = chatInputField.getText() == null ? "" : chatInputField.getText();
+        String replacement = selected.command() + " ";
+        String newText = replaceLeadingCommandToken(currentText, replacement);
+
+        chatInputField.setText(newText);
+        chatInputField.positionCaret(newText.length());
+        hideChatCommandDropdown();
+    }
+
+    private String replaceLeadingCommandToken(String currentText, String replacement) {
+        String text = currentText == null ? "" : currentText;
+        String normalized = text.stripLeading();
+        if (!normalized.startsWith(DEFAULT_CHAT_COMMAND_PREFIX)) {
+            return replacement;
+        }
+
+        int firstSpace = normalized.indexOf(' ');
+        if (firstSpace < 0) {
+            return replacement;
+        }
+
+        String suffix = normalized.substring(firstSpace).stripLeading();
+        if (suffix.isEmpty()) {
+            return replacement;
+        }
+
+        return replacement + suffix;
+    }
+
+    private void updateChatShortcutHint(String inputText) {
+        if (chatCommandHintLabel == null || (chatCommandDropdownList != null && chatCommandDropdownList.isVisible())) {
+            return;
+        }
+
+        String normalized = inputText == null ? "" : inputText.trim();
+        if (!normalized.startsWith(DEFAULT_CHAT_COMMAND_PREFIX)) {
+            chatCommandHintLabel.setVisible(false);
+            chatCommandHintLabel.setManaged(false);
+            chatCommandHintLabel.setText("");
+            return;
+        }
+
+        chatCommandHintLabel.setText("Use ↑↓ Enter or click.");
+        chatCommandHintLabel.setVisible(true);
+        chatCommandHintLabel.setManaged(true);
+    }
+
+    private String expandChatCommand(String message) {
+        String trimmed = message == null ? "" : message.trim();
+        if (trimmed.isEmpty()) {
+            return trimmed;
+        }
+
+        return expandChatCommandForPrefix(trimmed, DEFAULT_CHAT_COMMAND_PREFIX);
+    }
+
+    private String expandChatCommandForPrefix(String message, String prefix) {
+        if (prefix == null || prefix.isBlank() || !message.startsWith(prefix)) {
+            return message;
+        }
+
+        String commandPortion = message.substring(prefix.length()).trim();
+        if (commandPortion.isEmpty()) {
+            return message;
+        }
+
+        String[] parts = commandPortion.split("\\s+", 2);
+        String command = parts[0].toLowerCase(Locale.ROOT).replace('-', '_');
+        ChatCommandOption option = CHAT_COMMAND_OPTIONS_BY_COMMAND.get(command);
+        if (option == null) {
+            return message;
+        }
+
+        if (parts.length == 1 || parts[1].isBlank()) {
+            return option.prompt();
+        }
+
+        return option.prompt() + " " + parts[1].trim();
+    }
+
+    private static List<ChatCommandOption> createChatCommandOptions() {
+        List<ChatCommandOption> options = new ArrayList<>();
+        options.add(new ChatCommandOption("$mapping", "Show Active Mappings", "Show the current feedback mappings", "show me the current feedback mappings"));
+        options.add(new ChatCommandOption("$knowledge", "Experiment Background", "What is the background of this experiment", "what is the background of this experiment"));
+        options.add(new ChatCommandOption("$dictionary", "Show Use Cases", "Show the use cases in the dictionary", "show me the use cases in the dictionary"));
+        options.add(new ChatCommandOption("$schedule", "Show Active Schedules", "Show the active schedules", "show me the active schedules"));
+        options.add(new ChatCommandOption("$usecase", "Show Use Case Configuration", "Show the use case configuration", "show me the use case configuration"));
+        return List.copyOf(options);
+    }
+
+    private static Map<String, ChatCommandOption> createChatCommandOptionMap() {
+        Map<String, ChatCommandOption> map = new LinkedHashMap<>();
+        for (ChatCommandOption option : CHAT_COMMAND_OPTIONS) {
+            map.put(option.command().substring(1), option);
+        }
+        return map;
+    }
+
+    private record ChatCommandOption(String command, String title, String description, String prompt) {
+        private boolean matches(String query) {
+            String normalizedQuery = query == null ? "" : query.trim();
+            if (normalizedQuery.isEmpty()) {
+                return true;
+            }
+
+            String lower = normalizedQuery.toLowerCase(Locale.ROOT);
+            return command.toLowerCase(Locale.ROOT).contains(lower)
+                || title.toLowerCase(Locale.ROOT).contains(lower)
+                || description.toLowerCase(Locale.ROOT).contains(lower);
+        }
     }
 
     private void setupGraph() {
@@ -1664,6 +1984,7 @@ public class DashboardController {
             return;
         }
 
+        String expandedMessage = expandChatCommand(message);
         addChatMessage(message, true);
         chatInputField.clear();
 
@@ -1671,7 +1992,7 @@ public class DashboardController {
         Map<String, Object> payload = new HashMap<>();
         Integer useCaseId = state.getSelectedUseCaseId();
 
-        payload.put("message", message);
+        payload.put("message", expandedMessage);
         payload.put("session_id", chatSessionId);
 
         if (useCaseId != null && useCaseId > 0) {
