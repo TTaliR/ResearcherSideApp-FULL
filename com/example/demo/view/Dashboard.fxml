@@ -23,64 +23,12 @@
 <?import javafx.scene.layout.VBox?>
 
 <HBox prefHeight="800.0" prefWidth="1280.0" styleClass="dashboard-root" xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.example.demo.controller.DashboardController">
-    <VBox prefWidth="250.0" styleClass="sidebar">
-        <Label styleClass="sidebar-title" text="ResearcherSide" />
-
-        <VBox spacing="8.0" styleClass="sidebar-nav">
-            <ToggleButton fx:id="useCasesNavButton" styleClass="sidebar-nav-button" text="Use Cases" />
-            <ToggleButton fx:id="UsersNavButton" styleClass="sidebar-nav-button" text="Users" />
-        </VBox>
-
-        <Separator />
-
-        <VBox fx:id="useCasesSidebarPane" spacing="8.0" VBox.vgrow="ALWAYS">
-            <Label styleClass="sidebar-section-title" text="Available Use Cases" />
-            <ListView fx:id="useCaseListView" VBox.vgrow="ALWAYS" />
-            <Button fx:id="addUseCaseButton" text="Add Use Case" styleClass="primary-button" onAction="#onAddUseCaseRequested" />
-            <Label text="To receive feedback, follow the n8n side instructions in 'Vibration Orchastrator': create a new rule and assign it to a user." wrapText="true" styleClass="sidebar-muted-text" />
-        </VBox>
-
-        <VBox fx:id="UsersSidebarPane" spacing="8.0" visible="false" managed="false" VBox.vgrow="ALWAYS">
-            <Label styleClass="sidebar-section-title" text="Users List" />
-            <Label text="Total Users:" styleClass="sidebar-muted-text" />
-            <Label fx:id="UsersCountLabel" text="0" styleClass="sidebar-count" />
-            <ListView fx:id="UsersSidebarList" VBox.vgrow="ALWAYS" />
-            <Separator />
-            <Label styleClass="sidebar-section-title" text="Assign Use Case" />
-            <Label text="Selected User:" styleClass="sidebar-muted-text" />
-            <Label fx:id="selectedUserForAssignmentLabel" text="-" styleClass="sidebar-user-value" style="-fx-text-fill: #ffffff; -fx-font-size: 13px; -fx-font-weight: bold;" />
-            <Label text="Current Use Case:" styleClass="sidebar-muted-text" />
-            <Label fx:id="currentUserUseCaseLabel" text="-" styleClass="sidebar-value" style="-fx-text-fill: #e5e7eb; -fx-font-size: 12px;" />
-            <Label text="Assign to:" styleClass="sidebar-muted-text" />
-            <ComboBox fx:id="userUseCaseComboBox" promptText="Select use case" />
-            <Button fx:id="assignUserUseCaseButton" text="Assign Use Case" styleClass="primary-button" onAction="#onAssignUserUseCase" />
-        </VBox>
-
-        <Separator />
-
-
-
-    </VBox>
+    <fx:include source="LeftSidebar.fxml" fx:id="leftSidebar" />
 
 
     <BorderPane styleClass="workspace-root" HBox.hgrow="ALWAYS">
         <top>
-            <VBox spacing="8.0" styleClass="topbar-wrapper">
-                <HBox alignment="CENTER_LEFT" spacing="14.0" styleClass="topbar">
-                    <Label text="Use Case:" styleClass="topbar-label" />
-                    <Label fx:id="selectedUseCaseLabel" text="-" styleClass="topbar-value" />
-
-                    <Separator orientation="VERTICAL" prefHeight="22.0" />
-
-                    <Label text="Users:" styleClass="topbar-label" />
-                    <ComboBox fx:id="UsersComboBox" prefWidth="260.0" promptText="Select Users" />
-
-                    <Label text="Date Range:" styleClass="topbar-label" />
-                    <ComboBox fx:id="timeRangeComboBox" prefWidth="170.0" />
-                    <DatePicker fx:id="startDatePicker" prefWidth="140.0" visible="false" managed="false" />
-                    <DatePicker fx:id="endDatePicker" prefWidth="140.0" visible="false" managed="false" />
-                </HBox>
-            </VBox>
+            <fx:include source="TopBar.fxml" fx:id="topBar" />
         </top>
 
         <center>

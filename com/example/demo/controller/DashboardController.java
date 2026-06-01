@@ -1,6 +1,7 @@
 package com.example.demo.controller;
 
 import com.example.demo.controller.state.DashboardState;
+import javafx.fxml.FXMLLoader;
 import com.example.demo.model.SensorRuleConfig;
 import com.example.demo.model.User;
 import com.example.demo.service.ApiService;
@@ -96,38 +97,9 @@ public class DashboardController {
     private static final Map<String, ChatCommandOption> CHAT_COMMAND_OPTIONS_BY_COMMAND = createChatCommandOptionMap();
 
     @FXML
-    private ToggleButton useCasesNavButton;
+    private LeftSidebarController leftSidebarController;
     @FXML
-    private ToggleButton UsersNavButton;
-    @FXML
-    private VBox useCasesSidebarPane;
-    @FXML
-    private VBox UsersSidebarPane;
-    @FXML
-    private ListView<String> useCaseListView;
-    @FXML
-    private ListView<User> UsersSidebarList;
-    @FXML
-    private Label UsersCountLabel;
-    @FXML
-    private Label selectedUserForAssignmentLabel;
-    @FXML
-    private Label currentUserUseCaseLabel;
-    @FXML
-    private ComboBox<String> userUseCaseComboBox;
-    @FXML
-    private Button assignUserUseCaseButton;
-
-    @FXML
-    private Label selectedUseCaseLabel;
-    @FXML
-    private ComboBox<User> UsersComboBox;
-    @FXML
-    private ComboBox<String> timeRangeComboBox;
-    @FXML
-    private DatePicker startDatePicker;
-    @FXML
-    private DatePicker endDatePicker;
+    private TopBarController topBarController;
 
     @FXML
     private TabPane workspaceTabPane;
@@ -298,8 +270,7 @@ public class DashboardController {
 
     @FXML
     private void initialize() {
-        setupSidebar();
-        setupTopbar();
+        initializeSubcontrollers();
         setupTabs();
         setupChat();
         setupGraph();
@@ -311,6 +282,48 @@ public class DashboardController {
         loadUserss();
         loadUseCases();
         loadMappings();
+    }
+
+    private void initializeSubcontrollers() {
+        // Setup sidebar callbacks
+        leftSidebarController.setOnUseCaseSelected(newValue -> {
+            state.setSelectedUseCase(newValue);
+        });
+
+        leftSidebarController.setOnUserSelected(newValue -> {
+            if (newValue != null) {
+                topBarController.setSelectedUser(newValue);
+                updateUserAssignmentPanel(newValue);
+                if (newValue.getUsecaseName() != null && !newValue.getUsecaseName().isBlank()) {
+                    String userUseCase = resolveUseCaseDisplayName(newValue.getUsecaseName());
+                    state.setSelectedUseCase(userUseCase);
+                }
+            }
+        });
+
+        leftSidebarController.setOnAddUseCaseRequested(this::onAddUseCaseRequested);
+        leftSidebarController.setOnAssignUserUseCaseRequested(this::onAssignUserUseCase);
+        leftSidebarController.setOnEditUserRequested(this::onEditUserRequested);
+
+        // Setup topbar callbacks
+        topBarController.setOnUserSelected(newValue -> {
+            if (newValue == null) {
+                return;
+            }
+            state.setSelectedUsers(newValue);
+            contextUsersLabel.setText(formatUser(newValue));
+            if (leftSidebarController.getUsersSidebarList().getSelectionModel().getSelectedItem() != newValue) {
+                leftSidebarController.selectUser(newValue);
+            }
+            syncMonitoringEditorToSelectedUser(newValue);
+            if (newValue.getUsecaseName() != null && !newValue.getUsecaseName().isBlank()) {
+                String userUseCase = resolveUseCaseDisplayName(newValue.getUsecaseName());
+                state.setSelectedUseCase(userUseCase);
+            }
+            scheduleGraphUpdate();
+        });
+
+        topBarController.setOnGraphUpdateRequested(this::scheduleGraphUpdate);
     }
 
     /**
@@ -468,13 +481,14 @@ public class DashboardController {
     }
 
      private String getSelectedUsecaseName() {
-         // Use the selected use case from the label or state
-         String uc = selectedUseCaseLabel == null ? "" : selectedUseCaseLabel.getText();
+         String uc = topBarController == null || topBarController.getSelectedUseCaseLabel() == null
+             ? ""
+             : topBarController.getSelectedUseCaseLabel().getText();
          if (uc == null || uc.trim().isEmpty() || "-".equals(uc.trim())) {
              uc = state.getSelectedUseCase();
          }
          return uc == null ? "" : uc.trim();
-     }
+      }
 
     private void updateRuleBuilderUseCaseDisplay(String selectedUseCase) {
         if (ruleSensorTypeLabel == null || ruleSensorTypeDescriptionLabel == null) {
@@ -719,75 +733,6 @@ public class DashboardController {
         }
     }
 
-     private void setupSidebar() {
-         useCasesNavButton.setOnAction(ignored -> setSidebarMode(true));
-         UsersNavButton.setOnAction(ignored -> setSidebarMode(false));
-         setSidebarMode(true);
-
-         setupUsersSidebarListCellFactory();
-
-         useCaseListView.setItems(useCases);
-         useCaseListView.getSelectionModel().selectedItemProperty().addListener(onNewValueChanged(newValue -> {
-             if (newValue == null || newValue.isBlank()) {
-                 return;
-             }
-             state.setSelectedUseCase(newValue);
-         }));
-
-         if (userUseCaseComboBox != null) {
-             userUseCaseComboBox.setItems(useCases);
-             userUseCaseComboBox.valueProperty().addListener(onNewValueChanged(ignored -> updateAssignUserUseCaseButtonState()));
-         }
-         updateAssignUserUseCaseButtonState();
-
-          UsersSidebarList.getSelectionModel().selectedItemProperty().addListener(onNewValueChanged(newValue -> {
-              if (newValue == null) {
-                  return;
-              }
-              if (newValue != UsersComboBox.getValue()) {
-                  UsersComboBox.setValue(newValue);
-              }
-              updateUserAssignmentPanel(newValue);
-
-              // Automatically select the user's assigned use case and display its mappings
-              if (newValue.getUsecaseName() != null && !newValue.getUsecaseName().isBlank()) {
-                  String userUseCase = resolveUseCaseDisplayName(newValue.getUsecaseName());
-                  state.setSelectedUseCase(userUseCase);
-              }
-          }));
-     }
-
-    private void setupUsersSidebarListCellFactory() {
-        UsersSidebarList.setCellFactory(listView -> new ListCell<>() {
-            private final Label userLabel = new Label();
-            private final Region spacer = new Region();
-            private final Button editButton = createEditUserButton();
-            private final HBox content = new HBox(8, userLabel, spacer, editButton);
-
-            {
-                content.setAlignment(Pos.CENTER_LEFT);
-                HBox.setHgrow(spacer, Priority.ALWAYS);
-                userLabel.getStyleClass().add("sidebar-user-row-label");
-                editButton.setFocusTraversable(false);
-            }
-
-            @Override
-            protected void updateItem(User item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setGraphic(null);
-                    setText(null);
-                    return;
-                }
-
-                userLabel.setText(formatUser(item));
-                editButton.setOnAction(ignored -> onEditUserRequested(item));
-                setText(null);
-                setGraphic(content);
-            }
-        });
-    }
-
 
     @FXML
     private void onAddUseCaseRequested() {
@@ -853,74 +798,6 @@ public class DashboardController {
                     return null;
                 });
     }
-    private void setupTopbar() {
-        UsersComboBox.setItems(users);
-        UsersComboBox.setCellFactory(listView -> new ListCell<>() {
-            @Override
-            protected void updateItem(User item, boolean empty) {
-                super.updateItem(item, empty);
-                setText(empty || item == null ? null : formatUser(item));
-            }
-        });
-        UsersComboBox.setButtonCell(new ListCell<>() {
-            @Override
-            protected void updateItem(User item, boolean empty) {
-                super.updateItem(item, empty);
-                setText(empty || item == null ? "Select Users" : formatUser(item));
-            }
-        });
-
-         UsersComboBox.valueProperty().addListener(onNewValueChanged(newValue -> {
-             if (newValue == null) {
-                 return;
-             }
-             state.setSelectedUsers(newValue);
-             contextUsersLabel.setText(formatUser(newValue));
-             if (UsersSidebarList.getSelectionModel().getSelectedItem() != newValue) {
-                 UsersSidebarList.getSelectionModel().select(newValue);
-             }
-
-             syncMonitoringEditorToSelectedUser(newValue);
-
-             // Automatically select the user's assigned use case and display its mappings
-             if (newValue.getUsecaseName() != null && !newValue.getUsecaseName().isBlank()) {
-                 String userUseCase = resolveUseCaseDisplayName(newValue.getUsecaseName());
-                 state.setSelectedUseCase(userUseCase);
-             }
-
-             scheduleGraphUpdate();
-        }));
-
-        timeRangeComboBox.getItems().setAll("Last 24 Hours", "Last 7 Days", "Last 30 Days", "All Time", "Custom Date Range");
-        timeRangeComboBox.setValue("Last 24 Hours");
-        timeRangeComboBox.valueProperty().addListener(onNewValueChanged(newValue -> {
-            state.setSelectedTimeRange(newValue);
-            updateDatePickerVisibility();
-            scheduleGraphUpdate();
-        }));
-
-        startDatePicker.setValue(LocalDate.now().minusDays(7));
-        endDatePicker.setValue(LocalDate.now());
-        state.setStartDate(startDatePicker.getValue());
-        state.setEndDate(endDatePicker.getValue());
-
-        startDatePicker.valueProperty().addListener(onNewValueChanged(newValue -> {
-            state.setStartDate(newValue);
-            if ("Custom Date Range".equals(state.getSelectedTimeRange())) {
-                scheduleGraphUpdate();
-            }
-        }));
-
-        endDatePicker.valueProperty().addListener(onNewValueChanged(newValue -> {
-            state.setEndDate(newValue);
-            if ("Custom Date Range".equals(state.getSelectedTimeRange())) {
-                scheduleGraphUpdate();
-            }
-        }));
-
-        updateDatePickerVisibility();
-    }
-
     private void setupTabs() {
         workspaceTabPane.getSelectionModel().select(mappingsTab);
         workspaceTabPane.getSelectionModel().selectedItemProperty().addListener(onNewValueChanged(newValue -> {
@@ -1391,7 +1268,7 @@ public class DashboardController {
     }
 
     private void loadUserss() {
-        User currentSelection = UsersComboBox.getValue();
+        User currentSelection = topBarController.getSelectedUser();
         Integer selectedUserId = currentSelection == null ? null : currentSelection.getUserID();
         users.clear();
         ApiService.getInstance().get(ApiService.EP_GET_USERS, null)
@@ -1417,23 +1294,24 @@ public class DashboardController {
 
                 Platform.runLater(() -> {
                      users.setAll(loaded);
-                     UsersCountLabel.setText(String.valueOf(users.size()));
+                     leftSidebarController.getUsersCountLabel().setText(String.valueOf(users.size()));
 
-                     UsersSidebarList.getItems().setAll(users);
+                     leftSidebarController.getUsersSidebarList().getItems().setAll(users);
+                     topBarController.getUsers().setAll(users);
 
                      User restoredSelection = findUserById(selectedUserId);
                      if (restoredSelection != null) {
-                         UsersComboBox.setValue(restoredSelection);
-                         UsersSidebarList.getSelectionModel().select(restoredSelection);
-                         syncMonitoringEditorToSelectedUser(UsersComboBox.getValue());
+                         topBarController.setSelectedUser(restoredSelection);
+                         leftSidebarController.selectUser(restoredSelection);
+                         syncMonitoringEditorToSelectedUser(topBarController.getSelectedUser());
                      } else if (!users.isEmpty()) {
-                         UsersComboBox.setValue(users.get(0));
-                         UsersSidebarList.getSelectionModel().select(users.get(0));
-                         syncMonitoringEditorToSelectedUser(UsersComboBox.getValue());
+                         topBarController.setSelectedUser(users.get(0));
+                         leftSidebarController.selectUser(users.get(0));
+                         syncMonitoringEditorToSelectedUser(topBarController.getSelectedUser());
                      } else {
-                         UsersComboBox.setValue(null);
-                         UsersSidebarList.getSelectionModel().clearSelection();
-                         syncMonitoringEditorToSelectedUser(UsersComboBox.getValue());
+                         topBarController.setSelectedUser(null);
+                         leftSidebarController.getUsersSidebarList().getSelectionModel().clearSelection();
+                         syncMonitoringEditorToSelectedUser(null);
                          contextUsersLabel.setText("-");
                      }
                  });
@@ -1496,13 +1374,18 @@ public class DashboardController {
                     useCaseIdsByNormalizedName.putAll(loadedUseCaseIds);
                     useCaseLoggingInterval.clear();
                     useCaseLoggingInterval.putAll(loadedLoggingIntervals);
+
+                    // Update both sidebar and topbar with use cases
+                    leftSidebarController.getUseCases().setAll(useCases);
+                    leftSidebarController.getUserUseCaseComboBox().setItems(useCases);
+
                     String selected = state.getSelectedUseCase();
                     if (selected == null || selected.isBlank() || !useCases.contains(selected)) {
                         selected = useCases.isEmpty() ? null : useCases.get(0);
                     }
                     state.setSelectedUseCase(selected);
                     applySelectedUseCaseUi(selected);
-                    User selectedUser = UsersComboBox == null ? null : UsersComboBox.getValue();
+                    User selectedUser = topBarController.getSelectedUser();
                     syncMonitoringEditorToSelectedUser(selectedUser);
                 });
             })
@@ -1535,108 +1418,91 @@ public class DashboardController {
         return (fallback == null || fallback.isBlank()) ? rawUseCase.trim() : fallback;
     }
 
-    private void syncMonitoringEditorToSelectedUser(User user) {
-         if (user == null) {
-             updateUserAssignmentPanel(null);
-             return;
-         }
-         updateUserAssignmentPanel(user);
-     }
+     private void syncMonitoringEditorToSelectedUser(User user) {
+          if (user == null) {
+              updateUserAssignmentPanel(null);
+              return;
+          }
+          updateUserAssignmentPanel(user);
+      }
 
-     private void updateUserAssignmentPanel(User user) {
-         if (user == null) {
-             selectedUserForAssignmentLabel.setText("-");
-             currentUserUseCaseLabel.setText("-");
-             userUseCaseComboBox.setValue(null);
-             updateAssignUserUseCaseButtonState();
-             return;
-         }
+      private void updateUserAssignmentPanel(User user) {
+          if (user == null) {
+              leftSidebarController.getSelectedUserForAssignmentLabel().setText("-");
+              leftSidebarController.getCurrentUserUseCaseLabel().setText("-");
+              leftSidebarController.getUserUseCaseComboBox().setValue(null);
+              updateAssignUserUseCaseButtonState();
+              return;
+          }
 
-         String userDisplay = formatUser(user);
-         selectedUserForAssignmentLabel.setText(userDisplay);
+          String userDisplay = formatUser(user);
+          leftSidebarController.getSelectedUserForAssignmentLabel().setText(userDisplay);
 
-         String displayUsecase = resolveUseCaseDisplayName(user.getUsecaseName());
-         currentUserUseCaseLabel.setText(displayUsecase);
+          String displayUsecase = resolveUseCaseDisplayName(user.getUsecaseName());
+          leftSidebarController.getCurrentUserUseCaseLabel().setText(displayUsecase);
 
-         if (displayUsecase != null && !displayUsecase.isBlank()) {
-             userUseCaseComboBox.setValue(displayUsecase);
-         } else if (!userUseCaseComboBox.getItems().isEmpty()) {
-             userUseCaseComboBox.setValue(userUseCaseComboBox.getItems().get(0));
-         }
+          if (displayUsecase != null && !displayUsecase.isBlank()) {
+              leftSidebarController.getUserUseCaseComboBox().setValue(displayUsecase);
+          } else if (!leftSidebarController.getUserUseCaseComboBox().getItems().isEmpty()) {
+              leftSidebarController.getUserUseCaseComboBox().setValue(leftSidebarController.getUserUseCaseComboBox().getItems().get(0));
+          }
 
-         updateAssignUserUseCaseButtonState();
-     }
+          updateAssignUserUseCaseButtonState();
+      }
 
-     private void updateAssignUserUseCaseButtonState() {
-         if (assignUserUseCaseButton == null) {
-             return;
-         }
+      private void updateAssignUserUseCaseButtonState() {
+          User selectedUser = leftSidebarController.getSelectedUser();
+          String selected = leftSidebarController.getUserUseCaseComboBox().getValue();
 
-         User selectedUser = UsersSidebarList.getSelectionModel().getSelectedItem();
-         String selected = userUseCaseComboBox == null ? null : userUseCaseComboBox.getValue();
+          if (selectedUser == null || selected == null || selected.isBlank()) {
+              return;
+          }
 
-         if (selectedUser == null || selected == null || selected.isBlank()) {
-             assignUserUseCaseButton.setDisable(true);
-             return;
-         }
+          boolean unchanged =
+                  normalizeUseCaseName(selected).equals(normalizeUseCaseName(selectedUser.getUsecaseName()));
+      }
 
-         boolean unchanged =
-                 normalizeUseCaseName(selected).equals(normalizeUseCaseName(selectedUser.getUsecaseName()));
+      @FXML
+      private void onAssignUserUseCase() {
+          User selectedUser = leftSidebarController.getSelectedUser();
+          if (selectedUser == null) {
+              showErrorAlert("Missing User", "Please select a user from the list before assigning a use case.");
+              return;
+          }
 
-         assignUserUseCaseButton.setDisable(unchanged);
-     }
+          String selectedUsecase = leftSidebarController.getUserUseCaseComboBox().getValue();
+          if (selectedUsecase == null || selectedUsecase.isBlank()) {
+              showErrorAlert("Missing Use Case", "Please select a use case to assign.");
+              return;
+          }
 
-     @FXML
-     private void onAssignUserUseCase() {
-         if (userUseCaseComboBox == null) {
-             return;
-         }
+          ApiService.getInstance().setMonitoringType(selectedUser.getUserID(), selectedUsecase)
+                  .thenAccept(success -> Platform.runLater(() -> {
+                      if (!success) {
+                          showErrorAlert("Update Failed", "Could not assign use case to user. Please try again.");
+                          updateAssignUserUseCaseButtonState();
+                          return;
+                      }
 
-         User selectedUser = UsersSidebarList.getSelectionModel().getSelectedItem();
-         if (selectedUser == null) {
-             showErrorAlert("Missing User", "Please select a user from the list before assigning a use case.");
-             return;
-         }
+                      String resolvedDisplayName = resolveUseCaseDisplayName(selectedUsecase);
+                      leftSidebarController.getCurrentUserUseCaseLabel().setText(resolvedDisplayName);
 
-         String selectedUsecase = userUseCaseComboBox.getValue();
-         if (selectedUsecase == null || selectedUsecase.isBlank()) {
-             showErrorAlert("Missing Use Case", "Please select a use case to assign.");
-             return;
-         }
+                      selectedUser.setUsecaseName(resolvedDisplayName);
 
-         if (assignUserUseCaseButton != null) {
-             assignUserUseCaseButton.setDisable(true);
-         }
+                      showInfoAlert(
+                              "Use Case Assigned",
+                              "User " + selectedUser.getUserID() + " is now assigned to " + resolvedDisplayName + "."
+                      );
 
-         ApiService.getInstance().setMonitoringType(selectedUser.getUserID(), selectedUsecase)
-                 .thenAccept(success -> Platform.runLater(() -> {
-                     if (!success) {
-                         showErrorAlert("Update Failed", "Could not assign use case to user. Please try again.");
-                         updateAssignUserUseCaseButtonState();
-                         return;
-                     }
-
-                     String resolvedDisplayName = resolveUseCaseDisplayName(selectedUsecase);
-                     currentUserUseCaseLabel.setText(resolvedDisplayName);
-
-                     selectedUser.setUsecaseName(resolvedDisplayName);
-
-                     showInfoAlert(
-                             "Use Case Assigned",
-                             "User " + selectedUser.getUserID() + " is now assigned to " + resolvedDisplayName + "."
-                     );
-
-                     // Refresh users list and synchronize the topbar user selection
-                     loadUserss();
-                     // Set the assigned use case as the selected use case in the main display
-                     state.setSelectedUseCase(resolvedDisplayName);
-                 }))
-                 .exceptionally(ex -> {
-                     showErrorAlert("Update Failed", "Failed to assign use case: " + ex.getMessage());
-                     Platform.runLater(this::updateAssignUserUseCaseButtonState);
-                     return null;
-                 });
-     }
+                      loadUserss();
+                      state.setSelectedUseCase(resolvedDisplayName);
+                  }))
+                  .exceptionally(ex -> {
+                      showErrorAlert("Update Failed", "Failed to assign use case: " + ex.getMessage());
+                      Platform.runLater(this::updateAssignUserUseCaseButtonState);
+                      return null;
+                  });
+      }
 
     private void resolveSelectedUseCaseId(String selectedUseCase) {
         if (selectedUseCase == null || selectedUseCase.isBlank()) {
@@ -1653,21 +1519,21 @@ public class DashboardController {
      * Updates UI labels, list, and refreshes displays for selected use case
      */
     private void applySelectedUseCaseUi(String selectedUseCase) {
-        if (selectedUseCaseLabel != null) {
-            selectedUseCaseLabel.setText((selectedUseCase == null || selectedUseCase.isBlank()) ? "-" : selectedUseCase);
+        if (topBarController.getSelectedUseCaseLabel() != null) {
+            topBarController.getSelectedUseCaseLabel().setText((selectedUseCase == null || selectedUseCase.isBlank()) ? "-" : selectedUseCase);
             String selectedKey = normalizeUseCaseName(selectedUseCase);
             String desc = useCaseDescriptions.getOrDefault(selectedKey, "").trim();
-            selectedUseCaseLabel.setTooltip(desc.isEmpty() ? null : new Tooltip(desc));
+            topBarController.getSelectedUseCaseLabel().setTooltip(desc.isEmpty() ? null : new Tooltip(desc));
         }
 
         if (contextUseCaseLabel != null) {
             contextUseCaseLabel.setText((selectedUseCase == null || selectedUseCase.isBlank()) ? "-" : selectedUseCase);
         }
 
-        if (useCaseListView != null && selectedUseCase != null && !selectedUseCase.isBlank()) {
-            String current = useCaseListView.getSelectionModel().getSelectedItem();
+        if (leftSidebarController.getUseCaseListView() != null && selectedUseCase != null && !selectedUseCase.isBlank()) {
+            String current = leftSidebarController.getUseCaseListView().getSelectionModel().getSelectedItem();
             if (!selectedUseCase.equals(current)) {
-                useCaseListView.getSelectionModel().select(selectedUseCase);
+                leftSidebarController.getUseCaseListView().getSelectionModel().select(selectedUseCase);
             }
         }
 
@@ -3418,24 +3284,6 @@ public class DashboardController {
             });
     }
 
-    private void setSidebarMode(boolean useCasesMode) {
-        useCasesNavButton.setSelected(useCasesMode);
-        UsersNavButton.setSelected(!useCasesMode);
-
-        useCasesSidebarPane.setVisible(useCasesMode);
-        useCasesSidebarPane.setManaged(useCasesMode);
-
-        UsersSidebarPane.setVisible(!useCasesMode);
-        UsersSidebarPane.setManaged(!useCasesMode);
-    }
-
-    private void updateDatePickerVisibility() {
-        boolean custom = "Custom Date Range".equals(timeRangeComboBox.getValue());
-        startDatePicker.setVisible(custom);
-        startDatePicker.setManaged(custom);
-        endDatePicker.setVisible(custom);
-        endDatePicker.setManaged(custom);
-    }
 
     private String normalizeUseCaseName(String rawUseCase) {
         if (rawUseCase == null) {
