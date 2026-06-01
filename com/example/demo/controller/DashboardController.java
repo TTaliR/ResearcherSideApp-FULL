@@ -1,88 +1,48 @@
 package com.example.demo.controller;
 
 import com.example.demo.controller.state.DashboardState;
-import javafx.fxml.FXMLLoader;
+import com.example.demo.factory.ChatBubbleFactory;
+import com.example.demo.model.Schedule;
+import com.example.demo.model.ScheduleApiResponse;
 import com.example.demo.model.SensorRuleConfig;
 import com.example.demo.model.User;
+import com.example.demo.model.RuleCardData;
+import com.example.demo.model.DictionaryParameterData;
+import com.example.demo.model.LoggingIntervalDraft;
+import com.example.demo.model.ChatCommandOption;
 import com.example.demo.service.ApiService;
 import com.example.demo.service.ExportService;
-import com.example.demo.util.MarkdownRenderer;
 import com.fasterxml.jackson.databind.JsonNode;
-import javafx.beans.value.ChangeListener;
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
+import javafx.beans.value.ChangeListener;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
-import javafx.scene.control.Button;
-import javafx.scene.control.ButtonBar;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.CheckBox;
-import javafx.scene.control.ComboBox;
-import javafx.scene.control.DatePicker;
-import javafx.scene.control.Dialog;
-import javafx.scene.control.Label;
-import javafx.scene.control.ListCell;
-import javafx.scene.control.ListView;
-import javafx.scene.control.Alert;
-import javafx.scene.control.ScrollPane;
-import javafx.scene.control.Spinner;
-import javafx.scene.control.SpinnerValueFactory;
-import javafx.scene.control.Tab;
-import javafx.scene.control.TabPane;
-import javafx.concurrent.Worker;
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyEvent;
-import javafx.scene.control.TextField;
-import javafx.scene.control.TextFormatter;
-import javafx.scene.control.ToggleButton;
-import javafx.scene.control.Tooltip;
-import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.*;
+import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
-import javafx.scene.control.TableColumn;
-import javafx.scene.control.TableView;
-import javafx.scene.control.cell.PropertyValueFactory;
-import com.example.demo.model.Schedule;
-import com.example.demo.model.ScheduleApiResponse;
-import javafx.scene.layout.AnchorPane;
-import javafx.scene.layout.FlowPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
-import javafx.scene.layout.StackPane;
-import javafx.scene.layout.VBox;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import javafx.scene.layout.*;
 import javafx.scene.web.WebEvent;
 import javafx.scene.web.WebView;
-import javafx.scene.paint.Color;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 
-import java.io.File;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
-import java.util.UUID;
-import java.util.Base64;
+import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
-import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -1134,20 +1094,6 @@ public class DashboardController {
             map.put(option.command().substring(1), option);
         }
         return map;
-    }
-
-    private record ChatCommandOption(String command, String title, String description, String prompt) {
-        private boolean matches(String query) {
-            String normalizedQuery = query == null ? "" : query.trim();
-            if (normalizedQuery.isEmpty()) {
-                return true;
-            }
-
-            String lower = normalizedQuery.toLowerCase(Locale.ROOT);
-            return command.toLowerCase(Locale.ROOT).contains(lower)
-                || title.toLowerCase(Locale.ROOT).contains(lower)
-                || description.toLowerCase(Locale.ROOT).contains(lower);
-        }
     }
 
     private void setupGraph() {
@@ -2418,7 +2364,7 @@ public class DashboardController {
     }
 
     private void addChatMessage(String text, boolean userMessage) {
-         WebView bubble = createChatBubbleView(text, userMessage);
+         WebView bubble = ChatBubbleFactory.createChatBubbleView(text, userMessage);
 
          HBox row = new HBox(bubble);
          row.getStyleClass().add("chat-message-row");
@@ -2427,157 +2373,6 @@ public class DashboardController {
 
          chatHistoryBox.getChildren().add(row);
      }
-
-    private static final double CHAT_BUBBLE_VIEWPORT_WIDTH = 580.0;
-    private static final double CHAT_BUBBLE_MAX_WIDTH = 560.0;
-    private static final double CHAT_BUBBLE_MIN_HEIGHT = 44.0;
-
-    private WebView createChatBubbleView(String text, boolean userMessage) {
-         WebView webView = new WebView();
-         webView.setContextMenuEnabled(true);
-         webView.setFocusTraversable(false);
-         webView.setMinWidth(CHAT_BUBBLE_VIEWPORT_WIDTH);
-         webView.setPrefWidth(CHAT_BUBBLE_VIEWPORT_WIDTH);
-         webView.setMaxWidth(CHAT_BUBBLE_VIEWPORT_WIDTH);
-         webView.setMinHeight(CHAT_BUBBLE_MIN_HEIGHT);
-         webView.setPrefHeight(CHAT_BUBBLE_MIN_HEIGHT);
-         webView.setMaxHeight(CHAT_BUBBLE_MIN_HEIGHT);
-         webView.setStyle("-fx-background-color: transparent;");
-         webView.setPageFill(Color.TRANSPARENT);
-
-         // Enable mouse wheel scrolling to pass through to parent ScrollPane
-         webView.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, event -> {
-             javafx.scene.input.ScrollEvent scrollEvent = (javafx.scene.input.ScrollEvent) event;
-             if (scrollEvent.isControlDown() || scrollEvent.isShiftDown()) {
-                 event.consume();
-             } else {
-                 event.consume();
-                 // Re-fire the event on the scroll pane to let it handle scrolling
-                 javafx.scene.Parent parent = webView.getParent();
-                 if (parent != null) {
-                     parent.fireEvent(scrollEvent.copyFor(parent, parent));
-                 }
-             }
-         });
-
-         webView.getEngine().loadContent(buildChatBubbleHtml(text, userMessage), "text/html");
-         webView.getEngine().getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
-             if (newState == Worker.State.SUCCEEDED) {
-                 Platform.runLater(() -> adjustChatBubbleHeight(webView, false));
-             }
-         });
-
-         return webView;
-     }
-
-    private void adjustChatBubbleHeight(WebView webView, boolean secondPass) {
-        try {
-            Object metrics = webView.getEngine().executeScript("(() => {"
-                + "const bubble = document.querySelector('.bubble');"
-                + "if (!bubble) return JSON.stringify({height: 0});"
-                + "const height = bubble.getBoundingClientRect().height;"
-                + "return JSON.stringify({height: Math.ceil(height)});"
-                + "})()");
-
-            if (metrics instanceof String metricJson && !metricJson.isBlank()) {
-                JsonNode metricNode = ApiService.getInstance().getMapper().readTree(metricJson);
-                double measuredHeight = metricNode.path("height").asDouble(0.0);
-
-                double targetHeight = Math.max(CHAT_BUBBLE_MIN_HEIGHT, measuredHeight + 6);
-
-                webView.setMinHeight(targetHeight);
-                webView.setPrefHeight(targetHeight);
-                webView.setMaxHeight(targetHeight);
-
-                // Re-measure once after WebView paints; fonts and wrapping can settle one pulse later.
-                if (!secondPass) {
-                    Platform.runLater(() -> adjustChatBubbleHeight(webView, true));
-                }
-            }
-        } catch (Exception ignored) {
-            webView.setPrefHeight(120);
-        }
-    }
-
-    private String buildChatBubbleHtml(String markdown, boolean userMessage) {
-        String renderedMarkdown = MarkdownRenderer.markdownToHtml(markdown);
-        String bubbleBg = userMessage ? "#2563eb" : "#f8fafc";
-        String bubbleText = userMessage ? "#ffffff" : "#111827";
-        String bubbleBorder = userMessage ? "#1d4ed8" : "#d1d5db";
-        String codeBg = userMessage ? "rgba(255,255,255,0.16)" : "#e5e7eb";
-        String linkColor = userMessage ? "#dbeafe" : "#1d4ed8";
-        String quoteColor = userMessage ? "#e5e7eb" : "#4b5563";
-        String horizontalAlign = userMessage ? "flex-end" : "flex-start";
-
-        return """
-            <html>
-              <head>
-                <meta charset="UTF-8">
-                <style>
-                  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
-                  body {
-                    font-family: 'Segoe UI', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
-                    box-sizing: border-box;
-                    display: flex;
-                    justify-content: %s;
-                    align-items: flex-start;
-                    width: 580px;
-                    min-height: 1px;
-                  }
-                  .bubble {
-                    box-sizing: border-box;
-                    display: inline-block;
-                    width: fit-content;
-                    min-width: 48px;
-                    max-width: 560px;
-                    padding: 10px 12px;
-                    border-radius: 12px;
-                    background: %s;
-                    color: %s;
-                    border: 1px solid %s;
-                    white-space: normal;
-                    overflow-wrap: anywhere;
-                    word-break: break-word;
-                    user-select: text;
-                    -webkit-user-select: text;
-                  }
-                  .bubble p { margin: 0 0 8px 0; }
-                  .bubble p:last-child { margin-bottom: 0; }
-                  .bubble pre {
-                    margin: 8px 0;
-                    padding: 10px;
-                    border-radius: 8px;
-                    background: %s;
-                    color: %s;
-                    overflow-x: auto;
-                    white-space: pre-wrap;
-                    word-break: break-word;
-                    font-family: Consolas, 'Courier New', 'Segoe UI Emoji', monospace;
-                    font-size: 13px;
-                  }
-                  .bubble code {
-                    font-family: Consolas, 'Courier New', 'Segoe UI Emoji', monospace;
-                    background: %s;
-                    padding: 1px 4px;
-                    border-radius: 4px;
-                  }
-                  .bubble a { color: %s; }
-                  .bubble ul, .bubble ol { margin: 0 0 8px 22px; padding: 0; }
-                  .bubble li { margin: 0 0 4px 0; }
-                  .bubble blockquote {
-                    margin: 8px 0;
-                    padding: 0 0 0 10px;
-                    border-left: 3px solid rgba(156, 163, 175, 0.8);
-                    color: %s;
-                  }
-                </style>
-              </head>
-              <body>
-                <div class="bubble">%s</div>
-              </body>
-            </html>
-            """.formatted(horizontalAlign, bubbleBg, bubbleText, bubbleBorder, codeBg, bubbleText, codeBg, linkColor, quoteColor, renderedMarkdown);
-    }
 
     private double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
@@ -3252,57 +3047,6 @@ public class DashboardController {
 
     private static <T> ChangeListener<T> onNewValueChanged(Consumer<T> handler) {
         return onChanged((oldValue, newValue) -> handler.accept(newValue));
-    }
-
-    private static class RuleCardData {
-        int mappingId;
-        String configKey;
-        String useCaseKey;
-        String useCaseLabel;
-        String rangeLabel;
-        String pulseLabel;
-        String intensityLabel;
-        String durationLabel;
-        String intervalLabel;
-        int minValue;
-        int maxValue;
-        int minPulses;
-        int maxPulses;
-        int minIntensity;
-        int maxIntensity;
-        int minDuration;
-        int maxDuration;
-        int minInterval;
-        int maxInterval;
-    }
-
-    private static class LoggingIntervalDraft {
-        final int amount;
-        final String baseUnit;
-
-        private LoggingIntervalDraft(int amount, String baseUnit) {
-            this.amount = amount;
-            this.baseUnit = baseUnit;
-        }
-    }
-
-    private static class DictionaryParameterData {
-        final String useCaseName;
-        final String parameterName;
-        final String parameterFormat;
-        final boolean required;
-        final String description;
-        final String paramValue;
-
-        private DictionaryParameterData(String useCaseName, String parameterName, String parameterFormat,
-                                        boolean required, String description, String paramValue) {
-            this.useCaseName = useCaseName == null ? "" : useCaseName.trim();
-            this.parameterName = parameterName == null ? "" : parameterName.trim();
-            this.parameterFormat = parameterFormat == null ? "" : parameterFormat.trim();
-            this.required = required;
-            this.description = description == null ? "" : description.trim();
-            this.paramValue = paramValue == null ? "" : paramValue.trim();
-        }
     }
 
 
