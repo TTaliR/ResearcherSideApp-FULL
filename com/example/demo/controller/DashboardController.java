@@ -1784,8 +1784,13 @@ public class DashboardController {
                 }
 
                 String reply = response.path("reply").asText("");
+                JsonNode dictionaryEntriesNode = response.path("dictionaryEntries");
                 yellowBookEntries.clear();
-                yellowBookEntries.putAll(YellowBookParser.parse(reply));
+                if (dictionaryEntriesNode.isArray() && !dictionaryEntriesNode.isEmpty()) {
+                    yellowBookEntries.putAll(YellowBookParser.parseEntries(dictionaryEntriesNode));
+                } else {
+                    yellowBookEntries.putAll(YellowBookParser.parse(reply));
+                }
                 renderYellowBook();
             }))
             .exceptionally(ex -> {

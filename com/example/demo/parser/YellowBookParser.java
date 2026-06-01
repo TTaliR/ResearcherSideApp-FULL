@@ -1,6 +1,7 @@
 package com.example.demo.parser;
 
 import com.example.demo.model.DictionaryParameterData;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -11,6 +12,34 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class YellowBookParser {
+
+    public static Map<String, List<DictionaryParameterData>> parseEntries(JsonNode entries) {
+        LinkedHashMap<String, List<DictionaryParameterData>> parsed = new LinkedHashMap<>();
+        if (entries == null || !entries.isArray()) {
+            return parsed;
+        }
+
+        for (JsonNode entry : entries) {
+            String useCaseName = entry.path("usecase_name").asText("").trim();
+            String parameterName = entry.path("usecase_parameter_name").asText("").trim();
+            if (useCaseName.isBlank() || parameterName.isBlank()) {
+                continue;
+            }
+
+            String paramValue = entry.path("param_value").isNull() ? "" : entry.path("param_value").asText("");
+            DictionaryParameterData parameter = new DictionaryParameterData(
+                useCaseName,
+                parameterName,
+                entry.path("parameter_format").asText(""),
+                entry.path("is_required").asBoolean(false),
+                entry.path("description").asText(""),
+                paramValue
+            );
+            parsed.computeIfAbsent(useCaseName, ignored -> new ArrayList<>()).add(parameter);
+        }
+
+        return parsed;
+    }
 
     public static Map<String, List<DictionaryParameterData>> parse(String reply) {
         LinkedHashMap<String, List<DictionaryParameterData>> parsed = new LinkedHashMap<>();

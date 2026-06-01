@@ -94,6 +94,9 @@ public class YellowBookUiFactory {
         if (!parameter.paramValue.isBlank()) {
             parts.add("Value: " + parameter.paramValue);
         }
+        if (!parameter.description.isBlank()) {
+            parts.add("Description: " + parameter.description);
+        }
         parts.add(parameter.required ? "Required" : "Optional");
         return String.join(" | ", parts);
     }
