@@ -710,12 +710,23 @@ public class DashboardController {
         TextField descriptionField = new TextField();
         descriptionField.setPromptText("Use case description (optional)");
 
-        Label feedbackNote = new Label("To receive feedback, follow the n8n side instructions in 'Vibration Orchastrator', create a new rule and assign it to a user.");
+        Label feedbackNote = new Label(
+                "Create the use case now. After creation, you can discuss it with the agent, ask for API parameters or code, or go directly to n8n and build the flow yourself."
+        );
         feedbackNote.setWrapText(true);
+
+        // Validation label shown when the name is invalid (empty or contains whitespace)
+        Label validationLabel = new Label();
+        validationLabel.getStyleClass().add("validation-error");
+        // Fallback inline style so the message is visible without a stylesheet
+        validationLabel.setStyle("-fx-text-fill: #b91c1c; -fx-font-size: 12px;");
+        validationLabel.setWrapText(true);
+        validationLabel.setVisible(false);
 
         VBox content = new VBox(8,
                 new Label("Name *"),
                 nameField,
+                validationLabel,
                 new Label("Description"),
                 descriptionField,
                 feedbackNote
@@ -725,8 +736,28 @@ public class DashboardController {
 
         Node addButton = dialog.getDialogPane().lookupButton(addButtonType);
         addButton.setDisable(true);
-        nameField.textProperty().addListener((obs, oldValue, newValue) ->
-                addButton.setDisable(newValue == null || newValue.trim().isEmpty()));
+
+        nameField.textProperty().addListener((obs, oldValue, newValue) -> {
+                boolean empty = newValue == null || newValue.trim().isEmpty();
+                boolean hasWhitespace = newValue != null && newValue.matches(".*\\s.*");
+                if (empty) {
+                    validationLabel.setText("Use case name is required.");
+                    validationLabel.setVisible(true);
+                } else if (hasWhitespace) {
+                    validationLabel.setText("Use case name must not contain spaces.");
+                    validationLabel.setVisible(true);
+                } else {
+                    validationLabel.setText("");
+                    validationLabel.setVisible(false);
+                }
+                addButton.setDisable(empty || hasWhitespace);
+        });
+        userIdField.textProperty().addListener((obs, oldValue, newValue) -> {
+            if (newValue != null && !newValue.isBlank()) {
+                String userUseCase = resolveUseCaseDisplayName(newValue);
+                state.setSelectedUseCase(userUseCase);
+            }
+        });
 
         Optional<ButtonType> result = dialog.showAndWait();
         if (result.isEmpty() || result.get() != addButtonType) {
@@ -735,30 +766,107 @@ public class DashboardController {
 
         String name = nameField.getText() == null ? "" : nameField.getText().trim();
         String description = descriptionField.getText() == null ? "" : descriptionField.getText().trim();
+
         if (name.isBlank()) {
             showErrorAlert("Validation Error", "Use case name is required.");
             return;
         }
 
+        if (name.matches(".*\\s.*")) {
+            showErrorAlert("Validation Error", "Use case name must not contain spaces.");
+            return;
+        }
+
         ApiService.getInstance().createUseCase(name, description)
-                .thenAccept(success -> Platform.runLater(() -> {
-                    if (!success) {
-                        showErrorAlert("Create Failed", "Could not create the use case. Please try again.");
+                .thenAccept(response -> Platform.runLater(() -> {
+                    if (response == null || response.has("error")) {
+                        String errorMessage = response == null
+                                ? "Could not create the use case. Please try again."
+                                : response.path("error").asText("Could not create the use case. Please try again.");
+
+                        showErrorAlert("Create Failed", errorMessage);
                         return;
                     }
 
-                    state.setSelectedUseCase(name);
+                    /*
+                     * n8n may return:
+                     * 1. { "usecase_id": 12, "name": "test2", ... }
+                     * 2. [ { "usecase_id": 12, "name": "test2", ... } ]
+                     * 3. { "data": [ { "usecase_id": 12, ... } ] }
+                     * 4. { "rows": [ { "usecase_id": 12, ... } ] }
+                     *
+                     * This block normalizes all of these into one object.
+                     */
+                    JsonNode created = response;
+
+                    if (response.isArray() && response.size() > 0) {
+                        created = response.get(0);
+                    } else if (response.has("data") && response.path("data").isArray() && response.path("data").size() > 0) {
+                        created = response.path("data").get(0);
+                    } else if (response.has("rows") && response.path("rows").isArray() && response.path("rows").size() > 0) {
+                        created = response.path("rows").get(0);
+                    }
+
+                    int createdUseCaseId = created.path("usecase_id").asInt(0);
+                    if (createdUseCaseId <= 0) {
+                        createdUseCaseId = created.path("usecaseid").asInt(0);
+                    }
+                    if (createdUseCaseId <= 0) {
+                        createdUseCaseId = created.path("id").asInt(0);
+                    }
+
+                    String createdName = created.path("name").asText(name);
+                    String createdDescription = created.path("description").asText(description);
+
+                    if (createdUseCaseId <= 0) {
+                        showErrorAlert(
+                                "Create Failed",
+                                "The use case was created, but the response did not include a valid usecase_id. Check the n8n /create-usecase response."
+                        );
+                        loadUseCases();
+                        return;
+                    }
+
+                    String normalizedName = normalizeUseCaseName(createdName);
+
+                    useCaseDescriptions.put(normalizedName, createdDescription);
+                    useCaseDisplayNames.put(normalizedName, createdName);
+                    useCaseIdsByNormalizedName.put(normalizedName, createdUseCaseId);
+
+                    if (!useCases.contains(createdName)) {
+                        useCases.add(createdName);
+                    }
+
+                    leftSidebarController.getUseCases().setAll(useCases);
+                    leftSidebarController.getUserUseCaseComboBox().setItems(useCases);
+
+                    /*
+                     * Important order:
+                     * First put ID in the map.
+                     * Then set selected use case.
+                     * The selected-use-case listener calls resolveSelectedUseCaseId(),
+                     * which depends on useCaseIdsByNormalizedName.
+                     */
+                    state.setSelectedUseCase(createdName);
+                    state.setSelectedUseCaseId(createdUseCaseId);
+
+                    applySelectedUseCaseUi(createdName);
+
                     showInfoAlert(
                             "Use Case Created",
-                            "Use case '" + name + "' was created.\n\nTo receive feedback, follow the instructions on the n8n side ('Vibration Orchastrator'), create a new rule, and assign it to a user."
+                            "Use case '" + createdName + "' was created. You can now discuss it with the agent or go directly to n8n."
                     );
+
                     loadUseCases();
                 }))
                 .exceptionally(ex -> {
-                    showErrorAlert("Create Failed", "Failed to create use case: " + ex.getMessage());
+                    Platform.runLater(() ->
+                            showErrorAlert("Create Failed", "Failed to create use case: " + ex.getMessage())
+                    );
                     return null;
                 });
     }
+
     private void setupTabs() {
         workspaceTabPane.getSelectionModel().select(mappingsTab);
         workspaceTabPane.getSelectionModel().selectedItemProperty().addListener(onNewValueChanged(newValue -> {
@@ -2312,47 +2420,60 @@ public class DashboardController {
             return;
         }
 
+        String selectedUseCase = state.getSelectedUseCase();
+        Integer useCaseId = state.getSelectedUseCaseId();
+
+        if ((useCaseId == null || useCaseId <= 0) && selectedUseCase != null && !selectedUseCase.isBlank()) {
+            String normalized = normalizeUseCaseName(selectedUseCase);
+            useCaseId = useCaseIdsByNormalizedName.get(normalized);
+
+            if (useCaseId != null && useCaseId > 0) {
+                state.setSelectedUseCaseId(useCaseId);
+            }
+        }
+
+        if (useCaseId == null || useCaseId <= 0) {
+            addChatMessage(
+                    "I could not resolve the ID for the selected use case '" + selectedUseCase + "'. Please refresh the use cases and try again.",
+                    false
+            );
+            return;
+        }
+
         String expandedMessage = expandChatCommand(message);
         addChatMessage(message, true);
         chatInputField.clear();
 
-        // Keys must match webhook body fields used by n8n.
         Map<String, Object> payload = new HashMap<>();
-        Integer useCaseId = state.getSelectedUseCaseId();
-
         payload.put("message", expandedMessage);
         payload.put("session_id", chatSessionId);
-
-        if (useCaseId != null && useCaseId > 0) {
-            payload.put("usecase_id", useCaseId);
-        } else {
-            payload.put("usecase_id", null);
-        }
+        payload.put("usecase_id", useCaseId);
+        payload.put("usecase_name", selectedUseCase);
 
         setAgentTyping(true);
 
         ApiService.getInstance().postWithResponse(ApiService.EP_CHAT_CONFIG, payload)
-            .thenAccept(response -> Platform.runLater(() -> {
-                setAgentTyping(false);
-                if (response != null && response.has("reply")) {
-                    addChatMessage(response.get("reply").asText(), false);
-                } else {
-                    addChatMessage("AI response did not include reply field.", false);
-                }
-
-                // for future usage?
-//                if(response.has("action") && response.get("action").asText().equals("newMapping")) {
-//                    refreshMappings();
-//                }
-            }))
-            .exceptionally(ex -> {
-                Platform.runLater(() -> {
+                .thenAccept(response -> Platform.runLater(() -> {
                     setAgentTyping(false);
-                    addChatMessage("Error: " + ex.getMessage(), false);
+                    if (response != null && response.has("reply")) {
+                        addChatMessage(response.get("reply").asText(), false);
+                    } else {
+                        addChatMessage("AI response did not include reply field.", false);
+                    }
+                    // for future usage?
+                    // if(response.has("action") && response.get("action").asText().equals("newMapping")) {
+                    // refreshMappings();
+                    // }
+                }))
+                .exceptionally(ex -> {
+                    Platform.runLater(() -> {
+                        setAgentTyping(false);
+                        addChatMessage("Error: " + ex.getMessage(), false);
+                    });
+                    return null;
                 });
-                return null;
-            });
     }
+
 
     private void setAgentTyping(boolean typing) {
         if (agentTypingLabel == null) {
@@ -3051,3 +3172,4 @@ public class DashboardController {
 
 
 }
+

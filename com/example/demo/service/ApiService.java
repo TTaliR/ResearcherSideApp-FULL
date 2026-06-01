@@ -121,16 +121,26 @@ public class ApiService {
         return CompletableFuture.completedFuture(allSuccessful);
     }
 
-    public CompletableFuture<Boolean> createUseCase(String name, String description) {
+    public CompletableFuture<JsonNode> createUseCase(String name, String description) {
         String trimmedName = name == null ? "" : name.trim();
         if (trimmedName.isEmpty()) {
-            return CompletableFuture.completedFuture(false);
+            return CompletableFuture.completedFuture(
+                    mapper.createObjectNode().put("error", "Use case name is required")
+            );
+        }
+
+        // Disallow any whitespace characters in the use case name (no spaces, tabs, newlines, etc.)
+        if (trimmedName.matches(".*\\s.*")) {
+            return CompletableFuture.completedFuture(
+                    mapper.createObjectNode().put("error", "Use case name must not contain spaces")
+            );
         }
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("name", trimmedName);
         payload.put("description", description == null ? "" : description.trim());
-        return post(EP_CREATE_USECASE, payload);
+
+        return postWithResponse(EP_CREATE_USECASE, payload);
     }
 
     public CompletableFuture<Boolean> deleteMapping(int mappingId) {
