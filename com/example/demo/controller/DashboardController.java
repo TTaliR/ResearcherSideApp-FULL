@@ -2,6 +2,9 @@ package com.example.demo.controller;
 
 import com.example.demo.controller.state.DashboardState;
 import com.example.demo.factory.ChatBubbleFactory;
+import com.example.demo.factory.MappingUiFactory;
+import com.example.demo.factory.SharedUiFactory;
+import com.example.demo.factory.YellowBookUiFactory;
 import com.example.demo.model.Schedule;
 import com.example.demo.model.ScheduleApiResponse;
 import com.example.demo.model.SensorRuleConfig;
@@ -10,8 +13,12 @@ import com.example.demo.model.RuleCardData;
 import com.example.demo.model.DictionaryParameterData;
 import com.example.demo.model.LoggingIntervalDraft;
 import com.example.demo.model.ChatCommandOption;
+import com.example.demo.parser.MappingConfigParser;
+import com.example.demo.parser.YellowBookParser;
 import com.example.demo.service.ApiService;
 import com.example.demo.service.ExportService;
+import com.example.demo.util.AlertUtils;
+import com.example.demo.util.FormatUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
@@ -24,8 +31,6 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.*;
@@ -49,8 +54,6 @@ import java.util.regex.Pattern;
 public class DashboardController {
     private static final List<String> DEFAULT_USE_CASES = List.of("HeartRate", "MoonAzimuth", "SunAzimuth", "Pollution");
     private static final String DEFAULT_CHAT_COMMAND_PREFIX = "$";
-    private static final String DELETE_ICON_PATH = "/com/example/demo/images/delete.png";
-    private static final String SETTINGS_ICON_PATH = "/com/example/demo/images/settings.png";
     private static final String FEEDBACK_GRAPH_TEMPLATE_PATH = "/com/example/demo/view/templates/feedbackGraph.html";
     private static final String MINI_GRAPH_TEMPLATE_PATH = "/com/example/demo/view/templates/miniFeedbackGraph.html";
     private static final Pattern LOG_INTERVAL_PATTERN = Pattern.compile("^\\d+(\\.\\d+)?\\s+(second|seconds|minute|minutes|hour|hours|day|days)$", Pattern.CASE_INSENSITIVE);
@@ -389,7 +392,7 @@ public class DashboardController {
             ApiService.getInstance().addSchedule(userId, interval, measure, trigger, uc)
                 .thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
         } catch (Exception e) {
-            showErrorAlert("Input Error", "Please make sure all schedule fields are valid numbers/text.");
+            AlertUtils.showErrorAlert("Input Error", "Please make sure all schedule fields are valid numbers/text.");
         }
     }
 
@@ -405,7 +408,7 @@ public class DashboardController {
             ApiService.getInstance().changeSchedule(schedId, userId, interval, measure, trigger, uc)
                 .thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
         } catch (Exception e) {
-            showErrorAlert("Input Error", "Please make sure schedule id and other fields are valid.");
+            AlertUtils.showErrorAlert("Input Error", "Please make sure schedule id and other fields are valid.");
         }
     }
 
@@ -417,7 +420,7 @@ public class DashboardController {
             ApiService.getInstance().activateSchedule(schedId, uc)
                 .thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
         } catch (Exception e) {
-            showErrorAlert("Input Error", "Please provide a valid schedule id to activate.");
+            AlertUtils.showErrorAlert("Input Error", "Please provide a valid schedule id to activate.");
         }
     }
 
@@ -429,7 +432,7 @@ public class DashboardController {
             ApiService.getInstance().deactivateSchedule(schedId, uc)
                 .thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
         } catch (Exception e) {
-            showErrorAlert("Input Error", "Please provide a valid schedule id to deactivate.");
+            AlertUtils.showErrorAlert("Input Error", "Please provide a valid schedule id to deactivate.");
         }
     }
 
@@ -462,7 +465,7 @@ public class DashboardController {
             return;
         }
 
-        String normalizedKey = normalizeUseCaseName(selectedUseCase);
+        String normalizedKey = FormatUtils.normalizeUseCaseName(selectedUseCase);
         ruleSensorTypeLabel.setText(toUseCaseLabel(normalizedKey));
 
         String description = useCaseDescriptions.getOrDefault(normalizedKey, "").trim();
@@ -489,23 +492,23 @@ public class DashboardController {
             ApiService.getInstance().saveSensorRuleConfig(ruleConfig)
                 .thenAccept(success -> Platform.runLater(() -> {
                     if (!success) {
-                        showErrorAlert("Save Failed", "Could not save the rule. Please try again.");
+                        AlertUtils.showErrorAlert("Save Failed", "Could not save the rule. Please try again.");
                         return;
                     }
 
                     clearRuleBuilderForm();
                     updateSelectedMappingForEdit(null);
                     loadMappings();
-                    String savedUseCase = toUseCaseLabel(normalizeUseCaseName(ruleConfig.getType()));
-                    showInfoAlert("Save Successful", "Saved mapping for " + savedUseCase + ".");
+                    String savedUseCase = toUseCaseLabel(FormatUtils.normalizeUseCaseName(ruleConfig.getType()));
+                    AlertUtils.showInfoAlert("Save Successful", "Saved mapping for " + savedUseCase + ".");
                     refreshMappings();
                 }))
                 .exceptionally(ex -> {
-                    showErrorAlert("Save Failed", "Could not save rule: " + ex.getMessage());
+                    AlertUtils.showErrorAlert("Save Failed", "Could not save rule: " + ex.getMessage());
                     return null;
                 });
         } catch (IllegalArgumentException ex) {
-            showErrorAlert("Validation Error", ex.getMessage());
+            AlertUtils.showErrorAlert("Validation Error", ex.getMessage());
         }
     }
 
@@ -523,7 +526,7 @@ public class DashboardController {
                 throw new IllegalArgumentException("Please select a use case.");
             }
         } catch (IllegalArgumentException ex) {
-            showErrorAlert("Validation Error", ex.getMessage());
+            AlertUtils.showErrorAlert("Validation Error", ex.getMessage());
             return;
         }
         loadMappings();
@@ -584,7 +587,7 @@ public class DashboardController {
     @FXML
     private void changeSelectedMappingConfig() {
         if (selectedMappingForEdit == null || selectedMappingForEdit.mappingId <= 0) {
-            showErrorAlert("Missing Mapping", "Select an active mapping card before changing it.");
+            AlertUtils.showErrorAlert("Missing Mapping", "Select an active mapping card before changing it.");
             return;
         }
 
@@ -594,7 +597,7 @@ public class DashboardController {
 
             Integer useCaseId = state.getSelectedUseCaseId();
             if (useCaseId == null || useCaseId <= 0) {
-                showErrorAlert("Missing Use Case Id", "Could not resolve use case id. Refresh use cases and try again.");
+                AlertUtils.showErrorAlert("Missing Use Case Id", "Could not resolve use case id. Refresh use cases and try again.");
                 return;
             }
 
@@ -608,21 +611,21 @@ public class DashboardController {
                 )
                 .thenAccept(success -> Platform.runLater(() -> {
                     if (!success) {
-                        showErrorAlert("Update Failed", "Could not change mapping ID " + editingRule.mappingId + ".");
+                        AlertUtils.showErrorAlert("Update Failed", "Could not change mapping ID " + editingRule.mappingId + ".");
                         return;
                     }
 
                     clearRuleBuilderForm();
                     updateSelectedMappingForEdit(null);
                     loadMappings();
-                    showInfoAlert("Mapping Updated", "Updated mapping ID " + editingRule.mappingId + ".");
+                    AlertUtils.showInfoAlert("Mapping Updated", "Updated mapping ID " + editingRule.mappingId + ".");
                 }))
                 .exceptionally(ex -> {
-                    showErrorAlert("Update Failed", "Failed to change mapping: " + ex.getMessage());
+                    AlertUtils.showErrorAlert("Update Failed", "Failed to change mapping: " + ex.getMessage());
                     return null;
                 });
         } catch (IllegalArgumentException ex) {
-            showErrorAlert("Validation Error", ex.getMessage());
+            AlertUtils.showErrorAlert("Validation Error", ex.getMessage());
         }
     }
 
@@ -768,12 +771,12 @@ public class DashboardController {
         String description = descriptionField.getText() == null ? "" : descriptionField.getText().trim();
 
         if (name.isBlank()) {
-            showErrorAlert("Validation Error", "Use case name is required.");
+            AlertUtils.showErrorAlert("Validation Error", "Use case name is required.");
             return;
         }
 
         if (name.matches(".*\\s.*")) {
-            showErrorAlert("Validation Error", "Use case name must not contain spaces.");
+            AlertUtils.showErrorAlert("Validation Error", "Use case name must not contain spaces.");
             return;
         }
 
@@ -784,7 +787,7 @@ public class DashboardController {
                                 ? "Could not create the use case. Please try again."
                                 : response.path("error").asText("Could not create the use case. Please try again.");
 
-                        showErrorAlert("Create Failed", errorMessage);
+                        AlertUtils.showErrorAlert("Create Failed", errorMessage);
                         return;
                     }
 
@@ -819,7 +822,7 @@ public class DashboardController {
                     String createdDescription = created.path("description").asText(description);
 
                     if (createdUseCaseId <= 0) {
-                        showErrorAlert(
+                        AlertUtils.showErrorAlert(
                                 "Create Failed",
                                 "The use case was created, but the response did not include a valid usecase_id. Check the n8n /create-usecase response."
                         );
@@ -827,7 +830,7 @@ public class DashboardController {
                         return;
                     }
 
-                    String normalizedName = normalizeUseCaseName(createdName);
+                    String normalizedName = FormatUtils.normalizeUseCaseName(createdName);
 
                     useCaseDescriptions.put(normalizedName, createdDescription);
                     useCaseDisplayNames.put(normalizedName, createdName);
@@ -852,7 +855,7 @@ public class DashboardController {
 
                     applySelectedUseCaseUi(createdName);
 
-                    showInfoAlert(
+                    AlertUtils.showInfoAlert(
                             "Use Case Created",
                             "Use case '" + createdName + "' was created. You can now discuss it with the agent or go directly to n8n."
                     );
@@ -861,7 +864,7 @@ public class DashboardController {
                 }))
                 .exceptionally(ex -> {
                     Platform.runLater(() ->
-                            showErrorAlert("Create Failed", "Failed to create use case: " + ex.getMessage())
+                            AlertUtils.showErrorAlert("Create Failed", "Failed to create use case: " + ex.getMessage())
                     );
                     return null;
                 });
@@ -1222,7 +1225,7 @@ public class DashboardController {
         String range = state.getSelectedTimeRange();
 
         if (user == null || useCase == null || useCase.isBlank() || range == null || range.isBlank()) {
-            showErrorAlert("Missing Selection", "Please select a Users, use case, and time range before exporting.");
+            AlertUtils.showErrorAlert("Missing Selection", "Please select a Users, use case, and time range before exporting.");
             return;
         }
 
@@ -1230,11 +1233,11 @@ public class DashboardController {
             LocalDate start = state.getStartDate();
             LocalDate end = state.getEndDate();
             if (start == null || end == null) {
-                showErrorAlert("Missing Date Range", "Please select both start and end dates for custom range export.");
+                AlertUtils.showErrorAlert("Missing Date Range", "Please select both start and end dates for custom range export.");
                 return;
             }
             if (end.isBefore(start)) {
-                showErrorAlert("Invalid Date Range", "End date cannot be before start date.");
+                AlertUtils.showErrorAlert("Invalid Date Range", "End date cannot be before start date.");
                 return;
             }
         }
@@ -1258,7 +1261,7 @@ public class DashboardController {
         ApiService.getInstance().getSensorIdByName(useCase)
             .thenAccept(sensorId -> {
                 if (sensorId == -1) {
-                    showErrorAlert("Sensor Not Found", "Could not resolve a sensor id for use case: " + useCase);
+                    AlertUtils.showErrorAlert("Sensor Not Found", "Could not resolve a sensor id for use case: " + useCase);
                     return;
                 }
 
@@ -1272,18 +1275,18 @@ public class DashboardController {
                             } else {
                                 fullPath = ExportService.generatePdf(selectedFile.getAbsolutePath(), user.getUserID(), useCase, range, response);
                             }
-                            showInfoAlert("Export Successful", "Saved to:\n" + fullPath);
+                            AlertUtils.showInfoAlert("Export Successful", "Saved to:\n" + fullPath);
                         } catch (Exception ex) {
-                            showErrorAlert("Export Failed", ex.getMessage());
+                            AlertUtils.showErrorAlert("Export Failed", ex.getMessage());
                         }
                     })
                     .exceptionally(ex -> {
-                        showErrorAlert("Data Fetch Failed", "Failed to fetch sensor data: " + ex.getMessage());
+                        AlertUtils.showErrorAlert("Data Fetch Failed", "Failed to fetch sensor data: " + ex.getMessage());
                         return null;
                     });
             })
             .exceptionally(ex -> {
-                showErrorAlert("Sensor Lookup Failed", "Failed to resolve sensor id: " + ex.getMessage());
+                AlertUtils.showErrorAlert("Sensor Lookup Failed", "Failed to resolve sensor id: " + ex.getMessage());
                 return null;
             });
     }
@@ -1399,7 +1402,7 @@ public class DashboardController {
                             useCaseId = useCaseNode.path("id").asInt(0);
                         }
                         if (!rawName.isEmpty()) {
-                            String normalizedName = normalizeUseCaseName(rawName);
+                            String normalizedName = FormatUtils.normalizeUseCaseName(rawName);
                             normalizedToDisplay.putIfAbsent(normalizedName, rawName);
                             loadedDescriptions.put(normalizedName, description);
                             String loggingInterval = extractLoggingInterval(useCaseNode);
@@ -1415,7 +1418,7 @@ public class DashboardController {
 
                 if (normalizedToDisplay.isEmpty()) {
                     for (String defaultUseCase : DEFAULT_USE_CASES) {
-                        normalizedToDisplay.put(normalizeUseCaseName(defaultUseCase), defaultUseCase);
+                        normalizedToDisplay.put(FormatUtils.normalizeUseCaseName(defaultUseCase), defaultUseCase);
                     }
                 }
 
@@ -1457,9 +1460,9 @@ public class DashboardController {
             return "-";
         }
 
-        String normalized = normalizeUseCaseName(rawUseCase);
+        String normalized = FormatUtils.normalizeUseCaseName(rawUseCase);
         for (String candidate : useCases) {
-            if (normalized.equals(normalizeUseCaseName(candidate))) {
+            if (normalized.equals(FormatUtils.normalizeUseCaseName(candidate))) {
                 return candidate;
             }
         }
@@ -1514,27 +1517,27 @@ public class DashboardController {
           }
 
           boolean unchanged =
-                  normalizeUseCaseName(selected).equals(normalizeUseCaseName(selectedUser.getUsecaseName()));
+                  FormatUtils.normalizeUseCaseName(selected).equals(FormatUtils.normalizeUseCaseName(selectedUser.getUsecaseName()));
       }
 
       @FXML
       private void onAssignUserUseCase() {
           User selectedUser = leftSidebarController.getSelectedUser();
           if (selectedUser == null) {
-              showErrorAlert("Missing User", "Please select a user from the list before assigning a use case.");
+              AlertUtils.showErrorAlert("Missing User", "Please select a user from the list before assigning a use case.");
               return;
           }
 
           String selectedUsecase = leftSidebarController.getUserUseCaseComboBox().getValue();
           if (selectedUsecase == null || selectedUsecase.isBlank()) {
-              showErrorAlert("Missing Use Case", "Please select a use case to assign.");
+              AlertUtils.showErrorAlert("Missing Use Case", "Please select a use case to assign.");
               return;
           }
 
           ApiService.getInstance().setMonitoringType(selectedUser.getUserID(), selectedUsecase)
                   .thenAccept(success -> Platform.runLater(() -> {
                       if (!success) {
-                          showErrorAlert("Update Failed", "Could not assign use case to user. Please try again.");
+                          AlertUtils.showErrorAlert("Update Failed", "Could not assign use case to user. Please try again.");
                           updateAssignUserUseCaseButtonState();
                           return;
                       }
@@ -1544,7 +1547,7 @@ public class DashboardController {
 
                       selectedUser.setUsecaseName(resolvedDisplayName);
 
-                      showInfoAlert(
+                      AlertUtils.showInfoAlert(
                               "Use Case Assigned",
                               "User " + selectedUser.getUserID() + " is now assigned to " + resolvedDisplayName + "."
                       );
@@ -1553,7 +1556,7 @@ public class DashboardController {
                       state.setSelectedUseCase(resolvedDisplayName);
                   }))
                   .exceptionally(ex -> {
-                      showErrorAlert("Update Failed", "Failed to assign use case: " + ex.getMessage());
+                      AlertUtils.showErrorAlert("Update Failed", "Failed to assign use case: " + ex.getMessage());
                       Platform.runLater(this::updateAssignUserUseCaseButtonState);
                       return null;
                   });
@@ -1565,7 +1568,7 @@ public class DashboardController {
             return;
         }
 
-        String normalized = normalizeUseCaseName(selectedUseCase);
+        String normalized = FormatUtils.normalizeUseCaseName(selectedUseCase);
         Integer knownId = useCaseIdsByNormalizedName.get(normalized);
         state.setSelectedUseCaseId((knownId != null && knownId > 0) ? knownId : null);
     }
@@ -1576,7 +1579,7 @@ public class DashboardController {
     private void applySelectedUseCaseUi(String selectedUseCase) {
         if (topBarController.getSelectedUseCaseLabel() != null) {
             topBarController.getSelectedUseCaseLabel().setText((selectedUseCase == null || selectedUseCase.isBlank()) ? "-" : selectedUseCase);
-            String selectedKey = normalizeUseCaseName(selectedUseCase);
+            String selectedKey = FormatUtils.normalizeUseCaseName(selectedUseCase);
             String desc = useCaseDescriptions.getOrDefault(selectedKey, "").trim();
             topBarController.getSelectedUseCaseLabel().setTooltip(desc.isEmpty() ? null : new Tooltip(desc));
         }
@@ -1620,7 +1623,7 @@ public class DashboardController {
 
         String displayText = "Not set";
         if (selectedUseCase != null && !selectedUseCase.isBlank()) {
-            String normalizedKey = normalizeUseCaseName(selectedUseCase);
+            String normalizedKey = FormatUtils.normalizeUseCaseName(selectedUseCase);
             String configuredInterval = useCaseLoggingInterval.getOrDefault(normalizedKey, "").trim();
             if (!configuredInterval.isEmpty()) {
                 displayText = configuredInterval;
@@ -1677,11 +1680,11 @@ public class DashboardController {
     private void onEditLoggingInterval() {
         String selectedUseCase = state.getSelectedUseCase();
         if (selectedUseCase == null || selectedUseCase.isBlank()) {
-            showErrorAlert("Missing Use Case", "Please select a use case before editing logging interval.");
+            AlertUtils.showErrorAlert("Missing Use Case", "Please select a use case before editing logging interval.");
             return;
         }
 
-        String selectedKey = normalizeUseCaseName(selectedUseCase);
+        String selectedKey = FormatUtils.normalizeUseCaseName(selectedUseCase);
         Integer useCaseId = state.getSelectedUseCaseId();
         if (useCaseId == null || useCaseId <= 0) {
             useCaseId = useCaseIdsByNormalizedName.get(selectedKey);
@@ -1689,7 +1692,7 @@ public class DashboardController {
         }
 
         if (useCaseId == null || useCaseId <= 0) {
-            showErrorAlert("Missing Use Case Id", "Could not resolve use case id. Refresh use cases and try again.");
+            AlertUtils.showErrorAlert("Missing Use Case Id", "Could not resolve use case id. Refresh use cases and try again.");
             return;
         }
 
@@ -1725,7 +1728,7 @@ public class DashboardController {
         String baseUnit = unitComboBox.getValue();
         String interval = formatLoggingInterval(amount, baseUnit);
         if (!isValidLoggingInterval(interval)) {
-            showErrorAlert("Invalid Interval", "Interval must match: number + second(s)/minute(s)/hour(s)/day(s).");
+            AlertUtils.showErrorAlert("Invalid Interval", "Interval must match: number + second(s)/minute(s)/hour(s)/day(s).");
             return;
         }
 
@@ -1733,17 +1736,17 @@ public class DashboardController {
         ApiService.getInstance().setLoggingInterval(resolvedUseCaseId, interval)
             .thenAccept(success -> Platform.runLater(() -> {
                 if (!success) {
-                    showErrorAlert("Update Failed", "Could not update logging interval. Please try again.");
+                    AlertUtils.showErrorAlert("Update Failed", "Could not update logging interval. Please try again.");
                     return;
                 }
 
                 useCaseLoggingInterval.put(selectedKey, interval);
                 updateLoggingIntervalDisplay(selectedUseCase);
-                showInfoAlert("Interval Updated", "Logging interval set to " + interval + " for " + selectedUseCase + ".");
+                AlertUtils.showInfoAlert("Interval Updated", "Logging interval set to " + interval + " for " + selectedUseCase + ".");
                 loadUseCases();
             }))
             .exceptionally(ex -> {
-                showErrorAlert("Update Failed", "Failed to update logging interval: " + ex.getMessage());
+                AlertUtils.showErrorAlert("Update Failed", "Failed to update logging interval: " + ex.getMessage());
                 return null;
             });
     }
@@ -1753,7 +1756,7 @@ public class DashboardController {
             .thenAccept(response -> {
                 Platform.runLater(() -> {
                     allRules.clear();
-                    parseMappingsFromConfiguration(response);
+                    new MappingConfigParser(allRules, useCaseDisplayNames).parseMappingsFromConfiguration(response);
                     renderMappingsForUseCase(state.getSelectedUseCase());
                     refreshRuleSummary();
                 });
@@ -1794,7 +1797,7 @@ public class DashboardController {
 
                 String reply = response.path("reply").asText("");
                 yellowBookEntries.clear();
-                yellowBookEntries.putAll(parseYellowBookReply(reply));
+                yellowBookEntries.putAll(YellowBookParser.parse(reply));
                 renderYellowBook();
             }))
             .exceptionally(ex -> {
@@ -1819,74 +1822,6 @@ public class DashboardController {
         return null;
     }
 
-    private Map<String, List<DictionaryParameterData>> parseYellowBookReply(String reply) {
-        LinkedHashMap<String, List<DictionaryParameterData>> parsed = new LinkedHashMap<>();
-        if (reply == null || reply.isBlank()) {
-            return parsed;
-        }
-
-        String activeUseCase = null;
-        for (String rawLine : reply.split("\\R")) {
-            String line = rawLine == null ? "" : rawLine.trim();
-            if (line.isEmpty()) {
-                continue;
-            }
-
-            Matcher headerMatcher = Pattern.compile("\\*\\*(.+?)\\*\\*").matcher(line);
-            if (line.contains("**") && headerMatcher.find() && !line.toLowerCase(Locale.ROOT).startsWith("here are")) {
-                activeUseCase = headerMatcher.group(1).trim();
-                parsed.putIfAbsent(activeUseCase, new ArrayList<>());
-                continue;
-            }
-
-            if (activeUseCase == null) {
-                continue;
-            }
-
-            DictionaryParameterData parameter = parseYellowBookParameterLine(activeUseCase, line);
-            if (parameter != null) {
-                parsed.get(activeUseCase).add(parameter);
-            }
-        }
-
-        return parsed;
-    }
-
-    private DictionaryParameterData parseYellowBookParameterLine(String useCaseName, String rawLine) {
-        String line = rawLine
-            .replaceAll("^[^A-Za-z0-9_]+", "")
-            .replace("[Required]", "")
-            .trim();
-        boolean required = rawLine.contains("[Required]");
-
-        Matcher matcher = Pattern.compile("^(.+?)\\s*\\((.*)\\)$").matcher(line);
-        if (!matcher.matches()) {
-            return null;
-        }
-
-        String parameterName = matcher.group(1).trim();
-        String formatAndValue = matcher.group(2).trim();
-        String format = formatAndValue;
-        String value = "";
-
-        int valueMarker = formatAndValue.indexOf(" [Specific value!]");
-        if (valueMarker >= 0) {
-            formatAndValue = formatAndValue.substring(0, valueMarker).trim();
-        }
-
-        int equalsIndex = formatAndValue.indexOf(" = ");
-        if (equalsIndex >= 0) {
-            format = formatAndValue.substring(0, equalsIndex).trim();
-            value = formatAndValue.substring(equalsIndex + 3).trim();
-        }
-
-        if (parameterName.isBlank()) {
-            return null;
-        }
-
-        return new DictionaryParameterData(useCaseName, parameterName, format, required, "", value);
-    }
-
     private void renderYellowBook() {
         if (yellowBookContentBox == null || yellowBookStatusLabel == null) {
             return;
@@ -1899,117 +1834,7 @@ public class DashboardController {
         }
 
         yellowBookStatusLabel.setText("Loaded " + yellowBookEntries.size() + " use cases.");
-        yellowBookEntries.forEach((useCaseName, parameters) -> yellowBookContentBox.getChildren().add(createYellowBookUseCaseCard(useCaseName, parameters)));
-    }
-
-    private VBox createYellowBookUseCaseCard(String useCaseName, List<DictionaryParameterData> parameters) {
-        VBox card = new VBox(10);
-        card.getStyleClass().add("yellow-book-card");
-
-        HBox header = new HBox(8);
-        header.setAlignment(Pos.CENTER_LEFT);
-        Label title = new Label(useCaseName);
-        title.getStyleClass().add("yellow-book-usecase-title");
-        Label count = new Label(parameters.size() + " parameters");
-        count.getStyleClass().add("topbar-muted-value");
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        Button deleteUseCaseButton = new Button("Remove Use Case");
-        deleteUseCaseButton.getStyleClass().add("cancel-button");
-        deleteUseCaseButton.setOnAction(ignored -> onRemoveYellowBookUseCase(useCaseName));
-        header.getChildren().addAll(title, count, spacer, deleteUseCaseButton);
-
-        VBox parameterBox = new VBox(6);
-        if (parameters.isEmpty()) {
-            Label empty = new Label("No parameters registered.");
-            empty.getStyleClass().add("topbar-muted-value");
-            parameterBox.getChildren().add(empty);
-        } else {
-            for (DictionaryParameterData parameter : parameters) {
-                parameterBox.getChildren().add(createYellowBookParameterRow(parameter));
-            }
-        }
-
-        card.getChildren().addAll(header, parameterBox);
-        return card;
-    }
-
-    private HBox createYellowBookParameterRow(DictionaryParameterData parameter) {
-        HBox row = new HBox(8);
-        row.setAlignment(Pos.CENTER_LEFT);
-        row.getStyleClass().add("yellow-book-parameter-row");
-        if (isSelectedYellowBookParameter(parameter)) {
-            row.getStyleClass().add("yellow-book-parameter-row-selected");
-        }
-
-        VBox textBox = new VBox(2);
-        Label name = new Label(parameter.parameterName);
-        name.getStyleClass().add("mapping-card-title");
-        Label details = new Label(buildYellowBookParameterDetails(parameter));
-        details.getStyleClass().add("topbar-muted-value");
-        textBox.getChildren().addAll(name, details);
-        HBox.setHgrow(textBox, Priority.ALWAYS);
-
-        Button editButton = new Button("Edit");
-        editButton.getStyleClass().add("mapping-edit-button");
-        editButton.setOnAction(ignored -> onEditYellowBookParameter(parameter));
-
-        Button deleteButton = createDeleteIconButton("Remove parameter");
-        deleteButton.setOnAction(ignored -> onRemoveYellowBookParameter(parameter));
-
-        row.getChildren().addAll(textBox, editButton, deleteButton);
-        row.setOnMouseClicked(event -> {
-            if (event.getTarget() instanceof Button) {
-                return;
-            }
-            onEditYellowBookParameter(parameter);
-        });
-        return row;
-    }
-
-    private String buildYellowBookParameterDetails(DictionaryParameterData parameter) {
-        List<String> parts = new ArrayList<>();
-        if (!parameter.parameterFormat.isBlank()) {
-            parts.add("Format: " + parameter.parameterFormat);
-        }
-        if (!parameter.paramValue.isBlank()) {
-            parts.add("Value: " + parameter.paramValue);
-        }
-        parts.add(parameter.required ? "Required" : "Optional");
-        return String.join(" | ", parts);
-    }
-
-    private Button createDeleteIconButton(String tooltipText) {
-        Button button = new Button();
-        button.getStyleClass().add("mapping-delete-button");
-        button.setTooltip(new Tooltip(tooltipText));
-
-        Image icon = null;
-        try {
-            icon = new Image(Objects.requireNonNull(getClass().getResourceAsStream(DELETE_ICON_PATH)));
-        } catch (Exception ignored) {
-        }
-
-        if (icon != null && !icon.isError()) {
-            ImageView imageView = new ImageView(icon);
-            imageView.setPreserveRatio(true);
-            imageView.setFitWidth(14);
-            imageView.setFitHeight(14);
-            button.setGraphic(imageView);
-        } else {
-            button.setText("X");
-        }
-
-        return button;
-    }
-
-    private boolean isSelectedYellowBookParameter(DictionaryParameterData parameter) {
-        if (selectedYellowBookParameter == null || parameter == null) {
-            return false;
-        }
-
-        return selectedYellowBookParameter.useCaseName.equals(parameter.useCaseName)
-            && selectedYellowBookParameter.parameterName.equals(parameter.parameterName);
+        yellowBookEntries.forEach((useCaseName, parameters) -> yellowBookContentBox.getChildren().add(YellowBookUiFactory.createYellowBookUseCaseCard(useCaseName, parameters, this::onRemoveYellowBookUseCase, this::onEditYellowBookParameter, this::onRemoveYellowBookParameter, selectedYellowBookParameter)));
     }
 
     private void onEditYellowBookParameter(DictionaryParameterData parameter) {
@@ -2026,7 +1851,7 @@ public class DashboardController {
     @FXML
     private void onSaveYellowBookParameter() {
         if (selectedYellowBookParameter == null) {
-            showErrorAlert("Missing Parameter", "Select a dictionary parameter before saving changes.");
+            AlertUtils.showErrorAlert("Missing Parameter", "Select a dictionary parameter before saving changes.");
             return;
         }
 
@@ -2040,7 +1865,7 @@ public class DashboardController {
         );
 
         if (updated.parameterName.isBlank() || updated.parameterFormat.isBlank()) {
-            showErrorAlert("Invalid Parameter", "Parameter name and format are required.");
+            AlertUtils.showErrorAlert("Invalid Parameter", "Parameter name and format are required.");
             return;
         }
 
@@ -2064,7 +1889,7 @@ public class DashboardController {
     private void sendYellowBookRenameMutation(DictionaryParameterData original, DictionaryParameterData updated) {
         Integer contextUsecaseId = resolveDictionaryContextUseCaseId();
         if (contextUsecaseId == null || contextUsecaseId <= 0) {
-            showErrorAlert("Missing Use Case Id", "Could not resolve a use case id for the dictionary request.");
+            AlertUtils.showErrorAlert("Missing Use Case Id", "Could not resolve a use case id for the dictionary request.");
             return;
         }
 
@@ -2089,7 +1914,7 @@ public class DashboardController {
                     Platform.runLater(() -> {
                         String error = extractDictionaryError(addResponse, "Could not add the new parameter name.");
                         yellowBookStatusLabel.setText(error);
-                        showErrorAlert("Rename Failed", error);
+                        AlertUtils.showErrorAlert("Rename Failed", error);
                     });
                     return;
                 }
@@ -2100,22 +1925,22 @@ public class DashboardController {
                         if (isDictionaryErrorResponse(deleteResponse)) {
                             String error = extractDictionaryError(deleteResponse, "Added the new name, but could not remove the old parameter.");
                             yellowBookStatusLabel.setText(error);
-                            showErrorAlert("Rename Failed", error);
+                            AlertUtils.showErrorAlert("Rename Failed", error);
                             loadYellowBookDictionary();
                             return;
                         }
 
-                        showInfoAlert("Parameter Renamed", "Renamed " + original.parameterName + " to " + updated.parameterName + ".");
+                        AlertUtils.showInfoAlert("Parameter Renamed", "Renamed " + original.parameterName + " to " + updated.parameterName + ".");
                         updateYellowBookEditor(null);
                         loadYellowBookDictionary();
                     }))
                     .exceptionally(ex -> {
-                        Platform.runLater(() -> showErrorAlert("Rename Failed", ex.getMessage()));
+                        Platform.runLater(() -> AlertUtils.showErrorAlert("Rename Failed", ex.getMessage()));
                         return null;
                     });
             })
             .exceptionally(ex -> {
-                Platform.runLater(() -> showErrorAlert("Rename Failed", ex.getMessage()));
+                Platform.runLater(() -> AlertUtils.showErrorAlert("Rename Failed", ex.getMessage()));
                 return null;
             });
     }
@@ -2205,7 +2030,7 @@ public class DashboardController {
     private void sendYellowBookMutation(String message, String successTitle) {
         Integer contextUsecaseId = resolveDictionaryContextUseCaseId();
         if (contextUsecaseId == null || contextUsecaseId <= 0) {
-            showErrorAlert("Missing Use Case Id", "Could not resolve a use case id for the dictionary request.");
+            AlertUtils.showErrorAlert("Missing Use Case Id", "Could not resolve a use case id for the dictionary request.");
             return;
         }
 
@@ -2218,64 +2043,20 @@ public class DashboardController {
             .thenAccept(response -> Platform.runLater(() -> {
                 if (response == null || response.has("error")) {
                     String error = response == null ? "No response from n8n." : response.path("message").asText("Dictionary update failed.");
-                    showErrorAlert("Dictionary Update Failed", error);
+                    AlertUtils.showErrorAlert("Dictionary Update Failed", error);
                     yellowBookStatusLabel.setText(error);
                     return;
                 }
 
                 String reply = response.path("reply").asText("Dictionary update completed.");
-                showInfoAlert(successTitle, reply);
+                AlertUtils.showInfoAlert(successTitle, reply);
                 updateYellowBookEditor(null);
                 loadYellowBookDictionary();
             }))
             .exceptionally(ex -> {
-                Platform.runLater(() -> showErrorAlert("Dictionary Update Failed", ex.getMessage()));
+                Platform.runLater(() -> AlertUtils.showErrorAlert("Dictionary Update Failed", ex.getMessage()));
                 return null;
             });
-    }
-
-    private void parseMappingsFromConfiguration(JsonNode rootNode) {
-        if (rootNode == null || !rootNode.isObject()) {
-            return;
-        }
-
-        rootNode.fields().forEachRemaining(entry -> parseRulesArray(entry.getKey(), entry.getValue()));
-    }
-
-    private void parseRulesArray(String configKey, JsonNode arrayNode) {
-        if (arrayNode == null || !arrayNode.isArray()) {
-            return;
-        }
-
-        for (JsonNode node : arrayNode) {
-            String rawType = node.path("type").asText("").trim();
-            String useCaseKey = rawType.isEmpty()
-                ? inferUseCaseFromConfigKey(configKey)
-                : normalizeUseCaseName(rawType);
-            String useCaseLabel = rawType.isEmpty() ? toUseCaseLabel(useCaseKey) : rawType;
-
-            RuleCardData rule = new RuleCardData();
-            rule.mappingId = readMappingId(node);
-            rule.configKey = configKey;
-            rule.useCaseKey = useCaseKey;
-            rule.useCaseLabel = useCaseLabel;
-            rule.minValue = readInt(node, "minvalue", "min", 0);
-            rule.maxValue = readInt(node, "maxvalue", "max", 0);
-            rule.minPulses = readInt(node, "minpulses", "", 0);
-            rule.maxPulses = readInt(node, "maxpulses", "", 0);
-            rule.minIntensity = readInt(node, "minintensity", "", 0);
-            rule.maxIntensity = readInt(node, "maxintensity", "", 0);
-            rule.minDuration = readInt(node, "minduration", "", 0);
-            rule.maxDuration = readInt(node, "maxduration", "", 0);
-            rule.minInterval = readInt(node, "mininterval", "", 0);
-            rule.maxInterval = readInt(node, "maxinterval", "", 0);
-            rule.rangeLabel = readRangeLabel(node, useCaseLabel);
-            rule.pulseLabel = readRangeValue(node, "minpulses", "maxpulses", "N/A");
-            rule.intensityLabel = readRangeValue(node, "minintensity", "maxintensity", "N/A");
-            rule.durationLabel = readRangeValue(node, "minduration", "maxduration", "N/A ms");
-            rule.intervalLabel = readRangeValue(node, "mininterval", "maxinterval", "N/A ms");
-            allRules.add(rule);
-        }
     }
 
     /**
@@ -2291,7 +2072,7 @@ public class DashboardController {
             return;
         }
 
-        String selectedUseCaseKey = normalizeUseCaseName(useCase);
+        String selectedUseCaseKey = FormatUtils.normalizeUseCaseName(useCase);
         List<RuleCardData> filtered = allRules.stream()
             .filter(rule -> selectedUseCaseKey.equals(rule.useCaseKey))
             .toList();
@@ -2323,8 +2104,8 @@ public class DashboardController {
             Region spacer = new Region();
             HBox.setHgrow(spacer, Priority.ALWAYS);
 
-            Button selectButton = createSelectMappingButton(rule);
-            Button deleteButton = createDeleteMappingButton(rule);
+            Button selectButton = MappingUiFactory.createSelectMappingButton(rule, this::selectMappingForEdit);
+            Button deleteButton = MappingUiFactory.createDeleteMappingButton(rule, this::onDeleteMappingRequested);
             titleRow.getChildren().addAll(title, spacer, selectButton, deleteButton);
 
             Label pulses = new Label("Pulse count: " + rule.pulseLabel);
@@ -2343,15 +2124,6 @@ public class DashboardController {
         }
     }
 
-    private Button createSelectMappingButton(RuleCardData rule) {
-        Button button = new Button("Edit");
-        button.getStyleClass().add("mapping-edit-button");
-        button.setTooltip(new Tooltip("Edit mapping"));
-        button.setOnMouseClicked(event -> event.consume());
-        button.setOnAction(ignored -> selectMappingForEdit(rule));
-        return button;
-    }
-
     private void selectMappingForEdit(RuleCardData rule) {
         if (rule == null) {
             return;
@@ -2362,36 +2134,9 @@ public class DashboardController {
         renderMappingsForUseCase(state.getSelectedUseCase());
     }
 
-    private Button createDeleteMappingButton(RuleCardData rule) {
-        Button button = new Button();
-        button.getStyleClass().add("mapping-delete-button");
-        button.setTooltip(new Tooltip("Delete mapping"));
-
-        Image icon = null;
-        try {
-            icon = new Image(Objects.requireNonNull(getClass().getResourceAsStream(DELETE_ICON_PATH)));
-        } catch (Exception ignored) {
-            // Fallback text keeps control usable if image is missing from classpath.
-        }
-
-        if (icon != null && !icon.isError()) {
-            ImageView imageView = new ImageView(icon);
-            imageView.setPreserveRatio(true);
-            imageView.setFitWidth(14);
-            imageView.setFitHeight(14);
-            button.setGraphic(imageView);
-        } else {
-            button.setText("X");
-        }
-
-        button.setOnAction(ignored -> onDeleteMappingRequested(rule));
-        button.setOnMouseClicked(event -> event.consume());
-        return button;
-    }
-
     private void onDeleteMappingRequested(RuleCardData rule) {
         if (rule == null || rule.mappingId <= 0) {
-            showErrorAlert("Delete Failed", "Could not resolve mapping id for the selected card.");
+            AlertUtils.showErrorAlert("Delete Failed", "Could not resolve mapping id for the selected card.");
             return;
         }
 
@@ -2402,14 +2147,14 @@ public class DashboardController {
         ApiService.getInstance().deleteMapping(rule.mappingId)
             .thenAccept(success -> Platform.runLater(() -> {
                 if (!success) {
-                    showErrorAlert("Delete Failed", "Could not delete mapping for " + label + ".");
+                    AlertUtils.showErrorAlert("Delete Failed", "Could not delete mapping for " + label + ".");
                     return;
                 }
-                showInfoAlert("Mapping Deleted", "Deleted mapping for " + label + ".");
+                AlertUtils.showInfoAlert("Mapping Deleted", "Deleted mapping for " + label + ".");
                 loadMappings();
             }))
             .exceptionally(ex -> {
-                showErrorAlert("Delete Failed", "Failed to delete mapping: " + ex.getMessage());
+                AlertUtils.showErrorAlert("Delete Failed", "Failed to delete mapping: " + ex.getMessage());
                 return null;
             });
     }
@@ -2424,7 +2169,7 @@ public class DashboardController {
         Integer useCaseId = state.getSelectedUseCaseId();
 
         if ((useCaseId == null || useCaseId <= 0) && selectedUseCase != null && !selectedUseCase.isBlank()) {
-            String normalized = normalizeUseCaseName(selectedUseCase);
+            String normalized = FormatUtils.normalizeUseCaseName(selectedUseCase);
             useCaseId = useCaseIdsByNormalizedName.get(normalized);
 
             if (useCaseId != null && useCaseId > 0) {
@@ -2512,7 +2257,7 @@ public class DashboardController {
             return;
         }
 
-        String selectedUseCaseKey = normalizeUseCaseName(selectedUseCase);
+        String selectedUseCaseKey = FormatUtils.normalizeUseCaseName(selectedUseCase);
         List<RuleCardData> filtered = allRules.stream()
             .filter(rule -> selectedUseCaseKey.equals(rule.useCaseKey))
             .limit(5)
@@ -2724,13 +2469,13 @@ public class DashboardController {
             String filename = root.path("filename").asText("sensor_chart.png");
             saveGraphPngFromDataUrl(dataUrl, filename);
         } catch (Exception ex) {
-            showErrorAlert("Export Failed", "Could not parse export payload from chart.");
+            AlertUtils.showErrorAlert("Export Failed", "Could not parse export payload from chart.");
         }
     }
 
     private void saveGraphPngFromDataUrl(String dataUrl, String suggestedFilename) {
         if (dataUrl == null || !dataUrl.startsWith("data:image/png;base64,")) {
-            showErrorAlert("Export Failed", "Received invalid image data from chart export.");
+            AlertUtils.showErrorAlert("Export Failed", "Received invalid image data from chart export.");
             return;
         }
 
@@ -2739,7 +2484,7 @@ public class DashboardController {
         try {
             imageBytes = Base64.getDecoder().decode(base64Payload);
         } catch (IllegalArgumentException ex) {
-            showErrorAlert("Export Failed", "Could not decode generated PNG data.");
+            AlertUtils.showErrorAlert("Export Failed", "Could not decode generated PNG data.");
             return;
         }
 
@@ -2759,9 +2504,9 @@ public class DashboardController {
 
         try {
             Files.write(selectedFile.toPath(), imageBytes);
-            showInfoAlert("Export Successful", "Saved to:\n" + selectedFile.getAbsolutePath());
+            AlertUtils.showInfoAlert("Export Successful", "Saved to:\n" + selectedFile.getAbsolutePath());
         } catch (IOException ex) {
-            showErrorAlert("Export Failed", "Could not save PNG file: " + ex.getMessage());
+            AlertUtils.showErrorAlert("Export Failed", "Could not save PNG file: " + ex.getMessage());
         }
     }
 
@@ -2796,7 +2541,7 @@ public class DashboardController {
 
     private void ensureGraphLoadingOverlay() {
         if (graphLoadingOverlay == null) {
-            graphLoadingOverlay = createLoadingOverlay("Loading graph data...");
+            graphLoadingOverlay = SharedUiFactory.createLoadingOverlay("Loading graph data...");
             AnchorPane.setTopAnchor(graphLoadingOverlay, 0.0);
             AnchorPane.setRightAnchor(graphLoadingOverlay, 0.0);
             AnchorPane.setBottomAnchor(graphLoadingOverlay, 0.0);
@@ -2810,7 +2555,7 @@ public class DashboardController {
 
     private void ensureMiniGraphLoadingOverlay() {
         if (miniGraphLoadingOverlay == null) {
-            miniGraphLoadingOverlay = createLoadingOverlay("Loading preview...");
+            miniGraphLoadingOverlay = SharedUiFactory.createLoadingOverlay("Loading preview...");
             AnchorPane.setTopAnchor(miniGraphLoadingOverlay, 0.0);
             AnchorPane.setRightAnchor(miniGraphLoadingOverlay, 0.0);
             AnchorPane.setBottomAnchor(miniGraphLoadingOverlay, 0.0);
@@ -2820,23 +2565,6 @@ public class DashboardController {
         if (!miniGraphAnchor.getChildren().contains(miniGraphLoadingOverlay)) {
             miniGraphAnchor.getChildren().add(miniGraphLoadingOverlay);
         }
-    }
-
-    private StackPane createLoadingOverlay(String message) {
-        ProgressIndicator indicator = new ProgressIndicator();
-        indicator.setPrefSize(36, 36);
-
-        Label label = new Label(message);
-        label.setStyle("-fx-text-fill: #374151; -fx-font-size: 12px;");
-
-        VBox content = new VBox(8, indicator, label);
-        content.setAlignment(Pos.CENTER);
-
-        StackPane overlay = new StackPane(content);
-        overlay.setStyle("-fx-background-color: rgba(255,255,255,0.75);");
-        overlay.setVisible(false);
-        overlay.setManaged(false);
-        return overlay;
     }
 
     private void setGraphLoadingVisible(boolean visible) {
@@ -2885,31 +2613,6 @@ public class DashboardController {
             return null;
         }
         return users.stream().filter(user -> user.getUserID() == userId).findFirst().orElse(null);
-    }
-
-    private Button createEditUserButton() {
-        Button button = new Button();
-        button.getStyleClass().add("sidebar-user-settings-button");
-        button.setTooltip(new Tooltip("Edit user name"));
-
-        Image icon = null;
-        try {
-            icon = new Image(Objects.requireNonNull(getClass().getResourceAsStream(SETTINGS_ICON_PATH)));
-        } catch (Exception ignored) {
-            // Fallback text keeps control usable if image is missing from classpath.
-        }
-
-        if (icon != null && !icon.isError()) {
-            ImageView imageView = new ImageView(icon);
-            imageView.setPreserveRatio(true);
-            imageView.setFitWidth(14);
-            imageView.setFitHeight(14);
-            button.setGraphic(imageView);
-        } else {
-            button.setText("Edit");
-        }
-
-        return button;
     }
 
     private void onEditUserRequested(User user) {
@@ -2973,65 +2676,24 @@ public class DashboardController {
         String newFirstName = firstNameField.getText() == null ? "" : firstNameField.getText().trim();
         String newLastName = lastNameField.getText() == null ? "" : lastNameField.getText().trim();
         if (newFirstName.isBlank() || newLastName.isBlank()) {
-            showErrorAlert("Invalid Name", "First and last name cannot be empty.");
+            AlertUtils.showErrorAlert("Invalid Name", "First and last name cannot be empty.");
             return;
         }
 
         ApiService.getInstance().setUserName(user.getUserID(), newFirstName, newLastName)
             .thenAccept(success -> Platform.runLater(() -> {
                 if (!success) {
-                    showErrorAlert("Update Failed", "Could not update the user name. Please try again.");
+                    AlertUtils.showErrorAlert("Update Failed", "Could not update the user name. Please try again.");
                     return;
                 }
 
-                showInfoAlert("User Updated", "Updated user " + user.getUserID() + " to " + newFirstName + " " + newLastName + ".");
+                AlertUtils.showInfoAlert("User Updated", "Updated user " + user.getUserID() + " to " + newFirstName + " " + newLastName + ".");
                 loadUserss();
             }))
             .exceptionally(ex -> {
-                showErrorAlert("Update Failed", "Failed to update user name: " + ex.getMessage());
+                AlertUtils.showErrorAlert("Update Failed", "Failed to update user name: " + ex.getMessage());
                 return null;
             });
-    }
-
-
-    private String normalizeUseCaseName(String rawUseCase) {
-        if (rawUseCase == null) {
-            return "";
-        }
-
-        String normalized = rawUseCase.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
-        if (normalized.contains("heartrate")) {
-            return "HeartRate";
-        }
-        if (normalized.contains("sunazimuth") || (normalized.contains("sun") && normalized.contains("azimuth"))) {
-            return "SunAzimuth";
-        }
-        if (normalized.contains("moonazimuth") || (normalized.contains("moon") && normalized.contains("azimuth"))) {
-            return "MoonAzimuth";
-        }
-        if (normalized.contains("pollution")) {
-            return "Pollution";
-        }
-
-        return normalized.isBlank() ? "Unknown" : normalized;
-    }
-
-    private String inferUseCaseFromConfigKey(String configKey) {
-        String lowered = configKey == null ? "" : configKey.toLowerCase(Locale.ROOT);
-        if (lowered.contains("heart")) {
-            return "HeartRate";
-        }
-        if (lowered.contains("sun")) {
-            return "SunAzimuth";
-        }
-        if (lowered.contains("moon")) {
-            return "MoonAzimuth";
-        }
-        if (lowered.contains("pollution")) {
-            return "Pollution";
-        }
-
-        return normalizeUseCaseName(configKey);
     }
 
     private String toUseCaseLabel(String useCaseKey) {
@@ -3051,36 +2713,6 @@ public class DashboardController {
             case "Pollution" -> "Pollution";
             default -> useCaseKey;
         };
-    }
-
-    private String readRangeLabel(JsonNode node, String useCaseLabel) {
-        if (node.has("minvalue") && node.has("maxvalue")) {
-            return useCaseLabel + ": " + node.path("minvalue").asInt() + " - " + node.path("maxvalue").asInt();
-        }
-        if (node.has("min") && node.has("max")) {
-            return useCaseLabel + ": " + node.path("min").asInt() + " - " + node.path("max").asInt();
-        }
-        return useCaseLabel + ": rule";
-    }
-
-    private String readRangeValue(JsonNode node, String minField, String maxField, String fallback) {
-        if (node.has(minField) && node.has(maxField)) {
-            return node.path(minField).asInt() + " - " + node.path(maxField).asInt();
-        }
-        return fallback;
-    }
-
-    private int readInt(JsonNode node, String primaryField, String fallbackField, int fallback) {
-        if (node == null || !node.isObject()) {
-            return fallback;
-        }
-        if (primaryField != null && !primaryField.isBlank() && node.has(primaryField)) {
-            return node.path(primaryField).asInt(fallback);
-        }
-        if (fallbackField != null && !fallbackField.isBlank() && node.has(fallbackField)) {
-            return node.path(fallbackField).asInt(fallback);
-        }
-        return fallback;
     }
 
     private String extractLoggingInterval(JsonNode useCaseNode) {
@@ -3121,42 +2753,6 @@ public class DashboardController {
         return "";
     }
 
-    private int readMappingId(JsonNode node) {
-        if (node == null || !node.isObject()) {
-            return 0;
-        }
-        if (node.has("mappingId")) {
-            return node.path("mappingId").asInt(0);
-        }
-        if (node.has("mapping_id")) {
-            return node.path("mapping_id").asInt(0);
-        }
-        if (node.has("id")) {
-            return node.path("id").asInt(0);
-        }
-        return 0;
-    }
-
-    private void showErrorAlert(String title, String message) {
-        Platform.runLater(() -> {
-            Alert alert = new Alert(Alert.AlertType.ERROR);
-            alert.setTitle(title);
-            alert.setHeaderText(title);
-            alert.setContentText(message);
-            alert.showAndWait();
-        });
-    }
-
-    private void showInfoAlert(String title, String message) {
-        Platform.runLater(() -> {
-            Alert alert = new Alert(Alert.AlertType.INFORMATION);
-            alert.setTitle(title);
-            alert.setHeaderText(title);
-            alert.setContentText(message);
-            alert.showAndWait();
-        });
-    }
-
     private static <T> ChangeListener<T> onChanged(BiConsumer<T, T> handler) {
         return (observable, oldValue, newValue) -> {
             if (observable == null || Objects.equals(oldValue, newValue)) {
@@ -3170,6 +2766,4 @@ public class DashboardController {
         return onChanged((oldValue, newValue) -> handler.accept(newValue));
     }
 
-
 }
-
