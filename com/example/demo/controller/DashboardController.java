@@ -6,6 +6,7 @@ import com.example.demo.model.SensorRuleConfig;
 import com.example.demo.model.User;
 import com.example.demo.service.ApiService;
 import com.example.demo.service.ExportService;
+import com.example.demo.util.MarkdownRenderer;
 import com.fasterxml.jackson.databind.JsonNode;
 import javafx.beans.value.ChangeListener;
 import javafx.animation.PauseTransition;
@@ -2427,7 +2428,6 @@ public class DashboardController {
          chatHistoryBox.getChildren().add(row);
      }
 
-    private static final Pattern MARKDOWN_INLINE = Pattern.compile("\\[([^]]+)]\\(([^)]+)\\)|\\*\\*(.+?)\\*\\*|\\*(.+?)\\*|`([^`]+)`");
     private static final double CHAT_BUBBLE_VIEWPORT_WIDTH = 580.0;
     private static final double CHAT_BUBBLE_MAX_WIDTH = 560.0;
     private static final double CHAT_BUBBLE_MIN_HEIGHT = 44.0;
@@ -2500,7 +2500,7 @@ public class DashboardController {
     }
 
     private String buildChatBubbleHtml(String markdown, boolean userMessage) {
-        String renderedMarkdown = markdownToHtml(markdown);
+        String renderedMarkdown = MarkdownRenderer.markdownToHtml(markdown);
         String bubbleBg = userMessage ? "#2563eb" : "#f8fafc";
         String bubbleText = userMessage ? "#ffffff" : "#111827";
         String bubbleBorder = userMessage ? "#1d4ed8" : "#d1d5db";
@@ -2579,227 +2579,8 @@ public class DashboardController {
             """.formatted(horizontalAlign, bubbleBg, bubbleText, bubbleBorder, codeBg, bubbleText, codeBg, linkColor, quoteColor, renderedMarkdown);
     }
 
-    private String markdownToHtml(String markdown) {
-        if (markdown == null || markdown.isBlank()) {
-            return "";
-        }
-
-        String normalized = markdown.replace("\r\n", "\n").replace('\r', '\n');
-        StringBuilder html = new StringBuilder();
-        StringBuilder paragraph = new StringBuilder();
-        boolean inCodeBlock = false;
-        boolean inUl = false;
-        boolean inOl = false;
-
-        String[] lines = normalized.split("\n", -1);
-        for (int lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-            String line = lines[lineIndex];
-            String trimmed = line.trim();
-
-            if (trimmed.startsWith("```")) {
-                if (paragraph.length() > 0) {
-                    html.append("<p>").append(renderInlineMarkdown(paragraph.toString())).append("</p>");
-                    paragraph.setLength(0);
-                }
-                if (inUl) {
-                    html.append("</ul>");
-                    inUl = false;
-                }
-                if (inOl) {
-                    html.append("</ol>");
-                    inOl = false;
-                }
-                if (inCodeBlock) {
-                    html.append("</code></pre>");
-                    inCodeBlock = false;
-                } else {
-                    html.append("<pre><code>");
-                    inCodeBlock = true;
-                }
-                continue;
-            }
-
-            if (inCodeBlock) {
-                html.append(escapeHtml(line)).append("\n");
-                continue;
-            }
-
-            if (trimmed.isEmpty()) {
-                if (paragraph.length() > 0) {
-                    html.append("<p>").append(renderInlineMarkdown(paragraph.toString())).append("</p>");
-                    paragraph.setLength(0);
-                }
-
-                String nextNonEmpty = null;
-                for (int nextIndex = lineIndex + 1; nextIndex < lines.length; nextIndex++) {
-                    String candidate = lines[nextIndex].trim();
-                    if (!candidate.isEmpty()) {
-                        nextNonEmpty = candidate;
-                        break;
-                    }
-                }
-
-                boolean nextIsUl = nextNonEmpty != null && nextNonEmpty.matches("^(?:[-*+])\\s+.+");
-                boolean nextIsOl = nextNonEmpty != null && nextNonEmpty.matches("^\\d+\\.\\s+.+");
-
-                if (inUl && !nextIsUl) {
-                    html.append("</ul>");
-                    inUl = false;
-                }
-                if (inOl && !nextIsOl) {
-                    html.append("</ol>");
-                    inOl = false;
-                }
-                continue;
-            }
-
-            if (trimmed.matches("^(?:[-*+])\\s+.+")) {
-                if (paragraph.length() > 0) {
-                    html.append("<p>").append(renderInlineMarkdown(paragraph.toString())).append("</p>");
-                    paragraph.setLength(0);
-                }
-                if (inOl) {
-                    html.append("</ol>");
-                    inOl = false;
-                }
-                if (!inUl) {
-                    html.append("<ul>");
-                    inUl = true;
-                }
-                html.append("<li>").append(renderInlineMarkdown(trimmed.substring(1).trim())).append("</li>");
-                continue;
-            }
-
-            if (trimmed.matches("^\\d+\\.\\s+.+")) {
-                if (paragraph.length() > 0) {
-                    html.append("<p>").append(renderInlineMarkdown(paragraph.toString())).append("</p>");
-                    paragraph.setLength(0);
-                }
-                if (inUl) {
-                    html.append("</ul>");
-                    inUl = false;
-                }
-                if (!inOl) {
-                    html.append("<ol>");
-                    inOl = true;
-                }
-                int dotIndex = trimmed.indexOf('.');
-                String explicitNumber = trimmed.substring(0, dotIndex).trim();
-                String itemContent = trimmed.substring(dotIndex + 1).trim();
-                html.append("<li value=\"")
-                    .append(explicitNumber)
-                    .append("\">")
-                    .append(renderInlineMarkdown(itemContent))
-                    .append("</li>");
-                continue;
-            }
-
-            if (inUl) {
-                html.append("</ul>");
-                inUl = false;
-            }
-            if (inOl) {
-                html.append("</ol>");
-                inOl = false;
-            }
-
-            if (paragraph.length() > 0) {
-                paragraph.append('\n');
-            }
-            paragraph.append(trimmed);
-        }
-
-        if (paragraph.length() > 0) {
-            html.append("<p>").append(renderInlineMarkdown(paragraph.toString())).append("</p>");
-        }
-        if (inUl) {
-            html.append("</ul>");
-        }
-        if (inOl) {
-            html.append("</ol>");
-        }
-        if (inCodeBlock) {
-            html.append("</code></pre>");
-        }
-
-        return html.toString();
-    }
-
-    private String renderInlineMarkdown(String text) {
-        if (text == null || text.isEmpty()) {
-            return "";
-        }
-
-        StringBuilder html = new StringBuilder();
-
-        String[] lines = text.split("\\n", -1);
-        for (int lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-            String line = lines[lineIndex];
-            Matcher matcher = MARKDOWN_INLINE.matcher(line);
-            int lastIndex = 0;
-
-            while (matcher.find()) {
-                html.append(escapeHtml(line.substring(lastIndex, matcher.start())));
-
-                if (matcher.group(1) != null && matcher.group(2) != null) {
-                    String label = escapeHtml(matcher.group(1));
-                    String href = sanitizeHref(matcher.group(2));
-                    if (href.isBlank()) {
-                        html.append(escapeHtml(matcher.group(0)));
-                    } else {
-                        html.append("<a href=\"")
-                            .append(escapeHtml(href))
-                            .append("\" target=\"_blank\" rel=\"noopener noreferrer\">")
-                            .append(label)
-                            .append("</a>");
-                    }
-                } else if (matcher.group(3) != null) {
-                    html.append("<strong>").append(escapeHtml(matcher.group(3))).append("</strong>");
-                } else if (matcher.group(4) != null) {
-                    html.append("<em>").append(escapeHtml(matcher.group(4))).append("</em>");
-                } else if (matcher.group(5) != null) {
-                    html.append("<code>").append(escapeHtml(matcher.group(5))).append("</code>");
-                }
-
-                lastIndex = matcher.end();
-            }
-
-            html.append(escapeHtml(line.substring(lastIndex)));
-            if (lineIndex < lines.length - 1) {
-                html.append("<br>");
-            }
-        }
-        return html.toString();
-    }
-
     private double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(max, value));
-    }
-
-    private String sanitizeHref(String href) {
-        if (href == null) {
-            return "";
-        }
-
-        String trimmed = href.trim();
-        if (trimmed.isEmpty()) {
-            return "";
-        }
-
-        try {
-            java.net.URI uri = java.net.URI.create(trimmed);
-            String scheme = uri.getScheme();
-            if (scheme == null || scheme.isBlank()) {
-                return trimmed;
-            }
-            if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme) || "mailto".equalsIgnoreCase(scheme)) {
-                return trimmed;
-            }
-        } catch (Exception ignored) {
-            return "";
-        }
-
-        return "";
     }
 
     private void clearChatMessages() {
@@ -2977,6 +2758,18 @@ public class DashboardController {
     private String buildPlaceholderHtml(String message) {
         return "<html><body style='font-family:Segoe UI, sans-serif;display:flex;align-items:center;justify-content:center;height:100%;margin:0;color:#4b5563;background:#ffffff;'>"
             + "<div style='text-align:center;padding:20px;'>" + escapeHtml(message) + "</div></body></html>";
+    }
+
+    private String escapeHtml(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&#39;");
     }
 
     private void ensureGraphWebView() {
@@ -3428,18 +3221,6 @@ public class DashboardController {
         return 0;
     }
 
-    private String escapeHtml(String text) {
-        if (text == null) {
-            return "";
-        }
-        return text
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("\"", "&quot;")
-            .replace("'", "&#39;");
-    }
-
     private void showErrorAlert(String title, String message) {
         Platform.runLater(() -> {
             Alert alert = new Alert(Alert.AlertType.ERROR);
@@ -3526,4 +3307,3 @@ public class DashboardController {
 
 
 }
-
