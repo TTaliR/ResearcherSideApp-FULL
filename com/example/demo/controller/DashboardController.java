@@ -13,6 +13,7 @@ import com.example.demo.model.RuleCardData;
 import com.example.demo.model.DictionaryParameterData;
 import com.example.demo.model.LoggingIntervalDraft;
 import com.example.demo.model.ChatCommandOption;
+import com.example.demo.model.UseCase;
 import com.example.demo.parser.MappingConfigParser;
 import com.example.demo.parser.YellowBookParser;
 import com.example.demo.service.ApiService;
@@ -50,6 +51,7 @@ import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class DashboardController {
     private static final List<String> DEFAULT_USE_CASES = List.of("HeartRate", "MoonAzimuth", "SunAzimuth", "Pollution");
@@ -213,10 +215,7 @@ public class DashboardController {
     private final DashboardState state = DashboardState.getInstance();
     private final ObservableList<User> users = FXCollections.observableArrayList();
     private final ObservableList<String> useCases = FXCollections.observableArrayList();
-    private final Map<String, String> useCaseDescriptions = new HashMap<>();
-    private final Map<String, String> useCaseDisplayNames = new HashMap<>();
-    private final Map<String, Integer> useCaseIdsByNormalizedName = new HashMap<>();
-    private final Map<String, String> useCaseLoggingInterval = new HashMap<>();
+    private final Map<String, UseCase> useCaseRegistry = new HashMap<>();
     private final Map<String, List<DictionaryParameterData>> yellowBookEntries = new LinkedHashMap<>();
     private final List<RuleCardData> allRules = new ArrayList<>();
     private final String chatSessionId = UUID.randomUUID().toString();
@@ -466,10 +465,15 @@ public class DashboardController {
         }
 
         String normalizedKey = FormatUtils.normalizeUseCaseName(selectedUseCase);
-        ruleSensorTypeLabel.setText(toUseCaseLabel(normalizedKey));
-
-        String description = useCaseDescriptions.getOrDefault(normalizedKey, "").trim();
-        ruleSensorTypeDescriptionLabel.setText(description.isEmpty() ? "No description available." : description);
+        UseCase useCase = useCaseRegistry.get(normalizedKey);
+        if (useCase != null) {
+            ruleSensorTypeLabel.setText(useCase.getRawName());
+            String description = useCase.getDescription();
+            ruleSensorTypeDescriptionLabel.setText(description.isEmpty() ? "No description available." : description);
+        } else {
+            ruleSensorTypeLabel.setText(toUseCaseLabel(normalizedKey));
+            ruleSensorTypeDescriptionLabel.setText("No description available.");
+        }
     }
 
 
@@ -831,10 +835,8 @@ public class DashboardController {
                     }
 
                     String normalizedName = FormatUtils.normalizeUseCaseName(createdName);
-
-                    useCaseDescriptions.put(normalizedName, createdDescription);
-                    useCaseDisplayNames.put(normalizedName, createdName);
-                    useCaseIdsByNormalizedName.put(normalizedName, createdUseCaseId);
+                    UseCase newUseCase = new UseCase(createdUseCaseId, createdName, normalizedName, createdDescription, "");
+                    useCaseRegistry.put(normalizedName, newUseCase);
 
                     if (!useCases.contains(createdName)) {
                         useCases.add(createdName);
@@ -848,7 +850,7 @@ public class DashboardController {
                      * First put ID in the map.
                      * Then set selected use case.
                      * The selected-use-case listener calls resolveSelectedUseCaseId(),
-                     * which depends on useCaseIdsByNormalizedName.
+                     * which depends on useCaseRegistry.
                      */
                     state.setSelectedUseCase(createdName);
                     state.setSelectedUseCaseId(createdUseCaseId);
@@ -1381,59 +1383,41 @@ public class DashboardController {
     }
 
     private void loadUseCases() {
-        // Loads use cases with fallbacks; populates normalized UI collections
         ApiService.getInstance().get(ApiService.EP_GET_USECASES, null)
             .thenAccept(response -> {
                 JsonNode useCaseArray = ApiService.getInstance().extractArray(response);
-                LinkedHashMap<String, String> normalizedToDisplay = new LinkedHashMap<>();
-                Map<String, String> loadedDescriptions = new HashMap<>();
-                Map<String, Integer> loadedUseCaseIds = new HashMap<>();
-                Map<String, String> loadedLoggingIntervals = new HashMap<>();
+                useCaseRegistry.clear();
 
                 if (useCaseArray != null && useCaseArray.isArray()) {
                     for (JsonNode useCaseNode : useCaseArray) {
                         String rawName = useCaseNode.path("name").asText("").trim();
-                        String description = useCaseNode.path("description").asText("").trim();
+                        if (rawName.isEmpty()) continue;
+
+                        String normalizedName = FormatUtils.normalizeUseCaseName(rawName);
                         int useCaseId = useCaseNode.path("usecase_id").asInt(0);
-                        if (useCaseId <= 0) {
-                            useCaseId = useCaseNode.path("usecaseid").asInt(0);
-                        }
-                        if (useCaseId <= 0) {
-                            useCaseId = useCaseNode.path("id").asInt(0);
-                        }
-                        if (!rawName.isEmpty()) {
-                            String normalizedName = FormatUtils.normalizeUseCaseName(rawName);
-                            normalizedToDisplay.putIfAbsent(normalizedName, rawName);
-                            loadedDescriptions.put(normalizedName, description);
-                            String loggingInterval = extractLoggingInterval(useCaseNode);
-                            if (!loggingInterval.isEmpty()) {
-                                loadedLoggingIntervals.put(normalizedName, loggingInterval);
-                            }
-                            if (useCaseId > 0) {
-                                loadedUseCaseIds.putIfAbsent(normalizedName, useCaseId);
-                            }
-                        }
+                        if (useCaseId <= 0) useCaseId = useCaseNode.path("usecaseid").asInt(0);
+                        if (useCaseId <= 0) useCaseId = useCaseNode.path("id").asInt(0);
+
+                        UseCase useCase = new UseCase(
+                            useCaseId,
+                            rawName,
+                            normalizedName,
+                            useCaseNode.path("description").asText("").trim(),
+                            extractLoggingInterval(useCaseNode)
+                        );
+                        useCaseRegistry.put(normalizedName, useCase);
                     }
                 }
 
-                if (normalizedToDisplay.isEmpty()) {
+                if (useCaseRegistry.isEmpty()) {
                     for (String defaultUseCase : DEFAULT_USE_CASES) {
-                        normalizedToDisplay.put(FormatUtils.normalizeUseCaseName(defaultUseCase), defaultUseCase);
+                        String normalized = FormatUtils.normalizeUseCaseName(defaultUseCase);
+                        useCaseRegistry.put(normalized, new UseCase(0, defaultUseCase, normalized, "", ""));
                     }
                 }
 
                 Platform.runLater(() -> {
-                    useCases.setAll(normalizedToDisplay.values());
-                    useCaseDescriptions.clear();
-                    useCaseDescriptions.putAll(loadedDescriptions);
-                    useCaseDisplayNames.clear();
-                    useCaseDisplayNames.putAll(normalizedToDisplay);
-                    useCaseIdsByNormalizedName.clear();
-                    useCaseIdsByNormalizedName.putAll(loadedUseCaseIds);
-                    useCaseLoggingInterval.clear();
-                    useCaseLoggingInterval.putAll(loadedLoggingIntervals);
-
-                    // Update both sidebar and topbar with use cases
+                    useCases.setAll(useCaseRegistry.values().stream().map(UseCase::getRawName).collect(Collectors.toList()));
                     leftSidebarController.getUseCases().setAll(useCases);
                     leftSidebarController.getUserUseCaseComboBox().setItems(useCases);
 
@@ -1461,15 +1445,15 @@ public class DashboardController {
         }
 
         String normalized = FormatUtils.normalizeUseCaseName(rawUseCase);
-        for (String candidate : useCases) {
-            if (normalized.equals(FormatUtils.normalizeUseCaseName(candidate))) {
-                return candidate;
-            }
+        UseCase useCase = useCaseRegistry.get(normalized);
+        if (useCase != null) {
+            return useCase.getRawName();
         }
 
-        String fromMap = useCaseDisplayNames.get(normalized);
-        if (fromMap != null && !fromMap.isBlank()) {
-            return fromMap;
+        for (UseCase candidate : useCaseRegistry.values()) {
+            if (normalized.equals(candidate.getNormalizedName())) {
+                return candidate.getRawName();
+            }
         }
 
         String fallback = toUseCaseLabel(normalized);
@@ -1569,8 +1553,12 @@ public class DashboardController {
         }
 
         String normalized = FormatUtils.normalizeUseCaseName(selectedUseCase);
-        Integer knownId = useCaseIdsByNormalizedName.get(normalized);
-        state.setSelectedUseCaseId((knownId != null && knownId > 0) ? knownId : null);
+        UseCase useCase = useCaseRegistry.get(normalized);
+        if (useCase != null) {
+            state.setSelectedUseCaseId(useCase.getId());
+        } else {
+            state.setSelectedUseCaseId(null);
+        }
     }
 
     /**
@@ -1580,8 +1568,11 @@ public class DashboardController {
         if (topBarController.getSelectedUseCaseLabel() != null) {
             topBarController.getSelectedUseCaseLabel().setText((selectedUseCase == null || selectedUseCase.isBlank()) ? "-" : selectedUseCase);
             String selectedKey = FormatUtils.normalizeUseCaseName(selectedUseCase);
-            String desc = useCaseDescriptions.getOrDefault(selectedKey, "").trim();
-            topBarController.getSelectedUseCaseLabel().setTooltip(desc.isEmpty() ? null : new Tooltip(desc));
+            UseCase useCase = useCaseRegistry.get(selectedKey);
+            if (useCase != null) {
+                String desc = useCase.getDescription();
+                topBarController.getSelectedUseCaseLabel().setTooltip(desc.isEmpty() ? null : new Tooltip(desc));
+            }
         }
 
         if (contextUseCaseLabel != null) {
@@ -1624,9 +1615,12 @@ public class DashboardController {
         String displayText = "Not set";
         if (selectedUseCase != null && !selectedUseCase.isBlank()) {
             String normalizedKey = FormatUtils.normalizeUseCaseName(selectedUseCase);
-            String configuredInterval = useCaseLoggingInterval.getOrDefault(normalizedKey, "").trim();
-            if (!configuredInterval.isEmpty()) {
-                displayText = configuredInterval;
+            UseCase useCase = useCaseRegistry.get(normalizedKey);
+            if (useCase != null) {
+                String configuredInterval = useCase.getLoggingInterval();
+                if (!configuredInterval.isEmpty()) {
+                    displayText = configuredInterval;
+                }
             }
         }
 
@@ -1678,29 +1672,24 @@ public class DashboardController {
 
     @FXML
     private void onEditLoggingInterval() {
-        String selectedUseCase = state.getSelectedUseCase();
-        if (selectedUseCase == null || selectedUseCase.isBlank()) {
+        String selectedUseCaseName = state.getSelectedUseCase();
+        if (selectedUseCaseName == null || selectedUseCaseName.isBlank()) {
             AlertUtils.showErrorAlert("Missing Use Case", "Please select a use case before editing logging interval.");
             return;
         }
 
-        String selectedKey = FormatUtils.normalizeUseCaseName(selectedUseCase);
-        Integer useCaseId = state.getSelectedUseCaseId();
-        if (useCaseId == null || useCaseId <= 0) {
-            useCaseId = useCaseIdsByNormalizedName.get(selectedKey);
-            state.setSelectedUseCaseId((useCaseId != null && useCaseId > 0) ? useCaseId : null);
-        }
-
-        if (useCaseId == null || useCaseId <= 0) {
+        String selectedKey = FormatUtils.normalizeUseCaseName(selectedUseCaseName);
+        UseCase useCase = useCaseRegistry.get(selectedKey);
+        if (useCase == null || useCase.getId() <= 0) {
             AlertUtils.showErrorAlert("Missing Use Case Id", "Could not resolve use case id. Refresh use cases and try again.");
             return;
         }
 
-        LoggingIntervalDraft initialDraft = parseLoggingIntervalDraft(useCaseLoggingInterval.get(selectedKey));
+        LoggingIntervalDraft initialDraft = parseLoggingIntervalDraft(useCase.getLoggingInterval());
 
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Edit Logging Interval");
-        dialog.setHeaderText("Set logging interval for " + selectedUseCase + ".");
+        dialog.setHeaderText("Set logging interval for " + selectedUseCaseName + ".");
 
         ButtonType saveButtonType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
@@ -1732,17 +1721,16 @@ public class DashboardController {
             return;
         }
 
-        final int resolvedUseCaseId = useCaseId;
-        ApiService.getInstance().setLoggingInterval(resolvedUseCaseId, interval)
+        ApiService.getInstance().setLoggingInterval(useCase.getId(), interval)
             .thenAccept(success -> Platform.runLater(() -> {
                 if (!success) {
                     AlertUtils.showErrorAlert("Update Failed", "Could not update logging interval. Please try again.");
                     return;
                 }
 
-                useCaseLoggingInterval.put(selectedKey, interval);
-                updateLoggingIntervalDisplay(selectedUseCase);
-                AlertUtils.showInfoAlert("Interval Updated", "Logging interval set to " + interval + " for " + selectedUseCase + ".");
+                useCase.setLoggingInterval(interval);
+                updateLoggingIntervalDisplay(selectedUseCaseName);
+                AlertUtils.showInfoAlert("Interval Updated", "Logging interval set to " + interval + " for " + selectedUseCaseName + ".");
                 loadUseCases();
             }))
             .exceptionally(ex -> {
@@ -1756,7 +1744,7 @@ public class DashboardController {
             .thenAccept(response -> {
                 Platform.runLater(() -> {
                     allRules.clear();
-                    new MappingConfigParser(allRules, useCaseDisplayNames).parseMappingsFromConfiguration(response);
+                    new MappingConfigParser(allRules, useCaseRegistry.values().stream().collect(Collectors.toMap(UseCase::getNormalizedName, UseCase::getRawName))).parseMappingsFromConfiguration(response);
                     renderMappingsForUseCase(state.getSelectedUseCase());
                     refreshRuleSummary();
                 });
@@ -1812,14 +1800,11 @@ public class DashboardController {
             return selectedId;
         }
 
-        if (!useCaseIdsByNormalizedName.isEmpty()) {
-            return useCaseIdsByNormalizedName.values().stream()
-                .filter(id -> id != null && id > 0)
-                .findFirst()
-                .orElse(null);
-        }
-
-        return null;
+        return useCaseRegistry.values().stream()
+            .map(UseCase::getId)
+            .filter(id -> id > 0)
+            .findFirst()
+            .orElse(null);
     }
 
     private void renderYellowBook() {
@@ -2170,7 +2155,10 @@ public class DashboardController {
 
         if ((useCaseId == null || useCaseId <= 0) && selectedUseCase != null && !selectedUseCase.isBlank()) {
             String normalized = FormatUtils.normalizeUseCaseName(selectedUseCase);
-            useCaseId = useCaseIdsByNormalizedName.get(normalized);
+            UseCase useCase = useCaseRegistry.get(normalized);
+            if (useCase != null) {
+                useCaseId = useCase.getId();
+            }
 
             if (useCaseId != null && useCaseId > 0) {
                 state.setSelectedUseCaseId(useCaseId);
@@ -2701,9 +2689,9 @@ public class DashboardController {
             return "Unknown";
         }
 
-        String explicitLabel = useCaseDisplayNames.get(useCaseKey);
-        if (explicitLabel != null && !explicitLabel.isBlank()) {
-            return explicitLabel;
+        UseCase useCase = useCaseRegistry.get(useCaseKey);
+        if (useCase != null) {
+            return useCase.getRawName();
         }
 
         return switch (useCaseKey) {
