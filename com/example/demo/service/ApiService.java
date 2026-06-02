@@ -49,6 +49,8 @@ public class ApiService {
     public static final String EP_SET_USERS = "/edit-users";
     public static final String EP_SCHEDULE = "/schedule";
     public static final String EP_CREATE_USECASE = "/create-usecase";
+    public static final String EP_ASSIGN_USECASE = "/assign-usecase";
+    public static final String EP_ASSIGN_MAPPING = "/assign-mapping";
 
     private static final ApiService INSTANCE = new ApiService();
     private final ObjectMapper mapper;
@@ -141,6 +143,30 @@ public class ApiService {
         payload.put("description", description == null ? "" : description.trim());
 
         return postWithResponse(EP_CREATE_USECASE, payload);
+    }
+
+    public CompletableFuture<Boolean> assignMappingToUser(int userId, int mappingId) {
+        if (userId <= 0 || mappingId <= 0) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("userId", userId);
+        payload.put("mappingId", mappingId);
+
+        return post(EP_ASSIGN_MAPPING, payload);
+    }
+
+    public CompletableFuture<Boolean> assignUseCaseToUser(int userId, int usecaseId) {
+        if (userId <= 0 || usecaseId <= 0) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("userId", userId);
+        payload.put("usecaseId", usecaseId);
+
+        return post(EP_ASSIGN_USECASE, payload);
     }
 
     public CompletableFuture<Boolean> deleteMapping(int mappingId) {

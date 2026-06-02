@@ -9,6 +9,7 @@ import com.example.demo.model.Schedule;
 import com.example.demo.model.ScheduleApiResponse;
 import com.example.demo.model.SensorRuleConfig;
 import com.example.demo.model.User;
+import com.example.demo.model.UserUseCaseMapping;
 import com.example.demo.model.RuleCardData;
 import com.example.demo.model.DictionaryParameterData;
 import com.example.demo.model.LoggingIntervalDraft;
@@ -1360,15 +1361,7 @@ public class DashboardController {
                     if (!node.hasNonNull("userid")) {
                         continue;
                     }
-                    int id = node.path("userid").asInt();
-                    String firstName = node.path("fname").asText("");
-                    String lastName = node.path("lname").asText("");
-                    int activeUsecaseId = node.path("active_usecase_id")
-                        .asInt(node.path("usecaseId").asInt(node.path("usecase_id").asInt(0)));
-                    String usecaseName = node.path("usecase_name")
-                        .asText(node.path("monitoringType").asText(node.path("monitoring_type").asText("")));
-
-                    loaded.add(new User(id, firstName, lastName, activeUsecaseId, usecaseName));
+                    loaded.add(parseUser(node));
                 }
 
                 Platform.runLater(() -> {
@@ -1399,6 +1392,56 @@ public class DashboardController {
                 ex.printStackTrace();
                 return null;
             });
+    }
+
+    private User parseUser(JsonNode node) {
+        int userId = node.path("userid").asInt();
+        String fName = node.path("fname").asText("");
+        String lName = node.path("lname").asText("");
+
+        List<UserUseCaseMapping> mappings = new ArrayList<>();
+
+        JsonNode mappingsNode = node.path("usecase_mappings");
+        if (mappingsNode != null && mappingsNode.isArray()) {
+            for (JsonNode mappingNode : mappingsNode) {
+                int mappingId = mappingNode.path("mapping_id").asInt(0);
+                int feedbackConfigRuleId = mappingNode.path("feedback_config_rule_id").asInt(mappingId);
+                int usecaseId = mappingNode.path("usecase_id").asInt(0);
+                String usecaseName = mappingNode.path("usecase_name").asText("");
+                String usecaseDescription = mappingNode.path("usecase_description").asText("");
+
+                int minvalue = mappingNode.path("minvalue").asInt(0);
+                int maxvalue = mappingNode.path("maxvalue").asInt(0);
+                int minpulses = mappingNode.path("minpulses").asInt(0);
+                int maxpulses = mappingNode.path("maxpulses").asInt(0);
+                int minintensity = mappingNode.path("minintensity").asInt(0);
+                int maxintensity = mappingNode.path("maxintensity").asInt(0);
+                int minduration = mappingNode.path("minduration").asInt(0);
+                int maxduration = mappingNode.path("maxduration").asInt(0);
+                int mininterval = mappingNode.path("mininterval").asInt(0);
+                int maxinterval = mappingNode.path("maxinterval").asInt(0);
+
+                mappings.add(new UserUseCaseMapping(
+                        mappingId,
+                        feedbackConfigRuleId,
+                        usecaseId,
+                        usecaseName,
+                        usecaseDescription,
+                        minvalue,
+                        maxvalue,
+                        minpulses,
+                        maxpulses,
+                        minintensity,
+                        maxintensity,
+                        minduration,
+                        maxduration,
+                        mininterval,
+                        maxinterval
+                ));
+            }
+        }
+
+        return new User(userId, fName, lName, mappings);
     }
 
     private void loadUseCases() {
