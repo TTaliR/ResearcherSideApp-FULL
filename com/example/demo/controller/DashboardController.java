@@ -1530,29 +1530,34 @@ public class DashboardController {
           updateUserAssignmentPanel(user);
       }
 
-      private void updateUserAssignmentPanel(User user) {
-          if (user == null) {
-              leftSidebarController.getSelectedUserForAssignmentLabel().setText("-");
-              leftSidebarController.getCurrentUserUseCaseLabel().setText("-");
-              leftSidebarController.getUserUseCaseComboBox().setValue(null);
-              updateAssignUserUseCaseButtonState();
-              return;
-          }
+    private void updateUserAssignmentPanel(User user) {
+        if (user == null) {
+            leftSidebarController.getSelectedUserForAssignmentLabel().setText("-");
+            leftSidebarController.getCurrentUserUseCaseLabel().setText("-");
+            leftSidebarController.getUserUseCaseComboBox().setValue(null);
+            updateAssignUserUseCaseButtonState();
+            return;
+        }
 
-          String userDisplay = formatUser(user);
-          leftSidebarController.getSelectedUserForAssignmentLabel().setText(userDisplay);
+        String userDisplay = formatUser(user);
+        leftSidebarController.getSelectedUserForAssignmentLabel().setText(userDisplay);
 
-          String displayUsecase = resolveUseCaseDisplayName(user.getUsecaseName());
-          leftSidebarController.getCurrentUserUseCaseLabel().setText(displayUsecase);
+        String displayUsecase = resolveUseCaseDisplayName(user.getUsecaseName());
 
-          if (displayUsecase != null && !displayUsecase.isBlank()) {
-              leftSidebarController.getUserUseCaseComboBox().setValue(displayUsecase);
-          } else if (!leftSidebarController.getUserUseCaseComboBox().getItems().isEmpty()) {
-              leftSidebarController.getUserUseCaseComboBox().setValue(leftSidebarController.getUserUseCaseComboBox().getItems().get(0));
-          }
+        if (displayUsecase == null || displayUsecase.isBlank() || "-".equals(displayUsecase)) {
+            leftSidebarController.getCurrentUserUseCaseLabel().setText("No use case assigned");
+        } else {
+            leftSidebarController.getCurrentUserUseCaseLabel().setText(displayUsecase);
+        }
 
-          updateAssignUserUseCaseButtonState();
-      }
+        if (displayUsecase != null && !displayUsecase.isBlank() && !"-".equals(displayUsecase)) {
+            leftSidebarController.getUserUseCaseComboBox().setValue(displayUsecase);
+        } else if (!leftSidebarController.getUserUseCaseComboBox().getItems().isEmpty()) {
+            leftSidebarController.getUserUseCaseComboBox().setValue(leftSidebarController.getUserUseCaseComboBox().getItems().get(0));
+        }
+
+        updateAssignUserUseCaseButtonState();
+    }
 
       private void updateAssignUserUseCaseButtonState() {
           User selectedUser = leftSidebarController.getSelectedUser();
@@ -1566,47 +1571,57 @@ public class DashboardController {
                   FormatUtils.normalizeUseCaseName(selected).equals(FormatUtils.normalizeUseCaseName(selectedUser.getUsecaseName()));
       }
 
-      @FXML
-      private void onAssignUserUseCase() {
-          User selectedUser = leftSidebarController.getSelectedUser();
-          if (selectedUser == null) {
-              AlertUtils.showErrorAlert("Missing User", "Please select a user from the list before assigning a use case.");
-              return;
-          }
+    @FXML
+    private void onAssignUserUseCase() {
+        User selectedUser = leftSidebarController.getSelectedUser();
+        if (selectedUser == null) {
+            AlertUtils.showErrorAlert("Missing User", "Please select a user from the list before assigning a use case.");
+            return;
+        }
 
-          String selectedUsecase = leftSidebarController.getUserUseCaseComboBox().getValue();
-          if (selectedUsecase == null || selectedUsecase.isBlank()) {
-              AlertUtils.showErrorAlert("Missing Use Case", "Please select a use case to assign.");
-              return;
-          }
+        String selectedUsecase = leftSidebarController.getUserUseCaseComboBox().getValue();
+        if (selectedUsecase == null || selectedUsecase.isBlank()) {
+            AlertUtils.showErrorAlert("Missing Use Case", "Please select a use case to assign.");
+            return;
+        }
 
-          ApiService.getInstance().setMonitoringType(selectedUser.getUserID(), selectedUsecase)
-                  .thenAccept(success -> Platform.runLater(() -> {
-                      if (!success) {
-                          AlertUtils.showErrorAlert("Update Failed", "Could not assign use case to user. Please try again.");
-                          updateAssignUserUseCaseButtonState();
-                          return;
-                      }
+        ApiService.getInstance().setMonitoringType(selectedUser.getUserID(), selectedUsecase)
+                .thenAccept(success -> Platform.runLater(() -> {
+                    if (!success) {
+                        AlertUtils.showErrorAlert("Update Failed", "Could not assign use case to user. Please try again.");
+                        updateAssignUserUseCaseButtonState();
+                        return;
+                    }
 
-                      String resolvedDisplayName = resolveUseCaseDisplayName(selectedUsecase);
-                      leftSidebarController.getCurrentUserUseCaseLabel().setText(resolvedDisplayName);
+                    String resolvedDisplayName = resolveUseCaseDisplayName(selectedUsecase);
 
-                      selectedUser.setUsecaseName(resolvedDisplayName);
+                    // UI state only. The real DB assignment is in User_UC_Mappings.
+                    selectedUser.setUsecaseName(resolvedDisplayName);
 
-                      AlertUtils.showInfoAlert(
-                              "Use Case Assigned",
-                              "User " + selectedUser.getUserID() + " is now assigned to " + resolvedDisplayName + "."
-                      );
+                    UserUseCaseMapping assignedMapping = selectedUser.findMappingForUsecaseName(resolvedDisplayName);
+                    if (assignedMapping != null) {
+                        selectedUser.setCurrentUsecaseId(assignedMapping.getUsecaseId());
+                        selectedUser.setCurrentMappingId(assignedMapping.getMappingId());
+                    }
 
-                      loadUserss();
-                      state.setSelectedUseCase(resolvedDisplayName);
-                  }))
-                  .exceptionally(ex -> {
-                      AlertUtils.showErrorAlert("Update Failed", "Failed to assign use case: " + ex.getMessage());
-                      Platform.runLater(this::updateAssignUserUseCaseButtonState);
-                      return null;
-                  });
-      }
+                    leftSidebarController.getCurrentUserUseCaseLabel().setText(resolvedDisplayName);
+
+                    AlertUtils.showInfoAlert(
+                            "Use Case Assigned",
+                            "User " + selectedUser.getUserID() + " is now assigned to " + resolvedDisplayName + "."
+                    );
+
+                    loadUserss();
+                    state.setSelectedUseCase(resolvedDisplayName);
+                }))
+                .exceptionally(ex -> {
+                    Platform.runLater(() -> {
+                        AlertUtils.showErrorAlert("Update Failed", "Failed to assign use case: " + ex.getMessage());
+                        updateAssignUserUseCaseButtonState();
+                    });
+                    return null;
+                });
+    }
 
     private void resolveSelectedUseCaseId(String selectedUseCase) {
         if (selectedUseCase == null || selectedUseCase.isBlank()) {

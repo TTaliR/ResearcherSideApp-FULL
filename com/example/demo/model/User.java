@@ -10,13 +10,20 @@ public class User {
    private final SimpleIntegerProperty userID;
    private final SimpleStringProperty fName;
    private final SimpleStringProperty lName;
+
+   /*
+    * UI-level current use case/mapping.
+    * These are NOT database columns.
+    * They are derived from usecaseMappings or from the user's current UI selection.
+    */
+   private final SimpleIntegerProperty currentUsecaseId;
+   private final SimpleStringProperty currentUsecaseName;
+   private final SimpleIntegerProperty currentMappingId;
+
    private final List<UserUseCaseMapping> usecaseMappings;
 
    public User(int userID, String fName, String lName) {
-      this.userID = new SimpleIntegerProperty(userID);
-      this.fName = new SimpleStringProperty(fName);
-      this.lName = new SimpleStringProperty(lName);
-      this.usecaseMappings = new ArrayList<>();
+      this(userID, fName, lName, new ArrayList<>());
    }
 
    public User(int userID, String fName, String lName, List<UserUseCaseMapping> usecaseMappings) {
@@ -24,6 +31,12 @@ public class User {
       this.fName = new SimpleStringProperty(fName);
       this.lName = new SimpleStringProperty(lName);
       this.usecaseMappings = usecaseMappings == null ? new ArrayList<>() : new ArrayList<>(usecaseMappings);
+
+      UserUseCaseMapping first = getFirstUsecaseMapping();
+
+      this.currentUsecaseId = new SimpleIntegerProperty(first == null ? 0 : first.getUsecaseId());
+      this.currentUsecaseName = new SimpleStringProperty(first == null ? "" : first.getUsecaseName());
+      this.currentMappingId = new SimpleIntegerProperty(first == null ? 0 : first.getMappingId());
    }
 
    public User(int userID, String fName, String lName, String usecaseName) {
@@ -60,8 +73,18 @@ public class User {
 
    public void setUsecaseMappings(List<UserUseCaseMapping> mappings) {
       this.usecaseMappings.clear();
+
       if (mappings != null) {
          this.usecaseMappings.addAll(mappings);
+      }
+
+      UserUseCaseMapping first = getFirstUsecaseMapping();
+      if (first != null) {
+         setCurrentUsecase(first);
+      } else {
+         setCurrentUsecaseId(0);
+         setUsecaseName("");
+         setCurrentMappingId(0);
       }
    }
 
@@ -69,21 +92,91 @@ public class User {
       return usecaseMappings.isEmpty() ? null : usecaseMappings.get(0);
    }
 
-   // Compatibility helper for existing controller code
+   public UserUseCaseMapping findMappingForUsecase(int usecaseId) {
+      for (UserUseCaseMapping mapping : usecaseMappings) {
+         if (mapping.getUsecaseId() == usecaseId) {
+            return mapping;
+         }
+      }
+      return null;
+   }
+
+   public UserUseCaseMapping findMappingForUsecaseName(String usecaseName) {
+      if (usecaseName == null || usecaseName.isBlank()) {
+         return null;
+      }
+
+      for (UserUseCaseMapping mapping : usecaseMappings) {
+         if (usecaseName.equalsIgnoreCase(mapping.getUsecaseName())) {
+            return mapping;
+         }
+      }
+
+      return null;
+   }
+
+   public void setCurrentUsecase(UserUseCaseMapping mapping) {
+      if (mapping == null) {
+         setCurrentUsecaseId(0);
+         setUsecaseName("");
+         setCurrentMappingId(0);
+         return;
+      }
+
+      setCurrentUsecaseId(mapping.getUsecaseId());
+      setUsecaseName(mapping.getUsecaseName());
+      setCurrentMappingId(mapping.getMappingId());
+   }
+
+   public int getCurrentUsecaseId() {
+      return currentUsecaseId.get();
+   }
+
+   public void setCurrentUsecaseId(int usecaseId) {
+      this.currentUsecaseId.set(usecaseId);
+   }
+
+   public SimpleIntegerProperty currentUsecaseIdProperty() {
+      return currentUsecaseId;
+   }
+
+   /*
+    * Compatibility for existing DashboardController code.
+    * This is UI state only, not DB active_usecase_id.
+    */
    public String getUsecaseName() {
-      UserUseCaseMapping first = getFirstUsecaseMapping();
-      return first == null ? "" : first.getUsecaseName();
+      return currentUsecaseName.get();
    }
 
-   // Compatibility helper for existing controller code
+   /*
+    * Compatibility for existing DashboardController code.
+    * This is UI state only, not DB active_usecase_id.
+    */
+   public void setUsecaseName(String usecaseName) {
+      this.currentUsecaseName.set(usecaseName == null ? "" : usecaseName);
+   }
+
+   public SimpleStringProperty currentUsecaseNameProperty() {
+      return currentUsecaseName;
+   }
+
    public int getUsecaseId() {
-      UserUseCaseMapping first = getFirstUsecaseMapping();
-      return first == null ? 0 : first.getUsecaseId();
+      return getCurrentUsecaseId();
    }
 
-   // Compatibility helper for existing controller code
+   public int getCurrentMappingId() {
+      return currentMappingId.get();
+   }
+
+   public void setCurrentMappingId(int mappingId) {
+      this.currentMappingId.set(mappingId);
+   }
+
    public int getMappingId() {
-      UserUseCaseMapping first = getFirstUsecaseMapping();
-      return first == null ? 0 : first.getMappingId();
+      return getCurrentMappingId();
+   }
+
+   public SimpleIntegerProperty currentMappingIdProperty() {
+      return currentMappingId;
    }
 }
