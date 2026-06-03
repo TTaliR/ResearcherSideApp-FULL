@@ -18,6 +18,10 @@ public class User {
       this.usecaseName = new SimpleStringProperty(usecaseName == null ? "" : usecaseName);
    }
 
+   public User(int userID, String fName, String lName, String usecaseName) {
+      this(userID, fName, lName, 0, usecaseName);
+   }
+
    public int getUserID() {
       return this.userID.get();
    }

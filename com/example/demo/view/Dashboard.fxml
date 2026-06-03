@@ -15,6 +15,7 @@
 <?import javafx.scene.control.TableView?>
 <?import javafx.scene.control.TextField?>
 <?import javafx.scene.control.ToggleButton?>
+<?import javafx.scene.control.Tooltip?>
 <?import javafx.scene.layout.AnchorPane?>
 <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.FlowPane?>
@@ -191,7 +192,7 @@
                                 </TableView>
                                 <HBox spacing="8.0" alignment="CENTER_LEFT">
                                     <Label text="Schedule ID:" />
-                                    <TextField fx:id="scheduleIdField" promptText="(for edit/activate)" prefWidth="90" />
+                                <TextField fx:id="scheduleIdField" promptText="(for edit/activate)" prefWidth="90" disable="true" />
                                     <Label text="User ID:" />
                                     <TextField fx:id="userIdField" promptText="e.g. 100" prefWidth="80" />
                                     <Label text="Interval:" />
@@ -199,7 +200,11 @@
                                     <Label text="Measure:" />
                                     <ComboBox fx:id="measureTypeComboBox" prefWidth="120" promptText="Select" />
                                     <Label text="Trigger %:" />
-                                    <TextField fx:id="triggerPercentageField" promptText="e.g. 15" prefWidth="70" />
+                                    <TextField fx:id="triggerPercentageField" promptText="e.g. 15 or -15" prefWidth="95">
+                                        <tooltip>
+                                            <Tooltip text="Use a negative % to lower the vibration threshold." />
+                                        </tooltip>
+                                    </TextField>
                                 </HBox>
                                 <HBox spacing="8.0">
                                     <Button text="Add" onAction="#onAddSchedule" styleClass="primary-button" />

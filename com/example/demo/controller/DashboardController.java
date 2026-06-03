@@ -321,7 +321,17 @@ public class DashboardController {
             if (schedulesTable != null) {
                 schedulesTable.getSelectionModel().selectedItemProperty().addListener(onNewValueChanged(selectedSchedule -> {
                     if (selectedSchedule != null) {
+                        if (scheduleIdField != null) scheduleIdField.setDisable(false);
                         populateScheduleFields(selectedSchedule);
+                    } else {
+                        if (scheduleIdField != null) {
+                            scheduleIdField.setDisable(true);
+                            scheduleIdField.clear();
+                        }
+                        User currentUser = state.getSelectedUsers();
+                        if (currentUser != null && userIdField != null) {
+                            userIdField.setText(String.valueOf(currentUser.getUserID()));
+                        }
                     }
                 }));
             }
@@ -1324,7 +1334,14 @@ public class DashboardController {
             scheduleGraphUpdate();
         }));
 
-        state.selectedUsersProperty().addListener(onNewValueChanged(newValue -> refreshRuleSummary()));
+        state.selectedUsersProperty().addListener(onNewValueChanged(newValue -> {
+            refreshRuleSummary();
+            if (newValue != null && (schedulesTable == null || schedulesTable.getSelectionModel().getSelectedItem() == null)) {
+                if (userIdField != null) {
+                    userIdField.setText(String.valueOf(newValue.getUserID()));
+                }
+            }
+        }));
     }
 
     private void loadUserss() {
@@ -1346,8 +1363,10 @@ public class DashboardController {
                     int id = node.path("userid").asInt();
                     String firstName = node.path("fname").asText("");
                     String lastName = node.path("lname").asText("");
-                    int activeUsecaseId = node.path("active_usecase_id").asInt(0);
-                    String usecaseName = node.path("usecase_name").asText("");
+                    int activeUsecaseId = node.path("active_usecase_id")
+                        .asInt(node.path("usecaseId").asInt(node.path("usecase_id").asInt(0)));
+                    String usecaseName = node.path("usecase_name")
+                        .asText(node.path("monitoringType").asText(node.path("monitoring_type").asText("")));
 
                     loaded.add(new User(id, firstName, lastName, activeUsecaseId, usecaseName));
                 }
