@@ -15,6 +15,7 @@ import java.util.Objects;
 public class SharedUiFactory {
     private static final String DELETE_ICON_PATH = "/com/example/demo/images/delete.png";
     private static final String SETTINGS_ICON_PATH = "/com/example/demo/images/settings.png";
+    private static final String COPY_ICON_PATH = "/com/example/demo/images/copy-icon.png";
 
     public static Button createDeleteIconButton(String tooltipText) {
         Button button = new Button();
@@ -60,6 +61,30 @@ public class SharedUiFactory {
             button.setGraphic(imageView);
         } else {
             button.setText("Edit");
+        }
+
+        return button;
+    }
+
+    public static Button createCopyIconButton(String tooltipText) {
+        Button button = new Button();
+        button.getStyleClass().add("mapping-delete-button");
+        button.setTooltip(new Tooltip(tooltipText));
+
+        Image icon = null;
+        try {
+            icon = new Image(Objects.requireNonNull(SharedUiFactory.class.getResourceAsStream(COPY_ICON_PATH)));
+        } catch (Exception ignored) {
+        }
+
+        if (icon != null && !icon.isError()) {
+            ImageView imageView = new ImageView(icon);
+            imageView.setPreserveRatio(true);
+            imageView.setFitWidth(14);
+            imageView.setFitHeight(14);
+            button.setGraphic(imageView);
+        } else {
+            button.setText("Copy");
         }
 
         return button;

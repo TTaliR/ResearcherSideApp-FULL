@@ -376,3 +376,25 @@
     -fx-border-color: #2563eb;
     -fx-background-color: #f8fbff;
 }
+
+.segmented-button-bar > .toggle-button {
+    -fx-background-color: #f3f5f8;
+    -fx-text-fill: #213246;
+    -fx-border-color: #cfd8e4;
+    -fx-border-radius: 0;
+    -fx-background-insets: 0;
+}
+
+.segmented-button-bar > .toggle-button:first-child {
+    -fx-border-radius: 6 0 0 6;
+}
+
+.segmented-button-bar > .toggle-button:last-child {
+    -fx-border-radius: 0 6 6 0;
+}
+
+.segmented-button-bar > .toggle-button:selected {
+    -fx-background-color: #2563eb;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+}
