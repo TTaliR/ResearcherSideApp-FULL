@@ -40,7 +40,8 @@ public class User {
    }
 
    public User(int userID, String fName, String lName, String usecaseName) {
-      this(userID, fName, lName, 0, usecaseName);
+      this(userID, fName, lName);
+      setUsecaseName(usecaseName);
    }
 
    public int getUserID() {
