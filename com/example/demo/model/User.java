@@ -39,6 +39,11 @@ public class User {
       this.currentMappingId = new SimpleIntegerProperty(first == null ? 0 : first.getEffectiveMappingId());
    }
 
+   public User(int userID, String fName, String lName, String usecaseName) {
+      this(userID, fName, lName);
+      setUsecaseName(usecaseName);
+   }
+
    public int getUserID() {
       return this.userID.get();
    }
