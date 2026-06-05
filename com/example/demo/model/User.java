@@ -182,6 +182,7 @@ public class User {
 
    @Override
    public String toString() {
-      return getUserID() + " - " + getFName() + " " + getLName();
+      String name = (getFName() + " " + getLName()).trim();
+      return name.isEmpty() ? String.valueOf(getUserID()) : getUserID() + " - " + name;
    }
 }
