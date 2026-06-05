@@ -1717,10 +1717,16 @@ public class DashboardController {
             return;
         }
 
-        ApiService.getInstance().assignMappingToUser(selectedUser.getUserID(), selectedRule.mappingId)
+        int selectedUsecaseId = resolveUseCaseId(selectedUsecase);
+        if (selectedUsecaseId <= 0) {
+            AlertUtils.showErrorAlert("Missing Use Case", "Could not resolve use case id for " + selectedUsecase + ".");
+            return;
+        }
+
+        ApiService.getInstance().assignUseCaseToUser(selectedUser.getUserID(), selectedUsecaseId)
                 .thenAccept(success -> Platform.runLater(() -> {
                     if (!success) {
-                        AlertUtils.showErrorAlert("Update Failed", "Could not assign mapping to user. Please try again.");
+                        AlertUtils.showErrorAlert("Update Failed", "Could not assign use case to user. Please try again.");
                         updateAssignUserUseCaseButtonState();
                         return;
                     }
@@ -1728,8 +1734,7 @@ public class DashboardController {
                     String resolvedDisplayName = resolveUseCaseDisplayName(selectedUsecase);
 
                     selectedUser.setUsecaseName(resolvedDisplayName);
-                    selectedUser.setCurrentUsecaseId(resolveUseCaseId(selectedUsecase));
-                    selectedUser.setCurrentMappingId(selectedRule.mappingId);
+                    selectedUser.setCurrentUsecaseId(selectedUsecaseId);
 
                     leftSidebarController.getCurrentUserUseCaseLabel().setText(resolvedDisplayName);
 
@@ -1743,7 +1748,7 @@ public class DashboardController {
                 }))
                 .exceptionally(ex -> {
                     Platform.runLater(() -> {
-                        AlertUtils.showErrorAlert("Update Failed", "Failed to assign mapping: " + ex.getMessage());
+                        AlertUtils.showErrorAlert("Update Failed", "Failed to assign use case: " + ex.getMessage());
                         updateAssignUserUseCaseButtonState();
                     });
                     return null;
