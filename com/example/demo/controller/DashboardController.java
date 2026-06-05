@@ -1357,6 +1357,8 @@ public class DashboardController {
 
                      leftSidebarController.getUsersSidebarList().getItems().setAll(users);
                      refreshUsersForSelectedUseCase(selectedUserId);
+                     renderMappingsForUseCase(state.getSelectedUseCase());
+                     refreshRuleSummary();
                  });
             })
             .exceptionally(ex -> {
@@ -1375,10 +1377,7 @@ public class DashboardController {
         JsonNode mappingsNode = node.path("usecase_mappings");
         if (mappingsNode != null && mappingsNode.isArray()) {
             for (JsonNode mappingNode : mappingsNode) {
-                int mappingId = mappingNode.path("mapping_id").asInt(0);
-                if (mappingId <= 0) {
-                    mappingId = mappingNode.path("id").asInt(0);
-                }
+                int mappingId = readUserMappingRowId(mappingNode);
                 int feedbackConfigRuleId = readUserMappingFeedbackRuleId(mappingNode, mappingId);
                 int usecaseId = readUserMappingUseCaseId(mappingNode);
                 String usecaseName = readUserMappingUseCaseName(mappingNode);
@@ -1431,10 +1430,7 @@ public class DashboardController {
             return null;
         }
 
-        int mappingId = node.path("mapping_id").asInt(0);
-        if (mappingId <= 0) {
-            mappingId = node.path("id").asInt(0);
-        }
+        int mappingId = readUserMappingRowId(node);
         int feedbackConfigRuleId = readUserMappingFeedbackRuleId(node, mappingId);
         String usecaseDescription = node.path("usecase_description").asText("");
         if (usecaseDescription.isBlank()) {
@@ -1458,6 +1454,20 @@ public class DashboardController {
                 node.path("mininterval").asInt(0),
                 node.path("maxinterval").asInt(0)
         );
+    }
+
+    private int readUserMappingRowId(JsonNode mappingNode) {
+        int mappingId = mappingNode.path("mapping_id").asInt(0);
+        if (mappingId <= 0) {
+            mappingId = mappingNode.path("user_mapping_id").asInt(0);
+        }
+        if (mappingId <= 0) {
+            mappingId = mappingNode.path("userMappingId").asInt(0);
+        }
+        if (mappingId <= 0 && mappingNode.has("id") && !mappingNode.has("userid")) {
+            mappingId = mappingNode.path("id").asInt(0);
+        }
+        return mappingId;
     }
 
     private int readUserMappingFeedbackRuleId(JsonNode mappingNode, int fallback) {
@@ -2455,8 +2465,9 @@ public class DashboardController {
             Label intensity = new Label("Intensity: " + rule.intensityLabel);
             Label duration = new Label("Duration: " + rule.durationLabel);
             Label interval = new Label("Interval: " + rule.intervalLabel);
+            Node assignedUsers = createMappingAssignedUsersNode(rule);
 
-            card.getChildren().addAll(titleRow, pulses, intensity, duration, interval);
+            card.getChildren().addAll(titleRow, pulses, intensity, duration, interval, assignedUsers);
             card.setOnMouseClicked(event -> {
                 if (event.getTarget() instanceof Button) {
                     return;
@@ -2465,6 +2476,68 @@ public class DashboardController {
             });
             mappingsFlowPane.getChildren().add(card);
         }
+    }
+
+    private Node createMappingAssignedUsersNode(RuleCardData rule) {
+        List<User> assignedUsers = findUsersAssignedToRule(rule);
+
+        if (assignedUsers.isEmpty()) {
+            Label none = new Label("Assigned user: None");
+            none.getStyleClass().add("mapping-assigned-muted");
+            return none;
+        }
+
+        if (assignedUsers.size() == 1) {
+            Label single = new Label("Assigned user: " + formatUser(assignedUsers.get(0)));
+            single.getStyleClass().add("mapping-assigned-label");
+            single.setWrapText(true);
+            return single;
+        }
+
+        VBox usersBox = new VBox(4);
+        usersBox.getStyleClass().add("mapping-assigned-list");
+        for (User user : assignedUsers) {
+            Label userLabel = new Label(formatUser(user));
+            userLabel.getStyleClass().add("mapping-assigned-user");
+            userLabel.setWrapText(true);
+            usersBox.getChildren().add(userLabel);
+        }
+
+        TitledPane usersPane = new TitledPane("Assigned users (" + assignedUsers.size() + ")", usersBox);
+        usersPane.getStyleClass().add("mapping-assigned-pane");
+        usersPane.setExpanded(false);
+        usersPane.setAnimated(false);
+        usersPane.setOnMouseClicked(event -> event.consume());
+        return usersPane;
+    }
+
+    private List<User> findUsersAssignedToRule(RuleCardData rule) {
+        if (rule == null || rule.mappingId <= 0) {
+            return List.of();
+        }
+
+        return users.stream()
+                .filter(user -> user.getUsecaseMappings().stream()
+                        .anyMatch(mapping -> isUserMappingAssignedToRule(mapping, rule)))
+                .sorted(Comparator.comparingInt(User::getUserID))
+                .toList();
+    }
+
+    private boolean isUserMappingAssignedToRule(UserUseCaseMapping mapping, RuleCardData rule) {
+        if (mapping == null || rule == null || rule.mappingId <= 0) {
+            return false;
+        }
+
+        boolean sameMapping = mapping.getFeedbackConfigRuleId() == rule.mappingId
+                || mapping.getMappingId() == rule.mappingId
+                || mapping.getEffectiveMappingId() == rule.mappingId;
+        if (!sameMapping) {
+            return false;
+        }
+
+        String ruleUseCaseKey = rule.useCaseKey == null ? "" : rule.useCaseKey;
+        String mappingUseCaseKey = resolveMappingUseCaseKey(mapping);
+        return ruleUseCaseKey.isBlank() || mappingUseCaseKey.isBlank() || ruleUseCaseKey.equals(mappingUseCaseKey);
     }
 
     private void selectMappingForEdit(RuleCardData rule) {

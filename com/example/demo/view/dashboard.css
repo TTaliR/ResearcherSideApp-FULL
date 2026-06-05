@@ -316,6 +316,49 @@
     -fx-text-fill: #1f2f43;
 }
 
+.mapping-assigned-label {
+    -fx-text-fill: #334155;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-padding: 6 0 0 0;
+}
+
+.mapping-assigned-muted {
+    -fx-text-fill: #7b8794;
+    -fx-font-size: 12px;
+    -fx-padding: 6 0 0 0;
+}
+
+.mapping-assigned-list {
+    -fx-padding: 4 0 2 14;
+}
+
+.mapping-assigned-user {
+    -fx-text-fill: #334155;
+    -fx-font-size: 12px;
+}
+
+.mapping-assigned-pane {
+    -fx-padding: 4 0 0 0;
+}
+
+.mapping-assigned-pane > .title {
+    -fx-background-color: transparent;
+    -fx-padding: 4 0 2 0;
+}
+
+.mapping-assigned-pane > .title > .text {
+    -fx-fill: #334155;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.mapping-assigned-pane > *.content {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-padding: 0;
+}
+
 .mapping-edit-button {
     -fx-background-color: #eef4ff;
     -fx-text-fill: #1d4ed8;
