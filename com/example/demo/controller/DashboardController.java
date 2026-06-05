@@ -9,6 +9,7 @@ import com.example.demo.model.Schedule;
 import com.example.demo.model.ScheduleApiResponse;
 import com.example.demo.model.SensorRuleConfig;
 import com.example.demo.model.User;
+import com.example.demo.model.UserUseCaseMapping;
 import com.example.demo.model.RuleCardData;
 import com.example.demo.model.DictionaryParameterData;
 import com.example.demo.model.LoggingIntervalDraft;
@@ -271,6 +272,10 @@ public class DashboardController {
         // Setup topbar callbacks
         topBarController.setOnUserSelected(newValue -> {
             if (newValue == null) {
+                state.setSelectedUsers(null);
+                contextUsersLabel.setText("-");
+                syncMonitoringEditorToSelectedUser(null);
+                scheduleGraphUpdate();
                 return;
             }
             state.setSelectedUsers(newValue);
@@ -321,17 +326,7 @@ public class DashboardController {
             if (schedulesTable != null) {
                 schedulesTable.getSelectionModel().selectedItemProperty().addListener(onNewValueChanged(selectedSchedule -> {
                     if (selectedSchedule != null) {
-                        if (scheduleIdField != null) scheduleIdField.setDisable(false);
                         populateScheduleFields(selectedSchedule);
-                    } else {
-                        if (scheduleIdField != null) {
-                            scheduleIdField.setDisable(true);
-                            scheduleIdField.clear();
-                        }
-                        User currentUser = state.getSelectedUsers();
-                        if (currentUser != null && userIdField != null) {
-                            userIdField.setText(String.valueOf(currentUser.getUserID()));
-                        }
                     }
                 }));
             }
@@ -1334,14 +1329,7 @@ public class DashboardController {
             scheduleGraphUpdate();
         }));
 
-        state.selectedUsersProperty().addListener(onNewValueChanged(newValue -> {
-            refreshRuleSummary();
-            if (newValue != null && (schedulesTable == null || schedulesTable.getSelectionModel().getSelectedItem() == null)) {
-                if (userIdField != null) {
-                    userIdField.setText(String.valueOf(newValue.getUserID()));
-                }
-            }
-        }));
+        state.selectedUsersProperty().addListener(onNewValueChanged(newValue -> refreshRuleSummary()));
     }
 
     private void loadUserss() {
@@ -1360,15 +1348,7 @@ public class DashboardController {
                     if (!node.hasNonNull("userid")) {
                         continue;
                     }
-                    int id = node.path("userid").asInt();
-                    String firstName = node.path("fname").asText("");
-                    String lastName = node.path("lname").asText("");
-                    int activeUsecaseId = node.path("active_usecase_id")
-                        .asInt(node.path("usecaseId").asInt(node.path("usecase_id").asInt(0)));
-                    String usecaseName = node.path("usecase_name")
-                        .asText(node.path("monitoringType").asText(node.path("monitoring_type").asText("")));
-
-                    loaded.add(new User(id, firstName, lastName, activeUsecaseId, usecaseName));
+                    loaded.add(parseUser(node));
                 }
 
                 Platform.runLater(() -> {
@@ -1376,29 +1356,178 @@ public class DashboardController {
                      leftSidebarController.getUsersCountLabel().setText(String.valueOf(users.size()));
 
                      leftSidebarController.getUsersSidebarList().getItems().setAll(users);
-                     topBarController.getUsers().setAll(users);
-
-                     User restoredSelection = findUserById(selectedUserId);
-                     if (restoredSelection != null) {
-                         topBarController.setSelectedUser(restoredSelection);
-                         leftSidebarController.selectUser(restoredSelection);
-                         syncMonitoringEditorToSelectedUser(topBarController.getSelectedUser());
-                     } else if (!users.isEmpty()) {
-                         topBarController.setSelectedUser(users.get(0));
-                         leftSidebarController.selectUser(users.get(0));
-                         syncMonitoringEditorToSelectedUser(topBarController.getSelectedUser());
-                     } else {
-                         topBarController.setSelectedUser(null);
-                         leftSidebarController.getUsersSidebarList().getSelectionModel().clearSelection();
-                         syncMonitoringEditorToSelectedUser(null);
-                         contextUsersLabel.setText("-");
-                     }
+                     refreshUsersForSelectedUseCase(selectedUserId);
                  });
             })
             .exceptionally(ex -> {
                 ex.printStackTrace();
                 return null;
             });
+    }
+
+    private User parseUser(JsonNode node) {
+        int userId = node.path("userid").asInt();
+        String fName = node.path("fname").asText("");
+        String lName = node.path("lname").asText("");
+
+        List<UserUseCaseMapping> mappings = new ArrayList<>();
+
+        JsonNode mappingsNode = node.path("usecase_mappings");
+        if (mappingsNode != null && mappingsNode.isArray()) {
+            for (JsonNode mappingNode : mappingsNode) {
+                int mappingId = mappingNode.path("mapping_id").asInt(0);
+                if (mappingId <= 0) {
+                    mappingId = mappingNode.path("id").asInt(0);
+                }
+                int feedbackConfigRuleId = readUserMappingFeedbackRuleId(mappingNode, mappingId);
+                int usecaseId = readUserMappingUseCaseId(mappingNode);
+                String usecaseName = readUserMappingUseCaseName(mappingNode);
+                String usecaseDescription = readNestedText(mappingNode, "usecase", "description");
+
+                int minvalue = mappingNode.path("minvalue").asInt(0);
+                int maxvalue = mappingNode.path("maxvalue").asInt(0);
+                int minpulses = mappingNode.path("minpulses").asInt(0);
+                int maxpulses = mappingNode.path("maxpulses").asInt(0);
+                int minintensity = mappingNode.path("minintensity").asInt(0);
+                int maxintensity = mappingNode.path("maxintensity").asInt(0);
+                int minduration = mappingNode.path("minduration").asInt(0);
+                int maxduration = mappingNode.path("maxduration").asInt(0);
+                int mininterval = mappingNode.path("mininterval").asInt(0);
+                int maxinterval = mappingNode.path("maxinterval").asInt(0);
+
+                mappings.add(new UserUseCaseMapping(
+                        mappingId,
+                        feedbackConfigRuleId,
+                        usecaseId,
+                        usecaseName,
+                        usecaseDescription,
+                        minvalue,
+                        maxvalue,
+                        minpulses,
+                        maxpulses,
+                        minintensity,
+                        maxintensity,
+                        minduration,
+                        maxduration,
+                        mininterval,
+                        maxinterval
+                ));
+            }
+        }
+        if (mappings.isEmpty()) {
+            UserUseCaseMapping flatMapping = parseFlatUserMapping(node);
+            if (flatMapping != null) {
+                mappings.add(flatMapping);
+            }
+        }
+
+        return new User(userId, fName, lName, mappings);
+    }
+
+    private UserUseCaseMapping parseFlatUserMapping(JsonNode node) {
+        int usecaseId = readUserMappingUseCaseId(node);
+        String usecaseName = readUserMappingUseCaseName(node);
+        if (usecaseId <= 0 && usecaseName.isBlank()) {
+            return null;
+        }
+
+        int mappingId = node.path("mapping_id").asInt(0);
+        if (mappingId <= 0) {
+            mappingId = node.path("id").asInt(0);
+        }
+        int feedbackConfigRuleId = readUserMappingFeedbackRuleId(node, mappingId);
+        String usecaseDescription = node.path("usecase_description").asText("");
+        if (usecaseDescription.isBlank()) {
+            usecaseDescription = node.path("usecaseDescription").asText("");
+        }
+
+        return new UserUseCaseMapping(
+                mappingId,
+                feedbackConfigRuleId,
+                usecaseId,
+                usecaseName,
+                usecaseDescription,
+                node.path("minvalue").asInt(0),
+                node.path("maxvalue").asInt(0),
+                node.path("minpulses").asInt(0),
+                node.path("maxpulses").asInt(0),
+                node.path("minintensity").asInt(0),
+                node.path("maxintensity").asInt(0),
+                node.path("minduration").asInt(0),
+                node.path("maxduration").asInt(0),
+                node.path("mininterval").asInt(0),
+                node.path("maxinterval").asInt(0)
+        );
+    }
+
+    private int readUserMappingFeedbackRuleId(JsonNode mappingNode, int fallback) {
+        int feedbackRuleId = mappingNode.path("feedback_config_rule_id").asInt(0);
+        if (feedbackRuleId <= 0) {
+            feedbackRuleId = mappingNode.path("feedbackConfigRuleId").asInt(0);
+        }
+        if (feedbackRuleId <= 0) {
+            feedbackRuleId = mappingNode.path("rule_id").asInt(0);
+        }
+        if (feedbackRuleId <= 0) {
+            feedbackRuleId = readNestedInt(mappingNode, "feedback_config_rule", "id");
+        }
+        if (feedbackRuleId <= 0) {
+            feedbackRuleId = readNestedInt(mappingNode, "rule", "id");
+        }
+        return feedbackRuleId <= 0 ? fallback : feedbackRuleId;
+    }
+
+    private int readUserMappingUseCaseId(JsonNode mappingNode) {
+        int usecaseId = mappingNode.path("usecase_id").asInt(0);
+        if (usecaseId <= 0) {
+            usecaseId = mappingNode.path("usecaseId").asInt(0);
+        }
+        if (usecaseId <= 0) {
+            usecaseId = mappingNode.path("rule_usecase_id").asInt(0);
+        }
+        if (usecaseId <= 0) {
+            usecaseId = readNestedInt(mappingNode, "feedback_config_rule", "usecase_id");
+        }
+        if (usecaseId <= 0) {
+            usecaseId = readNestedInt(mappingNode, "rule", "usecase_id");
+        }
+        if (usecaseId <= 0) {
+            usecaseId = readNestedInt(mappingNode, "usecase", "usecase_id");
+        }
+        return usecaseId;
+    }
+
+    private String readUserMappingUseCaseName(JsonNode mappingNode) {
+        String usecaseName = mappingNode.path("usecase_name").asText("");
+        if (usecaseName.isBlank()) {
+            usecaseName = mappingNode.path("usecaseName").asText("");
+        }
+        if (usecaseName.isBlank()) {
+            usecaseName = mappingNode.path("rule_usecase_name").asText("");
+        }
+        if (usecaseName.isBlank()) {
+            usecaseName = mappingNode.path("monitoringType").asText("");
+        }
+        if (usecaseName.isBlank()) {
+            usecaseName = readNestedText(mappingNode, "usecase", "name");
+        }
+        if (usecaseName.isBlank()) {
+            usecaseName = readNestedText(mappingNode, "feedback_config_rule", "usecase_name");
+        }
+        if (usecaseName.isBlank()) {
+            usecaseName = readNestedText(mappingNode, "rule", "usecase_name");
+        }
+        return usecaseName;
+    }
+
+    private int readNestedInt(JsonNode node, String objectName, String fieldName) {
+        JsonNode nested = node.path(objectName);
+        return nested == null || nested.isMissingNode() ? 0 : nested.path(fieldName).asInt(0);
+    }
+
+    private String readNestedText(JsonNode node, String objectName, String fieldName) {
+        JsonNode nested = node.path(objectName);
+        return nested == null || nested.isMissingNode() ? "" : nested.path(fieldName).asText("");
     }
 
     private void loadUseCases() {
@@ -1487,83 +1616,112 @@ public class DashboardController {
           updateUserAssignmentPanel(user);
       }
 
-      private void updateUserAssignmentPanel(User user) {
-          if (user == null) {
-              leftSidebarController.getSelectedUserForAssignmentLabel().setText("-");
-              leftSidebarController.getCurrentUserUseCaseLabel().setText("-");
-              leftSidebarController.getUserUseCaseComboBox().setValue(null);
-              updateAssignUserUseCaseButtonState();
+    private void updateUserAssignmentPanel(User user) {
+        if (user == null) {
+            leftSidebarController.getSelectedUserForAssignmentLabel().setText("-");
+            leftSidebarController.getCurrentUserUseCaseLabel().setText("-");
+            leftSidebarController.getUserUseCaseComboBox().setValue(null);
+            updateAssignUserUseCaseButtonState();
+            return;
+        }
+
+        String userDisplay = formatUser(user);
+        leftSidebarController.getSelectedUserForAssignmentLabel().setText(userDisplay);
+
+        UserUseCaseMapping assignedMapping = resolveAssignedMapping(user);
+        String displayUsecase = resolveUseCaseDisplayName(
+                assignedMapping == null ? user.getUsecaseName() : resolveMappingUseCaseName(assignedMapping)
+        );
+
+        if (displayUsecase == null || displayUsecase.isBlank() || "-".equals(displayUsecase)) {
+            leftSidebarController.getCurrentUserUseCaseLabel().setText("No use case assigned");
+        } else {
+            user.setUsecaseName(displayUsecase);
+            leftSidebarController.getCurrentUserUseCaseLabel().setText(displayUsecase);
+        }
+
+        if (displayUsecase != null && !displayUsecase.isBlank() && !"-".equals(displayUsecase)) {
+            leftSidebarController.getUserUseCaseComboBox().setValue(displayUsecase);
+        } else if (!leftSidebarController.getUserUseCaseComboBox().getItems().isEmpty()) {
+            leftSidebarController.getUserUseCaseComboBox().setValue(leftSidebarController.getUserUseCaseComboBox().getItems().get(0));
+        }
+
+        updateAssignUserUseCaseButtonState();
+    }
+
+      private void updateAssignUserUseCaseButtonState() {
+          if (leftSidebarController.getAssignUserUseCaseButton() == null) {
               return;
           }
 
-          String userDisplay = formatUser(user);
-          leftSidebarController.getSelectedUserForAssignmentLabel().setText(userDisplay);
-
-          String displayUsecase = resolveUseCaseDisplayName(user.getUsecaseName());
-          leftSidebarController.getCurrentUserUseCaseLabel().setText(displayUsecase);
-
-          if (displayUsecase != null && !displayUsecase.isBlank()) {
-              leftSidebarController.getUserUseCaseComboBox().setValue(displayUsecase);
-          } else if (!leftSidebarController.getUserUseCaseComboBox().getItems().isEmpty()) {
-              leftSidebarController.getUserUseCaseComboBox().setValue(leftSidebarController.getUserUseCaseComboBox().getItems().get(0));
-          }
-
-          updateAssignUserUseCaseButtonState();
-      }
-
-      private void updateAssignUserUseCaseButtonState() {
           User selectedUser = leftSidebarController.getSelectedUser();
           String selected = leftSidebarController.getUserUseCaseComboBox().getValue();
 
           if (selectedUser == null || selected == null || selected.isBlank()) {
+              leftSidebarController.getAssignUserUseCaseButton().setDisable(true);
               return;
           }
 
           boolean unchanged =
-                  FormatUtils.normalizeUseCaseName(selected).equals(FormatUtils.normalizeUseCaseName(selectedUser.getUsecaseName()));
+                  FormatUtils.normalizeUseCaseName(selected).equals(FormatUtils.normalizeUseCaseName(getAssignedUseCaseName(selectedUser)));
+          leftSidebarController.getAssignUserUseCaseButton().setDisable(unchanged);
       }
 
-      @FXML
-      private void onAssignUserUseCase() {
-          User selectedUser = leftSidebarController.getSelectedUser();
-          if (selectedUser == null) {
-              AlertUtils.showErrorAlert("Missing User", "Please select a user from the list before assigning a use case.");
-              return;
-          }
+    @FXML
+    private void onAssignUserUseCase() {
+        User selectedUser = leftSidebarController.getSelectedUser();
+        if (selectedUser == null) {
+            AlertUtils.showErrorAlert("Missing User", "Please select a user from the list before assigning a use case.");
+            return;
+        }
 
-          String selectedUsecase = leftSidebarController.getUserUseCaseComboBox().getValue();
-          if (selectedUsecase == null || selectedUsecase.isBlank()) {
-              AlertUtils.showErrorAlert("Missing Use Case", "Please select a use case to assign.");
-              return;
-          }
+        String selectedUsecase = leftSidebarController.getUserUseCaseComboBox().getValue();
+        if (selectedUsecase == null || selectedUsecase.isBlank()) {
+            AlertUtils.showErrorAlert("Missing Use Case", "Please select a use case to assign.");
+            return;
+        }
 
-          ApiService.getInstance().setMonitoringType(selectedUser.getUserID(), selectedUsecase)
-                  .thenAccept(success -> Platform.runLater(() -> {
-                      if (!success) {
-                          AlertUtils.showErrorAlert("Update Failed", "Could not assign use case to user. Please try again.");
-                          updateAssignUserUseCaseButtonState();
-                          return;
-                      }
+        RuleCardData selectedRule = findFirstRuleForUseCase(selectedUsecase);
+        if (selectedRule == null || selectedRule.mappingId <= 0) {
+            AlertUtils.showErrorAlert(
+                    "Missing Mapping",
+                    "Create an active mapping for " + selectedUsecase + " before assigning it to a user."
+            );
+            return;
+        }
 
-                      String resolvedDisplayName = resolveUseCaseDisplayName(selectedUsecase);
-                      leftSidebarController.getCurrentUserUseCaseLabel().setText(resolvedDisplayName);
+        ApiService.getInstance().assignMappingToUser(selectedUser.getUserID(), selectedRule.mappingId)
+                .thenAccept(success -> Platform.runLater(() -> {
+                    if (!success) {
+                        AlertUtils.showErrorAlert("Update Failed", "Could not assign mapping to user. Please try again.");
+                        updateAssignUserUseCaseButtonState();
+                        return;
+                    }
 
-                      selectedUser.setUsecaseName(resolvedDisplayName);
+                    String resolvedDisplayName = resolveUseCaseDisplayName(selectedUsecase);
 
-                      AlertUtils.showInfoAlert(
-                              "Use Case Assigned",
-                              "User " + selectedUser.getUserID() + " is now assigned to " + resolvedDisplayName + "."
-                      );
+                    selectedUser.setUsecaseName(resolvedDisplayName);
+                    selectedUser.setCurrentUsecaseId(resolveUseCaseId(selectedUsecase));
+                    selectedUser.setCurrentMappingId(selectedRule.mappingId);
 
-                      loadUserss();
-                      state.setSelectedUseCase(resolvedDisplayName);
-                  }))
-                  .exceptionally(ex -> {
-                      AlertUtils.showErrorAlert("Update Failed", "Failed to assign use case: " + ex.getMessage());
-                      Platform.runLater(this::updateAssignUserUseCaseButtonState);
-                      return null;
-                  });
-      }
+                    leftSidebarController.getCurrentUserUseCaseLabel().setText(resolvedDisplayName);
+
+                    AlertUtils.showInfoAlert(
+                            "Use Case Assigned",
+                            "User " + selectedUser.getUserID() + " is now assigned to " + resolvedDisplayName + "."
+                    );
+
+                    loadUserss();
+                    state.setSelectedUseCase(resolvedDisplayName);
+                }))
+                .exceptionally(ex -> {
+                    Platform.runLater(() -> {
+                        AlertUtils.showErrorAlert("Update Failed", "Failed to assign mapping: " + ex.getMessage());
+                        updateAssignUserUseCaseButtonState();
+                    });
+                    return null;
+                });
+    }
 
     private void resolveSelectedUseCaseId(String selectedUseCase) {
         if (selectedUseCase == null || selectedUseCase.isBlank()) {
@@ -1608,10 +1766,184 @@ public class DashboardController {
         updateRuleBuilderUseCaseDisplay(selectedUseCase);
         updateLoggingIntervalDisplay(selectedUseCase);
         updateSelectedMappingForEdit(null);
+        refreshUsersForSelectedUseCase(null);
         refreshRuleSummary();
         renderMappingsForUseCase(selectedUseCase);
         clearChatMessages();
         addChatMessage("Selected use case: " + selectedUseCase, false);
+    }
+
+    private void refreshUsersForSelectedUseCase(Integer preferredUserId) {
+        if (topBarController == null) {
+            return;
+        }
+
+        Integer userIdToRestore = preferredUserId;
+        if (userIdToRestore == null) {
+            User currentSelection = topBarController.getSelectedUser();
+            userIdToRestore = currentSelection == null ? null : currentSelection.getUserID();
+        }
+
+        String selectedUseCase = state.getSelectedUseCase();
+        List<User> filteredUsers = users.stream()
+                .filter(user -> isUserAssignedToUseCase(user, selectedUseCase))
+                .toList();
+
+        topBarController.getUsers().setAll(filteredUsers);
+
+        User nextSelection = null;
+        if (userIdToRestore != null) {
+            final int restoredUserId = userIdToRestore;
+            nextSelection = filteredUsers.stream()
+                    .filter(user -> user.getUserID() == restoredUserId)
+                    .findFirst()
+                    .orElse(null);
+        }
+        if (nextSelection == null && !filteredUsers.isEmpty()) {
+            nextSelection = filteredUsers.get(0);
+        }
+
+        applyUserUseCaseContext(nextSelection, selectedUseCase);
+        topBarController.setSelectedUser(nextSelection);
+        if (nextSelection != null) {
+            state.setSelectedUsers(nextSelection);
+            leftSidebarController.selectUser(nextSelection);
+            syncMonitoringEditorToSelectedUser(nextSelection);
+            contextUsersLabel.setText(formatUser(nextSelection));
+        } else {
+            state.setSelectedUsers(null);
+            leftSidebarController.getUsersSidebarList().getSelectionModel().clearSelection();
+            syncMonitoringEditorToSelectedUser(null);
+            contextUsersLabel.setText("-");
+        }
+    }
+
+    private boolean isUserAssignedToUseCase(User user, String useCase) {
+        if (user == null || useCase == null || useCase.isBlank()) {
+            return false;
+        }
+
+        String selectedKey = FormatUtils.normalizeUseCaseName(useCase);
+        return user.getUsecaseMappings().stream()
+                .anyMatch(mapping -> selectedKey.equals(resolveMappingUseCaseKey(mapping)));
+    }
+
+    private void applyUserUseCaseContext(User user, String useCase) {
+        if (user == null || useCase == null || useCase.isBlank()) {
+            return;
+        }
+
+        String selectedKey = FormatUtils.normalizeUseCaseName(useCase);
+        UserUseCaseMapping mapping = user.getUsecaseMappings().stream()
+                .filter(candidate -> selectedKey.equals(resolveMappingUseCaseKey(candidate)))
+                .findFirst()
+                .orElse(null);
+        if (mapping != null) {
+            user.setCurrentUsecase(mapping);
+            String resolvedUseCaseName = resolveMappingUseCaseName(mapping);
+            if (resolvedUseCaseName != null && !resolvedUseCaseName.isBlank()) {
+                user.setUsecaseName(resolvedUseCaseName);
+            }
+        }
+    }
+
+    private UserUseCaseMapping resolveAssignedMapping(User user) {
+        if (user == null || user.getUsecaseMappings().isEmpty()) {
+            return null;
+        }
+
+        int currentRuleId = user.getMappingId();
+        if (currentRuleId > 0) {
+            UserUseCaseMapping current = user.getUsecaseMappings().stream()
+                    .filter(mapping -> mapping.getFeedbackConfigRuleId() == currentRuleId || mapping.getMappingId() == currentRuleId)
+                    .findFirst()
+                    .orElse(null);
+            if (current != null) {
+                return current;
+            }
+        }
+
+        return user.getFirstUsecaseMapping();
+    }
+
+    private String getAssignedUseCaseName(User user) {
+        UserUseCaseMapping mapping = resolveAssignedMapping(user);
+        if (mapping == null) {
+            return "";
+        }
+        return resolveMappingUseCaseName(mapping);
+    }
+
+    private String resolveMappingUseCaseKey(UserUseCaseMapping mapping) {
+        String name = resolveMappingUseCaseName(mapping);
+        return FormatUtils.normalizeUseCaseName(name);
+    }
+
+    private String resolveMappingUseCaseName(UserUseCaseMapping mapping) {
+        if (mapping == null) {
+            return "";
+        }
+
+        if (mapping.getUsecaseId() > 0) {
+            String displayName = resolveUseCaseDisplayName(toUseCaseLabelById(mapping.getUsecaseId()));
+            if (displayName != null && !displayName.isBlank() && !"-".equals(displayName)) {
+                return displayName;
+            }
+        }
+
+        if (mapping.getUsecaseName() != null && !mapping.getUsecaseName().isBlank()) {
+            return resolveUseCaseDisplayName(mapping.getUsecaseName());
+        }
+
+        RuleCardData rule = findRuleByMappingId(mapping.getFeedbackConfigRuleId());
+        if (rule == null) {
+            rule = findRuleByMappingId(mapping.getMappingId());
+        }
+        if (rule != null) {
+            return resolveUseCaseDisplayName(rule.useCaseLabel);
+        }
+
+        return "";
+    }
+
+    private RuleCardData findRuleByMappingId(int mappingId) {
+        if (mappingId <= 0) {
+            return null;
+        }
+
+        return allRules.stream()
+                .filter(rule -> rule.mappingId == mappingId)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private RuleCardData findFirstRuleForUseCase(String useCase) {
+        if (useCase == null || useCase.isBlank()) {
+            return null;
+        }
+
+        String selectedKey = FormatUtils.normalizeUseCaseName(useCase);
+        return allRules.stream()
+                .filter(rule -> selectedKey.equals(rule.useCaseKey))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private int resolveUseCaseId(String useCase) {
+        if (useCase == null || useCase.isBlank()) {
+            return 0;
+        }
+
+        UseCase registered = useCaseRegistry.get(FormatUtils.normalizeUseCaseName(useCase));
+        return registered == null ? 0 : registered.getId();
+    }
+
+    private String toUseCaseLabelById(int useCaseId) {
+        return useCaseRegistry.values().stream()
+                .filter(useCase -> useCase.getId() == useCaseId)
+                .map(UseCase::getRawName)
+                .findFirst()
+                .orElse("");
     }
 
     private void updateSelectedMappingForEdit(RuleCardData rule) {
@@ -1764,6 +2096,8 @@ public class DashboardController {
                 Platform.runLater(() -> {
                     allRules.clear();
                     new MappingConfigParser(allRules, useCaseRegistry.values().stream().collect(Collectors.toMap(UseCase::getNormalizedName, UseCase::getRawName))).parseMappingsFromConfiguration(response);
+                    refreshUsersForSelectedUseCase(null);
+                    updateUserAssignmentPanel(leftSidebarController.getSelectedUser());
                     renderMappingsForUseCase(state.getSelectedUseCase());
                     refreshRuleSummary();
                 });
@@ -2198,6 +2532,14 @@ public class DashboardController {
         }
 
         String expandedMessage = expandChatCommand(message);
+        User selectedUser = topBarController.getSelectedUser();
+        if (selectedUser != null && !isUserAssignedToUseCase(selectedUser, selectedUseCase)) {
+            AlertUtils.showErrorAlert("Invalid User", "Please select a user assigned to " + selectedUseCase + " before chatting.");
+            refreshUsersForSelectedUseCase(null);
+            return;
+        }
+        applyUserUseCaseContext(selectedUser, selectedUseCase);
+
         addChatMessage(message, true);
         chatInputField.clear();
 
@@ -2206,6 +2548,13 @@ public class DashboardController {
         payload.put("session_id", chatSessionId);
         payload.put("usecase_id", useCaseId);
         payload.put("usecase_name", selectedUseCase);
+        if (selectedUser != null) {
+            payload.put("user_id", selectedUser.getUserID());
+            payload.put("user_name", formatUser(selectedUser));
+            payload.put("user_usecase_id", selectedUser.getUsecaseId());
+            payload.put("user_usecase_name", selectedUser.getUsecaseName());
+            payload.put("user_mapping_id", selectedUser.getMappingId());
+        }
 
         setAgentTyping(true);
 

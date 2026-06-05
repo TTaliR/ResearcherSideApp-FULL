@@ -292,6 +292,10 @@ public class LeftSidebarController {
         return userUseCaseComboBox;
     }
 
+    public Button getAssignUserUseCaseButton() {
+        return assignUserUseCaseButton;
+    }
+
     public void selectUser(User user) {
         UsersSidebarList.getSelectionModel().select(user);
     }
