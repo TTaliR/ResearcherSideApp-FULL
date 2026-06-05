@@ -236,7 +236,8 @@ public class LeftSidebarController {
     }
 
     private String formatUser(User user) {
-        return user.getUserID() + " - " + user.getFName() + " " + user.getLName();
+        String name = (user.getFName() + " " + user.getLName()).trim();
+        return name.isEmpty() ? String.valueOf(user.getUserID()) : user.getUserID() + " - " + name;
     }
 
     // Public API for parent controller
