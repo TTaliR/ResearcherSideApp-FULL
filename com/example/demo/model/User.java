@@ -36,7 +36,7 @@ public class User {
 
       this.currentUsecaseId = new SimpleIntegerProperty(first == null ? 0 : first.getUsecaseId());
       this.currentUsecaseName = new SimpleStringProperty(first == null ? "" : first.getUsecaseName());
-      this.currentMappingId = new SimpleIntegerProperty(first == null ? 0 : first.getMappingId());
+      this.currentMappingId = new SimpleIntegerProperty(first == null ? 0 : first.getEffectiveMappingId());
    }
 
    public int getUserID() {
@@ -121,7 +121,7 @@ public class User {
 
       setCurrentUsecaseId(mapping.getUsecaseId());
       setUsecaseName(mapping.getUsecaseName());
-      setCurrentMappingId(mapping.getMappingId());
+      setCurrentMappingId(mapping.getEffectiveMappingId());
    }
 
    public int getCurrentUsecaseId() {
@@ -174,5 +174,10 @@ public class User {
 
    public SimpleIntegerProperty currentMappingIdProperty() {
       return currentMappingId;
+   }
+
+   @Override
+   public String toString() {
+      return getUserID() + " - " + getFName() + " " + getLName();
    }
 }

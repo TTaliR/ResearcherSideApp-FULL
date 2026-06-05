@@ -64,6 +64,13 @@ public class TopBarController {
 
         UsersComboBox.valueProperty().addListener((obs, oldValue, newValue) -> {
             if (newValue == null) {
+                state.setSelectedUsers(null);
+                if (onUserSelected != null) {
+                    onUserSelected.accept(null);
+                }
+                if (onGraphUpdateRequested != null) {
+                    onGraphUpdateRequested.run();
+                }
                 return;
             }
             state.setSelectedUsers(newValue);

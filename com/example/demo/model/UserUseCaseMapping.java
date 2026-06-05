@@ -60,6 +60,10 @@ public class UserUseCaseMapping {
         return feedbackConfigRuleId;
     }
 
+    public int getEffectiveMappingId() {
+        return feedbackConfigRuleId > 0 ? feedbackConfigRuleId : mappingId;
+    }
+
     public int getUsecaseId() {
         return usecaseId;
     }
