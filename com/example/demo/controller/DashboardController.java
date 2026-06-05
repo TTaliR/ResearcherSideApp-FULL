@@ -1691,28 +1691,29 @@ public class DashboardController {
             return;
         }
 
-        RuleCardData selectedRule = findFirstRuleForUseCase(selectedUsecase);
-        if (selectedRule == null || selectedRule.mappingId <= 0) {
+        int selectedUsecaseId = resolveUseCaseId(selectedUsecase);
+        if (selectedUsecaseId <= 0) {
             AlertUtils.showErrorAlert(
-                    "Missing Mapping",
-                    "Create an active mapping for " + selectedUsecase + " before assigning it to a user."
+                    "Missing Use Case Id",
+                    "Could not resolve the use case id for " + selectedUsecase + ". Refresh use cases and try again."
             );
             return;
         }
 
-        ApiService.getInstance().assignMappingToUser(selectedUser.getUserID(), selectedRule.mappingId)
+        ApiService.getInstance().assignUseCaseToUser(selectedUser.getUserID(), selectedUsecaseId)
                 .thenAccept(success -> Platform.runLater(() -> {
                     if (!success) {
-                        AlertUtils.showErrorAlert("Update Failed", "Could not assign mapping to user. Please try again.");
+                        AlertUtils.showErrorAlert("Update Failed", "Could not assign use case to user. Please try again.");
                         updateAssignUserUseCaseButtonState();
                         return;
                     }
 
                     String resolvedDisplayName = resolveUseCaseDisplayName(selectedUsecase);
+                    RuleCardData selectedRule = findFirstRuleForUseCase(selectedUsecase);
 
                     selectedUser.setUsecaseName(resolvedDisplayName);
-                    selectedUser.setCurrentUsecaseId(resolveUseCaseId(selectedUsecase));
-                    selectedUser.setCurrentMappingId(selectedRule.mappingId);
+                    selectedUser.setCurrentUsecaseId(selectedUsecaseId);
+                    selectedUser.setCurrentMappingId(selectedRule == null ? 0 : selectedRule.mappingId);
 
                     leftSidebarController.getCurrentUserUseCaseLabel().setText(resolvedDisplayName);
 
@@ -1726,7 +1727,7 @@ public class DashboardController {
                 }))
                 .exceptionally(ex -> {
                     Platform.runLater(() -> {
-                        AlertUtils.showErrorAlert("Update Failed", "Failed to assign mapping: " + ex.getMessage());
+                        AlertUtils.showErrorAlert("Update Failed", "Failed to assign use case: " + ex.getMessage());
                         updateAssignUserUseCaseButtonState();
                     });
                     return null;
