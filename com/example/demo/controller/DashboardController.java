@@ -2605,6 +2605,7 @@ public class DashboardController {
         }
 
         String expandedMessage = expandChatCommand(message);
+        boolean mappingListRequest = isMappingListRequest(message, expandedMessage);
         User selectedUser = topBarController.getSelectedUser();
         if (selectedUser != null && !isUserAssignedToUseCase(selectedUser, selectedUseCase)) {
             AlertUtils.showErrorAlert("Invalid User", "Please select a user assigned to " + selectedUseCase + " before chatting.");
@@ -2635,7 +2636,8 @@ public class DashboardController {
                 .thenAccept(response -> Platform.runLater(() -> {
                     setAgentTyping(false);
                     if (response != null && response.has("reply")) {
-                        addChatMessage(response.get("reply").asText(), false);
+                        String reply = response.get("reply").asText();
+                        addChatMessage(mappingListRequest ? appendMappingAssignmentSummary(reply, selectedUseCase) : reply, false);
                     } else {
                         addChatMessage("AI response did not include reply field.", false);
                     }
@@ -2651,6 +2653,77 @@ public class DashboardController {
                     });
                     return null;
                 });
+    }
+
+    private boolean isMappingListRequest(String originalMessage, String expandedMessage) {
+        String original = originalMessage == null ? "" : originalMessage.trim().toLowerCase(Locale.ROOT);
+        String expanded = expandedMessage == null ? "" : expandedMessage.trim().toLowerCase(Locale.ROOT);
+
+        if (original.startsWith("$mapping")) {
+            return true;
+        }
+
+        return isMappingListText(expanded) || isMappingListText(original);
+    }
+
+    private boolean isMappingListText(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+
+        return text.contains("mapping")
+                && (text.contains("show") || text.contains("list") || text.contains("current") || text.contains("active"));
+    }
+
+    private String appendMappingAssignmentSummary(String reply, String useCase) {
+        String summary = buildMappingAssignmentSummary(useCase);
+        if (summary.isBlank()) {
+            return reply == null ? "" : reply;
+        }
+
+        String baseReply = reply == null ? "" : reply.trim();
+        if (baseReply.toLowerCase(Locale.ROOT).contains("assigned users by mapping")) {
+            return baseReply;
+        }
+        if (baseReply.isBlank()) {
+            return summary;
+        }
+
+        return baseReply + "\n\n" + summary;
+    }
+
+    private String buildMappingAssignmentSummary(String useCase) {
+        if (useCase == null || useCase.isBlank()) {
+            return "";
+        }
+
+        String selectedUseCaseKey = FormatUtils.normalizeUseCaseName(useCase);
+        List<RuleCardData> filtered = allRules.stream()
+                .filter(rule -> selectedUseCaseKey.equals(rule.useCaseKey))
+                .toList();
+        if (filtered.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder summary = new StringBuilder("Assigned users by mapping:\n");
+        for (RuleCardData rule : filtered) {
+            List<User> assignedUsers = findUsersAssignedToRule(rule);
+            summary.append("- ID ")
+                    .append(rule.mappingId)
+                    .append(": ")
+                    .append(assignedUsers.size())
+                    .append(assignedUsers.size() == 1 ? " user" : " users");
+
+            if (!assignedUsers.isEmpty()) {
+                summary.append(" - ")
+                        .append(assignedUsers.stream()
+                                .map(this::formatUser)
+                                .collect(Collectors.joining(", ")));
+            }
+            summary.append('\n');
+        }
+
+        return summary.toString().trim();
     }
 
 
