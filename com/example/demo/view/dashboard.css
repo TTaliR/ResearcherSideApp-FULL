@@ -310,6 +310,23 @@
     -fx-background-color: #f8fbff;
 }
 
+.mapping-card-inactive {
+    -fx-background-color: #f3f5f8;
+    -fx-border-color: #a8b3c2;
+    -fx-border-style: dashed;
+    -fx-opacity: 0.78;
+}
+
+.mapping-card-inactive .label {
+    -fx-text-fill: #64748b;
+}
+
+.mapping-card-inactive.mapping-card-selected {
+    -fx-background-color: #f8fbff;
+    -fx-border-color: #2563eb;
+    -fx-border-style: dashed;
+}
+
 .mapping-card-title {
     -fx-font-size: 13px;
     -fx-font-weight: bold;
@@ -383,6 +400,49 @@
 
 .mapping-delete-button:hover {
     -fx-background-color: #f3f4f6;
+}
+
+.schedule-card {
+    -fx-pref-width: 280;
+}
+
+.schedule-card-inactive {
+    -fx-background-color: #f3f5f8;
+    -fx-border-color: #a8b3c2;
+    -fx-border-style: dashed;
+    -fx-opacity: 0.78;
+}
+
+.schedule-card-inactive .label {
+    -fx-text-fill: #64748b;
+}
+
+.schedule-card-inactive.mapping-card-selected {
+    -fx-background-color: #f8fbff;
+    -fx-border-color: #2563eb;
+    -fx-border-style: dashed;
+}
+
+.schedule-active-toggle {
+    -fx-background-color: #f3f5f8;
+    -fx-text-fill: #52667f;
+    -fx-border-color: #cfd8e4;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 2 8;
+    -fx-cursor: hand;
+}
+
+.schedule-active-toggle:selected {
+    -fx-background-color: #dcfce7;
+    -fx-border-color: #86efac;
+    -fx-text-fill: #166534;
+}
+
+.schedule-active-toggle:hover {
+    -fx-background-color: #e8eef8;
 }
 
 .yellow-book-card {

@@ -24,7 +24,6 @@ import com.example.demo.util.FormatUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
-import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.beans.value.ChangeListener;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -33,7 +32,6 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.*;
-import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.*;
@@ -200,21 +198,9 @@ public class DashboardController {
 
     // Scheduling UI
     @FXML
-    private TableView<Schedule> schedulesTable;
+    private FlowPane schedulesFlowPane;
     @FXML
-    private TableColumn<Schedule, Integer> colScheduleId;
-    @FXML
-    private TableColumn<Schedule, Integer> colUserId;
-    @FXML
-    private TableColumn<Schedule, String> colMeasureType;
-    @FXML
-    private TableColumn<Schedule, Double> colTrigger;
-    @FXML
-    private TableColumn<Schedule, Instant> colNextCheck;
-    @FXML
-    private TableColumn<Schedule, Integer> colInterval;
-    @FXML
-    private TableColumn<Schedule, Boolean> colActive;
+    private Label schedulesEmptyLabel;
     @FXML
     private TextField scheduleIdField;
     @FXML
@@ -225,6 +211,8 @@ public class DashboardController {
     private ComboBox<String> measureTypeComboBox;
     @FXML
     private Spinner<Integer> triggerPercentageSpinner;
+    @FXML
+    private Button saveScheduleButton;
     @FXML
     private Label scheduleStatusLabel;
     @FXML
@@ -254,11 +242,14 @@ public class DashboardController {
     private final Map<String, UseCase> useCaseRegistry = new HashMap<>();
     private final Map<String, List<DictionaryParameterData>> yellowBookEntries = new LinkedHashMap<>();
     private final List<RuleCardData> allRules = new ArrayList<>();
+    private final ObservableList<Schedule> schedules = FXCollections.observableArrayList();
     private final String chatSessionId = UUID.randomUUID().toString();
     private String activeMonitoringTypeKey = "";
     private RuleCardData selectedMappingForEdit;
+    private Schedule selectedScheduleForEdit;
     private DictionaryParameterData selectedYellowBookParameter;
     private boolean showingActiveSchedulesOnly;
+    private boolean showingActiveMappingsOnly = true;
 
     private enum MappingChangeScope {
         ALL_USERS,
@@ -314,9 +305,17 @@ public class DashboardController {
         // Setup topbar callbacks
         topBarController.setOnUserSelected(newValue -> {
             if (newValue == null) {
+                boolean allUsersSelected = topBarController.isAllUsersSelected();
                 state.setSelectedUsers(null);
-                contextUsersLabel.setText("-");
+                contextUsersLabel.setText(allUsersSelected ? "All Users" : "-");
+                leftSidebarController.getUsersSidebarList().getSelectionModel().clearSelection();
                 syncMonitoringEditorToSelectedUser(null);
+                selectScheduleForEdit(null);
+                if (userIdField != null) {
+                    userIdField.clear();
+                }
+                refreshRuleSummary();
+                renderMappingsForUseCase(state.getSelectedUseCase());
                 scheduleGraphUpdate();
                 return;
             }
@@ -330,6 +329,8 @@ public class DashboardController {
                 String userUseCase = resolveUseCaseDisplayName(newValue.getUsecaseName());
                 state.setSelectedUseCase(userUseCase);
             }
+            refreshRuleSummary();
+            renderMappingsForUseCase(state.getSelectedUseCase());
             scheduleGraphUpdate();
         });
 
@@ -356,44 +357,6 @@ public class DashboardController {
 
     private void setupSchedulesTable() {
         try {
-            if (colScheduleId != null) colScheduleId.setCellValueFactory(new PropertyValueFactory<>("scheduleId"));
-            if (colUserId != null) colUserId.setCellValueFactory(new PropertyValueFactory<>("userId"));
-            if (colMeasureType != null) colMeasureType.setCellValueFactory(new PropertyValueFactory<>("measureType"));
-            if (colTrigger != null) {
-                colTrigger.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(cell.getValue().getTriggerPercentage()));
-                colTrigger.setComparator(Comparator.nullsLast(Double::compareTo));
-                colTrigger.setCellFactory(column -> new TableCell<>() {
-                    @Override
-                    protected void updateItem(Double item, boolean empty) {
-                        super.updateItem(item, empty);
-                        setText(empty || item == null ? null : String.valueOf((int) Math.round(item)));
-                    }
-                });
-            }
-            if (colNextCheck != null) {
-                colNextCheck.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(getScheduleNextCheckSortInstant(cell.getValue())));
-                colNextCheck.setComparator(Comparator.nullsLast(Instant::compareTo));
-                colNextCheck.setCellFactory(column -> new TableCell<>() {
-                    @Override
-                    protected void updateItem(Instant item, boolean empty) {
-                        super.updateItem(item, empty);
-                        if (empty || getIndex() < 0 || getTableView() == null || getIndex() >= getTableView().getItems().size()) {
-                            setText(null);
-                            return;
-                        }
-
-                        Schedule schedule = getTableView().getItems().get(getIndex());
-                        String displayText = schedule.getNextCheck();
-                        if (displayText == null || displayText.isBlank()) {
-                            displayText = schedule.getNextRunDate();
-                        }
-                        setText(displayText == null || displayText.isBlank() ? null : displayText);
-                    }
-                });
-            }
-            if (colInterval != null) colInterval.setCellValueFactory(new PropertyValueFactory<>("intervalDays"));
-            if (colActive != null) colActive.setCellValueFactory(new PropertyValueFactory<>("active"));
-            
             if (scheduleIdField != null) {
                 scheduleIdField.setDisable(true);
                 scheduleIdField.setEditable(false);
@@ -403,28 +366,14 @@ public class DashboardController {
                 userIdField.setEditable(false);
             }
 
-            // Add selection listener to populate fields when a row is clicked.
-            if (schedulesTable != null) {
-                schedulesTable.getSelectionModel().selectedItemProperty().addListener(onNewValueChanged(selectedSchedule -> {
-                    if (selectedSchedule != null) {
-                        populateScheduleFields(selectedSchedule);
-                    } else {
-                        if (scheduleIdField != null) {
-                            scheduleIdField.clear();
-                        }
-                        User currentUser = state.getSelectedUsers();
-                        if (currentUser != null && userIdField != null) {
-                            userIdField.setText(String.valueOf(currentUser.getUserID()));
-                        }
-                    }
-                }));
-            }
             if (measureTypeComboBox != null) {
                 measureTypeComboBox.getItems().setAll("average", "median", "mode");
                 measureTypeComboBox.setValue("average");
             }
             setupPositiveIntegerSpinner(intervalDaysSpinner, 1);
             setupTriggerPercentageSpinner();
+            selectScheduleForEdit(null);
+            renderScheduleCards();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -557,8 +506,11 @@ public class DashboardController {
 
     private void updateSchedulesTable(ScheduleApiResponse resp) {
         if (resp == null) return;
-        ObservableList<Schedule> list = FXCollections.observableArrayList(resp.getSchedules());
-        if (schedulesTable != null) schedulesTable.setItems(list);
+        schedules.setAll(resp.getSchedules());
+        if (selectedScheduleForEdit != null && schedules.stream().noneMatch(this::isSelectedSchedule)) {
+            selectScheduleForEdit(null);
+        }
+        renderScheduleCards();
         updateScheduleStatus(resp);
     }
 
@@ -569,14 +521,133 @@ public class DashboardController {
         scheduleStatusLabel.setText(resp.getReply() != null && !resp.getReply().isEmpty() ? resp.getReply() : (resp.isSuccess() ? "OK" : resp.getErrorMessage()));
     }
 
+    private void renderScheduleCards() {
+        if (schedulesFlowPane == null || schedulesEmptyLabel == null) {
+            return;
+        }
+
+        schedulesFlowPane.getChildren().clear();
+        if (schedules.isEmpty()) {
+            schedulesEmptyLabel.setVisible(true);
+            schedulesEmptyLabel.setManaged(true);
+            schedulesEmptyLabel.setText("No schedules found.");
+            return;
+        }
+
+        schedulesEmptyLabel.setVisible(false);
+        schedulesEmptyLabel.setManaged(false);
+        schedules.stream()
+            .sorted(Comparator
+                .comparing((Schedule schedule) -> getScheduleNextCheckSortInstant(schedule), Comparator.nullsLast(Instant::compareTo))
+                .thenComparingInt(Schedule::getScheduleId))
+            .map(this::createScheduleCard)
+            .forEach(card -> schedulesFlowPane.getChildren().add(card));
+    }
+
+    private Node createScheduleCard(Schedule schedule) {
+        VBox card = new VBox(8);
+        card.getStyleClass().add("mapping-card");
+        card.getStyleClass().add("schedule-card");
+        if (!schedule.isActive()) {
+            card.getStyleClass().add("schedule-card-inactive");
+        }
+        if (isSelectedSchedule(schedule)) {
+            card.getStyleClass().add("mapping-card-selected");
+        }
+
+        Label title = new Label("Schedule #" + schedule.getScheduleId());
+        title.getStyleClass().add("mapping-card-title");
+
+        ToggleButton activeToggle = MappingUiFactory.createScheduleActiveToggle(schedule, this::onScheduleActiveToggleRequested);
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        HBox titleRow = new HBox(8, title, spacer, activeToggle);
+        titleRow.setAlignment(Pos.CENTER_LEFT);
+
+        VBox details = new VBox(5,
+            createScheduleDetailRow("User", schedule.getUserId() <= 0 ? "-" : String.valueOf(schedule.getUserId())),
+            createScheduleDetailRow("Measure", normalizeScheduleDisplayValue(schedule.getMeasureType())),
+            createScheduleDetailRow("Trigger", formatScheduleTrigger(schedule)),
+            createScheduleDetailRow("Interval", Math.max(0, schedule.getIntervalDays()) + " days"),
+            createScheduleDetailRow("Next check", formatScheduleNextCheck(schedule))
+        );
+
+        card.getChildren().addAll(titleRow, details);
+        card.setOnMouseClicked(event -> {
+            if (event.getTarget() instanceof ButtonBase) {
+                return;
+            }
+            selectScheduleForEdit(schedule);
+        });
+        return card;
+    }
+
+    private Node createScheduleDetailRow(String labelText, String valueText) {
+        HBox row = new HBox(6);
+        row.setAlignment(Pos.CENTER_LEFT);
+
+        Label label = new Label(labelText + ":");
+        label.getStyleClass().add("topbar-label");
+        label.setMinWidth(72);
+
+        Label value = new Label(valueText == null || valueText.isBlank() ? "-" : valueText);
+        value.getStyleClass().add("topbar-value");
+        value.setWrapText(true);
+        row.getChildren().addAll(label, value);
+        return row;
+    }
+
+    private String normalizeScheduleDisplayValue(String value) {
+        return value == null || value.isBlank() ? "-" : value.trim();
+    }
+
+    private String formatScheduleTrigger(Schedule schedule) {
+        return String.valueOf((int) Math.round(schedule.getTriggerPercentage())) + "%";
+    }
+
+    private String formatScheduleNextCheck(Schedule schedule) {
+        String nextCheck = schedule.getNextCheck();
+        if (nextCheck == null || nextCheck.isBlank()) {
+            nextCheck = schedule.getNextRunDate();
+        }
+        return nextCheck == null || nextCheck.isBlank() ? "-" : nextCheck;
+    }
+
+    private void selectScheduleForEdit(Schedule schedule) {
+        selectedScheduleForEdit = schedule;
+        if (schedule != null) {
+            populateScheduleFields(schedule);
+        } else {
+            if (scheduleIdField != null) {
+                scheduleIdField.clear();
+            }
+            User currentUser = topBarController == null ? state.getSelectedUsers() : topBarController.getSelectedUser();
+            if (currentUser == null) {
+                currentUser = state.getSelectedUsers();
+            }
+            if (currentUser != null && userIdField != null) {
+                userIdField.setText(String.valueOf(currentUser.getUserID()));
+            }
+        }
+        renderScheduleCards();
+    }
+
+    private boolean isSelectedSchedule(Schedule schedule) {
+        if (schedule == null || selectedScheduleForEdit == null) {
+            return false;
+        }
+        return schedule.getScheduleId() > 0 && schedule.getScheduleId() == selectedScheduleForEdit.getScheduleId();
+    }
+
     private void refreshSchedulesForCurrentContext(boolean activeOnly) {
         showingActiveSchedulesOnly = activeOnly;
         String uc = getSelectedUsecaseName();
         User selectedUser = topBarController == null ? null : topBarController.getSelectedUser();
         if (selectedUser == null || uc.isBlank()) {
-            if (schedulesTable != null) {
-                schedulesTable.setItems(FXCollections.observableArrayList());
-            }
+            schedules.clear();
+            selectScheduleForEdit(null);
+            renderScheduleCards();
             if (scheduleStatusLabel != null) {
                 scheduleStatusLabel.setText("Select a user and use case to view schedules.");
             }
@@ -622,6 +693,19 @@ public class DashboardController {
     }
 
     @FXML
+    private void onSaveSchedule() {
+        try {
+            if (getCurrentScheduleIdForSave() > 0) {
+                onChangeSchedule();
+            } else {
+                onAddSchedule();
+            }
+        } catch (Exception e) {
+            showScheduleInputError(e);
+        }
+    }
+
+    @FXML
     private void onChangeSchedule() {
         try {
             int schedId = getSelectedScheduleId();
@@ -656,6 +740,38 @@ public class DashboardController {
             String uc = requireSelectedUsecaseName();
             ApiService.getInstance().deactivateSchedule(schedId, uc)
                 .thenAccept(resp -> Platform.runLater(() -> handleScheduleMutationResponse(resp)));
+        } catch (Exception e) {
+            showScheduleInputError(e);
+        }
+    }
+
+    private void onScheduleActiveToggleRequested(Schedule schedule, ToggleButton toggle) {
+        if (schedule == null || toggle == null) {
+            return;
+        }
+
+        boolean requestedActive = !schedule.isActive();
+        String action = requestedActive ? "activate" : "deactivate";
+        toggle.setSelected(schedule.isActive());
+        toggle.setText(schedule.isActive() ? "Active" : "Inactive");
+
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+        confirm.setTitle(requestedActive ? "Activate Schedule" : "Deactivate Schedule");
+        confirm.setHeaderText("Are you sure you want to " + action + " schedule #" + schedule.getScheduleId() + "?");
+        confirm.setContentText("This will send the existing " + action + " schedule request.");
+
+        Optional<ButtonType> result = confirm.showAndWait();
+        if (result.isEmpty() || result.get() != ButtonType.OK) {
+            return;
+        }
+
+        selectScheduleForEdit(schedule);
+        try {
+            String uc = requireSelectedUsecaseName();
+            CompletableFuture<ScheduleApiResponse> request = requestedActive
+                ? ApiService.getInstance().activateSchedule(schedule.getScheduleId(), uc)
+                : ApiService.getInstance().deactivateSchedule(schedule.getScheduleId(), uc);
+            request.thenAccept(resp -> Platform.runLater(() -> handleScheduleMutationResponse(resp)));
         } catch (Exception e) {
             showScheduleInputError(e);
         }
@@ -766,13 +882,20 @@ public class DashboardController {
     }
 
     private int getSelectedScheduleId() {
-        Schedule selected = schedulesTable == null ? null : schedulesTable.getSelectionModel().getSelectedItem();
-        if (selected != null && selected.getScheduleId() > 0) {
-            return selected.getScheduleId();
+        int selectedId = getCurrentScheduleIdForSave();
+        if (selectedId > 0) {
+            return selectedId;
+        }
+        throw new IllegalArgumentException("Select a schedule first.");
+    }
+
+    private int getCurrentScheduleIdForSave() {
+        if (selectedScheduleForEdit != null && selectedScheduleForEdit.getScheduleId() > 0) {
+            return selectedScheduleForEdit.getScheduleId();
         }
         String text = scheduleIdField == null ? "" : scheduleIdField.getText().trim();
         if (text.isEmpty()) {
-            throw new IllegalArgumentException("Select a schedule first.");
+            return 0;
         }
         int scheduleId = parseScheduleInteger(text, "Schedule ID");
         if (scheduleId <= 0) {
@@ -882,9 +1005,31 @@ public class DashboardController {
     }
 
     @FXML
+    private void onSaveMappingConfig() {
+        if (selectedMappingForEdit != null && selectedMappingForEdit.mappingId > 0) {
+            changeSelectedMappingConfig();
+        } else {
+            saveRuleBuilderConfig();
+        }
+    }
+
+    @FXML
     private void clearRuleInputFields() {
         clearRuleBuilderForm();
         updateSelectedMappingForEdit(null);
+        renderMappingsForUseCase(state.getSelectedUseCase());
+    }
+
+    @FXML
+    private void onListActiveMappings() {
+        showingActiveMappingsOnly = true;
+        renderMappingsForUseCase(state.getSelectedUseCase());
+    }
+
+    @FXML
+    private void onListAllMappings() {
+        showingActiveMappingsOnly = false;
+        renderMappingsForUseCase(state.getSelectedUseCase());
     }
 
     @FXML
@@ -1788,7 +1933,7 @@ public class DashboardController {
 
         state.selectedUsersProperty().addListener(onNewValueChanged(newValue -> {
             refreshRuleSummary();
-            if (newValue != null && (schedulesTable == null || schedulesTable.getSelectionModel().getSelectedItem() == null)) {
+            if (newValue != null && selectedScheduleForEdit == null) {
                 if (userIdField != null) {
                     userIdField.setText(String.valueOf(newValue.getUserID()));
                 }
@@ -2270,8 +2415,9 @@ public class DashboardController {
             return;
         }
 
+        boolean restoreAllUsers = preferredUserId == null && topBarController.isAllUsersSelected();
         Integer userIdToRestore = preferredUserId;
-        if (userIdToRestore == null) {
+        if (userIdToRestore == null && !restoreAllUsers) {
             User currentSelection = topBarController.getSelectedUser();
             userIdToRestore = currentSelection == null ? null : currentSelection.getUserID();
         }
@@ -2281,7 +2427,17 @@ public class DashboardController {
                 .filter(user -> isUserAssignedToUseCase(user, selectedUseCase))
                 .toList();
 
-        topBarController.getUsers().setAll(filteredUsers);
+        topBarController.setUsers(filteredUsers, true);
+
+        if (restoreAllUsers || userIdToRestore == null) {
+            applyUserUseCaseContext(null, selectedUseCase);
+            topBarController.selectAllUsers();
+            state.setSelectedUsers(null);
+            leftSidebarController.getUsersSidebarList().getSelectionModel().clearSelection();
+            syncMonitoringEditorToSelectedUser(null);
+            contextUsersLabel.setText("All Users");
+            return;
+        }
 
         User nextSelection = null;
         if (userIdToRestore != null) {
@@ -2918,7 +3074,7 @@ public class DashboardController {
         if (useCase == null || useCase.isBlank()) {
             mappingsEmptyLabel.setVisible(true);
             mappingsEmptyLabel.setManaged(true);
-            mappingsEmptyLabel.setText("Select a use case to view active mappings.");
+            mappingsEmptyLabel.setText("Select a use case to view mappings.");
             return;
         }
 
@@ -2926,14 +3082,14 @@ public class DashboardController {
         User selectedUser = topBarController == null ? null : topBarController.getSelectedUser();
         List<RuleCardData> filtered = allRules.stream()
             .filter(rule -> selectedUseCaseKey.equals(rule.useCaseKey))
-            .filter(rule -> selectedUser == null || isUserAssignedToRule(selectedUser, rule))
+            .filter(rule -> !showingActiveMappingsOnly || selectedUser == null || isUserAssignedToRule(selectedUser, rule))
             .toList();
 
         if (filtered.isEmpty()) {
             mappingsEmptyLabel.setVisible(true);
             mappingsEmptyLabel.setManaged(true);
             mappingsEmptyLabel.setText(selectedUser == null
-                ? "No active mappings found for " + useCase + "."
+                ? "No mappings found for " + useCase + "."
                 : "No active mapping assigned to " + formatUser(selectedUser) + " for " + useCase + ".");
             return;
         }
@@ -2943,8 +3099,12 @@ public class DashboardController {
 
         // Builds and adds rule detail cards to flow pane
         for (RuleCardData rule : filtered) {
+            boolean assignedToSelectedUser = selectedUser == null || isUserAssignedToRule(selectedUser, rule);
             VBox card = new VBox(8);
             card.getStyleClass().add("mapping-card");
+            if (!assignedToSelectedUser) {
+                card.getStyleClass().add("mapping-card-inactive");
+            }
             if (selectedMappingForEdit != null && selectedMappingForEdit.mappingId == rule.mappingId) {
                 card.getStyleClass().add("mapping-card-selected");
             }
@@ -2967,8 +3127,14 @@ public class DashboardController {
             Label duration = new Label("Duration: " + rule.durationLabel);
             Label interval = new Label("Interval: " + rule.intervalLabel);
             Node assignedUsers = createMappingAssignedUsersNode(rule);
+            if (!assignedToSelectedUser) {
+                Label inactiveHint = new Label("Not assigned to selected user");
+                inactiveHint.getStyleClass().add("mapping-assigned-muted");
+                card.getChildren().addAll(titleRow, pulses, intensity, duration, interval, inactiveHint, assignedUsers);
+            } else {
+                card.getChildren().addAll(titleRow, pulses, intensity, duration, interval, assignedUsers);
+            }
 
-            card.getChildren().addAll(titleRow, pulses, intensity, duration, interval, assignedUsers);
             card.setOnMouseClicked(event -> {
                 if (event.getTarget() instanceof Button) {
                     return;
@@ -3278,19 +3444,28 @@ public class DashboardController {
         activeRulesSummaryBox.getChildren().clear();
 
         String selectedUseCase = state.getSelectedUseCase();
-        if (selectedUseCase == null) {
+        if (selectedUseCase == null || selectedUseCase.isBlank()) {
             activeRulesSummaryBox.getChildren().add(new Label("No use case selected."));
+            return;
+        }
+
+        User selectedUser = topBarController == null ? null : topBarController.getSelectedUser();
+        boolean allUsersSelected = topBarController != null && topBarController.isAllUsersSelected();
+        if (selectedUser == null && !allUsersSelected) {
+            activeRulesSummaryBox.getChildren().add(new Label("No user selected."));
             return;
         }
 
         String selectedUseCaseKey = FormatUtils.normalizeUseCaseName(selectedUseCase);
         List<RuleCardData> filtered = allRules.stream()
             .filter(rule -> selectedUseCaseKey.equals(rule.useCaseKey))
-            .limit(5)
+            .filter(rule -> selectedUser == null || isUserAssignedToRule(selectedUser, rule))
             .toList();
 
         if (filtered.isEmpty()) {
-            activeRulesSummaryBox.getChildren().add(new Label("No active rules for this use case."));
+            activeRulesSummaryBox.getChildren().add(new Label(allUsersSelected
+                ? "No mappings for this use case."
+                : "No active mapping for this user."));
             return;
         }
 

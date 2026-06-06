@@ -1,9 +1,12 @@
 package com.example.demo.factory;
 
 import com.example.demo.model.RuleCardData;
+import com.example.demo.model.Schedule;
 import javafx.scene.control.Button;
+import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 public class MappingUiFactory {
@@ -22,5 +25,15 @@ public class MappingUiFactory {
         button.setOnAction(ignored -> onDelete.accept(rule));
         button.setOnMouseClicked(event -> event.consume());
         return button;
+    }
+
+    public static ToggleButton createScheduleActiveToggle(Schedule schedule, BiConsumer<Schedule, ToggleButton> onToggle) {
+        ToggleButton toggle = new ToggleButton(schedule != null && schedule.isActive() ? "Active" : "Inactive");
+        toggle.getStyleClass().add("schedule-active-toggle");
+        toggle.setSelected(schedule != null && schedule.isActive());
+        toggle.setTooltip(new Tooltip("Activate or deactivate schedule"));
+        toggle.setOnMouseClicked(event -> event.consume());
+        toggle.setOnAction(ignored -> onToggle.accept(schedule, toggle));
+        return toggle;
     }
 }

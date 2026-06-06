@@ -12,8 +12,6 @@
 <?import javafx.scene.control.Spinner?>
 <?import javafx.scene.control.Tab?>
 <?import javafx.scene.control.TabPane?>
-<?import javafx.scene.control.TableColumn?>
-<?import javafx.scene.control.TableView?>
 <?import javafx.scene.control.TextField?>
 <?import javafx.scene.control.ToggleButton?>
 <?import javafx.scene.control.ToggleGroup?>
@@ -28,6 +26,7 @@
 <HBox prefHeight="800.0" prefWidth="1280.0" styleClass="dashboard-root" xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.example.demo.controller.DashboardController">
     <fx:define>
         <ToggleGroup fx:id="scheduleToggleGroup" />
+        <ToggleGroup fx:id="mappingToggleGroup" />
     </fx:define>
     <fx:include source="LeftSidebar.fxml" fx:id="leftSidebar" />
 
@@ -98,9 +97,13 @@
                         </content>
                     </Tab>
 
-                    <Tab fx:id="mappingsTab" text="Active Mappings">
+                    <Tab fx:id="mappingsTab" text="Mappings">
                         <content>
                             <VBox spacing="10.0" styleClass="tab-content-root">
+                                <HBox spacing="0" alignment="CENTER_LEFT" styleClass="segmented-button-bar">
+                                    <ToggleButton text="List Active" onAction="#onListActiveMappings" toggleGroup="$mappingToggleGroup" selected="true" />
+                                    <ToggleButton text="List All" onAction="#onListAllMappings" toggleGroup="$mappingToggleGroup" />
+                                </HBox>
                                 <VBox spacing="0">
                                     <Label text="New Mapping Rule Builder" styleClass="drawer-title" alignment="CENTER_LEFT"/>
                                 </VBox>
@@ -145,8 +148,7 @@
                                     </VBox>
                                     <Separator orientation="VERTICAL" prefHeight="150.0" />
                                     <VBox spacing="10.0" alignment="CENTER">
-                                        <Button fx:id="saveRuleButton" text="Save Rule" styleClass="primary-button" onAction="#saveRuleBuilderConfig" />
-                                        <Button fx:id="changeRuleButton" text="Change Selected" onAction="#changeSelectedMappingConfig" />
+                                        <Button fx:id="saveRuleButton" text="Save" styleClass="primary-button" onAction="#onSaveMappingConfig" />
                                         <Button fx:id="clearRuleButton" text="Clear" styleClass="cancel-button" onAction="#clearRuleInputFields" />
                                     </VBox>
                                 </HBox>
@@ -184,44 +186,45 @@
                                     <ToggleButton text="List Active" onAction="#onListActiveSchedules" toggleGroup="$scheduleToggleGroup" selected="true" />
                                     <ToggleButton text="List All" onAction="#onListAllSchedules" toggleGroup="$scheduleToggleGroup" />
                                 </HBox>
-                                <TableView fx:id="schedulesTable" prefHeight="220.0" prefWidth="760.0">
-                                    <columns>
-                                        <TableColumn fx:id="colScheduleId" text="ID" prefWidth="60" />
-                                        <TableColumn fx:id="colUserId" text="User ID" prefWidth="80" />
-                                        <TableColumn fx:id="colMeasureType" text="Measure" prefWidth="140" />
-                                        <TableColumn fx:id="colTrigger" text="Trigger %" prefWidth="80" />
-                                        <TableColumn fx:id="colNextCheck" text="Next Check" prefWidth="140" />
-                                        <TableColumn fx:id="colInterval" text="Interval Days" prefWidth="100" />
-                                        <TableColumn fx:id="colActive" text="Active" prefWidth="60" />
-                                    </columns>
-                                </TableView>
                                 <HBox spacing="8.0" alignment="CENTER_LEFT">
-                                    <Label text="Schedule ID:" />
-                                <TextField fx:id="scheduleIdField" promptText="(for edit/activate)" prefWidth="90" disable="true" />
-                                    <Label text="User ID:" />
+                                    <Label text="Schedule ID:" styleClass="topbar-label" />
+                                    <TextField fx:id="scheduleIdField" promptText="(for edit)" prefWidth="90" disable="true" />
+                                    <Label text="User ID:" styleClass="topbar-label" />
                                     <TextField fx:id="userIdField" promptText="e.g. 100" prefWidth="80" />
-                                    <Label text="Interval" />
+                                    <Label text="Interval" styleClass="topbar-label" />
                                     <Spinner fx:id="intervalDaysSpinner" prefWidth="95" editable="true">
                                         <tooltip>
                                             <Tooltip text="Interval must be 1 day or more." />
                                         </tooltip>
                                     </Spinner>
-                                    <Label text="Days" />
-                                    <Label text="Measure:" />
+                                    <Label text="Days" styleClass="topbar-muted-value" />
+                                    <Label text="Measure:" styleClass="topbar-label" />
                                     <ComboBox fx:id="measureTypeComboBox" prefWidth="120" promptText="Select" />
-                                    <Label text="Trigger %:" />
+                                    <Label text="Trigger %:" styleClass="topbar-label" />
                                     <Spinner fx:id="triggerPercentageSpinner" prefWidth="105" editable="true">
                                         <tooltip>
                                             <Tooltip text="Use a negative % to lower the vibration threshold." />
                                         </tooltip>
                                     </Spinner>
                                 </HBox>
-                                <HBox spacing="8.0">
-                                    <Button text="Add" onAction="#onAddSchedule" styleClass="primary-button" />
-                                    <Button text="Change" onAction="#onChangeSchedule" />
-                                    <Button text="Activate" onAction="#onActivateSchedule" />
-                                    <Button text="Deactivate" onAction="#onDeactivateSchedule" />
+                                <HBox spacing="10.0" alignment="CENTER_LEFT">
+                                    <Button fx:id="saveScheduleButton" text="Save" onAction="#onSaveSchedule" styleClass="primary-button" />
+                                    <Label fx:id="scheduleStatusLabel" text="Select a user and use case to view schedules." styleClass="topbar-muted-value" />
                                 </HBox>
+                                <StackPane VBox.vgrow="ALWAYS">
+                                    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="mappings-scroll" VBox.vgrow="ALWAYS">
+                                        <FlowPane fx:id="schedulesFlowPane" hgap="14.0" vgap="14.0" prefWrapLength="920.0">
+                                            <padding>
+                                                <Insets top="12.0" right="12.0" bottom="12.0" left="12.0" />
+                                            </padding>
+                                        </FlowPane>
+                                    </ScrollPane>
+                                    <Label fx:id="schedulesEmptyLabel" text="No schedules found." styleClass="mappings-empty-label" StackPane.alignment="CENTER">
+                                        <StackPane.margin>
+                                            <Insets top="8.0" />
+                                        </StackPane.margin>
+                                    </Label>
+                                </StackPane>
                             </VBox>
                         </content>
                     </Tab>
