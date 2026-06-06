@@ -1258,6 +1258,8 @@ public class DashboardController {
                 renderMiniGraphFromData(latestGraphData);
             } else if (newValue == yellowBookTab) {
                 loadYellowBookDictionary();
+            } else if (newValue == schedulingTab) {
+                refreshSchedulesForCurrentContext(true);
             }
         }));
     }

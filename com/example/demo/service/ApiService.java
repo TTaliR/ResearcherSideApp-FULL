@@ -913,18 +913,29 @@ public class ApiService {
     /**
      * Verifies connection via endpoint response; logs and returns status
      */
+    public CompletableFuture<Boolean> checkConnectionAsync() {
+        return post(EP_CHECK_CONNECTION, new HashMap<>())
+            .thenApply(ok -> {
+                if (!ok) {
+                    System.err.println("Connection check failed: non-200 response");
+                    return false;
+                }
+
+                System.out.println("Connection check successful");
+                return true;
+            })
+            .exceptionally(ex -> {
+                System.err.println("Connection check failed: " + ex.getMessage());
+                return false;
+            });
+    }
+
+    /**
+     * Synchronous convenience wrapper. Do not call from the JavaFX application thread.
+     */
     public boolean checkConnection() {
         try {
-            // Match n8n Respond to Webhook config that only guarantees HTTP 200
-            boolean ok = post(EP_CHECK_CONNECTION, new HashMap<>()).get();
-
-            if (!ok) {
-                System.err.println("Connection check failed: non-200 response");
-                return false;
-            }
-
-            System.out.println("Connection check successful");
-            return true;
+            return checkConnectionAsync().get();
         } catch (Exception e) {
             System.err.println("Connection check failed: " + e.getMessage());
             return false;

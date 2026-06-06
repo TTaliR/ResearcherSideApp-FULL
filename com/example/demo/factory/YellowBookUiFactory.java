@@ -1,13 +1,18 @@
 package com.example.demo.factory;
 
 import com.example.demo.model.DictionaryParameterData;
+import javafx.animation.PauseTransition;
 import javafx.geometry.Pos;
+import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.input.Clipboard;
+import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import javafx.util.Duration;
 
 import java.util.List;
 import java.util.function.Consumer;
@@ -76,7 +81,29 @@ public class YellowBookUiFactory {
         Button deleteButton = SharedUiFactory.createDeleteIconButton("Remove parameter");
         deleteButton.setOnAction(ignored -> onRemove.accept(parameter));
 
-        row.getChildren().addAll(textBox, editButton, deleteButton);
+        Button copyButton = SharedUiFactory.createCopyIconButton("Copy name=value");
+        copyButton.setOnAction(ignored -> {
+            String value = parameter.paramValue != null ? parameter.paramValue : "";
+            String textToCopy = parameter.parameterName + "=" + value;
+            Clipboard clipboard = Clipboard.getSystemClipboard();
+            ClipboardContent content = new ClipboardContent();
+            content.putString(textToCopy);
+            clipboard.setContent(content);
+
+            String originalText = copyButton.getText();
+            Node originalGraphic = copyButton.getGraphic();
+            copyButton.setGraphic(null);
+            copyButton.setText("Copied!");
+
+            PauseTransition pause = new PauseTransition(Duration.seconds(1.5));
+            pause.setOnFinished(e -> {
+                copyButton.setText(originalText);
+                copyButton.setGraphic(originalGraphic);
+            });
+            pause.play();
+        });
+
+        row.getChildren().addAll(textBox, copyButton, editButton, deleteButton);
         row.setOnMouseClicked(event -> {
             if (event.getTarget() instanceof Button) {
                 return;
