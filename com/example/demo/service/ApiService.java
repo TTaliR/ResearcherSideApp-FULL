@@ -175,24 +175,17 @@ public class ApiService {
             return CompletableFuture.completedFuture(false);
         }
 
-        Map<String, Object> params = new HashMap<>();
-        params.put("id", mappingId);
-        params.put("minvalue", ruleConfig.getMinvalue());
-        params.put("maxvalue", ruleConfig.getMaxvalue());
-        params.put("minpulses", ruleConfig.getMinpulses());
-        params.put("maxpulses", ruleConfig.getMaxpulses());
-        params.put("minintensity", ruleConfig.getMinintensity());
-        params.put("maxintensity", ruleConfig.getMaxintensity());
-        params.put("minduration", ruleConfig.getMinduration());
-        params.put("maxduration", ruleConfig.getMaxduration());
-        params.put("mininterval", ruleConfig.getMininterval());
-        params.put("maxinterval", ruleConfig.getMaxinterval());
+        Map<String, Object> params = buildMappingChangeParams(mappingId, ruleConfig);
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("session_id", trimmedSessionId);
         payload.put("usecase_id", usecaseId);
         payload.put("usecase_name", trimmedUsecaseName);
-        payload.put("message", buildMappingChangeMessage(trimmedUsecaseName, params));
+        payload.put("action", "change");
+        payload.put("apply_scope", "all_users");
+        payload.put("original_mapping_id", mappingId);
+        payload.put("params", params);
+        payload.put("message", buildMappingChangeForAllUsersMessage(trimmedUsecaseName, params));
 
         return postWithResponse(EP_CHAT_CONFIG, payload)
             .thenApply(response -> {
@@ -206,8 +199,62 @@ public class ApiService {
             .exceptionally(ex -> false);
     }
 
-    private String buildMappingChangeMessage(String usecaseName, Map<String, Object> params) {
-        return "Change mapping ID " + params.get("id") + " for " + usecaseName
+    public CompletableFuture<Boolean> changeMappingForUserOnly(int mappingId, int userId, SensorRuleConfig ruleConfig,
+                                                               int usecaseId, String usecaseName,
+                                                               String sessionId) {
+        String trimmedUsecaseName = usecaseName == null ? "" : usecaseName.trim();
+        String trimmedSessionId = sessionId == null ? "" : sessionId.trim();
+        if (mappingId <= 0 || userId <= 0 || ruleConfig == null || usecaseId <= 0
+                || trimmedUsecaseName.isEmpty() || trimmedSessionId.isEmpty()) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        Map<String, Object> params = buildMappingChangeParams(mappingId, ruleConfig);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("session_id", trimmedSessionId);
+        payload.put("usecase_id", usecaseId);
+        payload.put("usecase_name", trimmedUsecaseName);
+        payload.put("action", "duplicate_mapping_for_user");
+        payload.put("apply_scope", "current_user");
+        payload.put("user_id", userId);
+        payload.put("original_mapping_id", mappingId);
+        payload.put("params", params);
+        payload.put("message", buildMappingChangeForUserOnlyMessage(trimmedUsecaseName, userId, params));
+
+        return postWithResponse(EP_CHAT_CONFIG, payload)
+            .thenApply(response -> {
+                if (response == null || response.has("error")) {
+                    return false;
+                }
+                String reply = extractTextField(response, "reply").toLowerCase();
+                return !reply.isBlank()
+                    && (reply.contains("duplicated")
+                        || reply.contains("created")
+                        || reply.contains("assigned")
+                        || reply.contains("updated"));
+            })
+            .exceptionally(ex -> false);
+    }
+
+    private Map<String, Object> buildMappingChangeParams(int mappingId, SensorRuleConfig ruleConfig) {
+        Map<String, Object> params = new HashMap<>();
+        params.put("id", mappingId);
+        params.put("minvalue", ruleConfig.getMinvalue());
+        params.put("maxvalue", ruleConfig.getMaxvalue());
+        params.put("minpulses", ruleConfig.getMinpulses());
+        params.put("maxpulses", ruleConfig.getMaxpulses());
+        params.put("minintensity", ruleConfig.getMinintensity());
+        params.put("maxintensity", ruleConfig.getMaxintensity());
+        params.put("minduration", ruleConfig.getMinduration());
+        params.put("maxduration", ruleConfig.getMaxduration());
+        params.put("mininterval", ruleConfig.getMininterval());
+        params.put("maxinterval", ruleConfig.getMaxinterval());
+        return params;
+    }
+
+    private String buildMappingChangeForAllUsersMessage(String usecaseName, Map<String, Object> params) {
+        return "Apply to all users: change mapping ID " + params.get("id") + " for " + usecaseName
             + " with minvalue " + params.get("minvalue")
             + ", maxvalue " + params.get("maxvalue")
             + ", minpulses " + params.get("minpulses")
@@ -218,6 +265,22 @@ public class ApiService {
             + ", maxduration " + params.get("maxduration")
             + ", mininterval " + params.get("mininterval")
             + ", and maxinterval " + params.get("maxinterval") + ".";
+    }
+
+    private String buildMappingChangeForUserOnlyMessage(String usecaseName, int userId, Map<String, Object> params) {
+        return "Duplicate mapping ID " + params.get("id") + " for user " + userId
+            + " only, assign the duplicate to that user, and change the duplicate for " + usecaseName
+            + " with minvalue " + params.get("minvalue")
+            + ", maxvalue " + params.get("maxvalue")
+            + ", minpulses " + params.get("minpulses")
+            + ", maxpulses " + params.get("maxpulses")
+            + ", minintensity " + params.get("minintensity")
+            + ", maxintensity " + params.get("maxintensity")
+            + ", minduration " + params.get("minduration")
+            + ", maxduration " + params.get("maxduration")
+            + ", mininterval " + params.get("mininterval")
+            + ", and maxinterval " + params.get("maxinterval")
+            + ". Leave the original mapping unchanged for all other users.";
     }
 
     public CompletableFuture<Boolean> setLoggingInterval(int usecaseId, String interval) {

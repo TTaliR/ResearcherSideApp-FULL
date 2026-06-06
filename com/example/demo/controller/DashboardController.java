@@ -260,6 +260,12 @@ public class DashboardController {
     private DictionaryParameterData selectedYellowBookParameter;
     private boolean showingActiveSchedulesOnly;
 
+    private enum MappingChangeScope {
+        ALL_USERS,
+        CURRENT_USER_ONLY,
+        CANCELLED
+    }
+
     private WebView graphWebView;
     private WebView miniGraphWebView;
     private StackPane graphLoadingOverlay;
@@ -892,7 +898,7 @@ public class DashboardController {
             AlertUtils.showErrorAlert("Validation Error", ex.getMessage());
             return;
         }
-        loadMappings();
+        refreshMappingData();
     }
 
     private SensorRuleConfig buildRuleConfigFromForm() {
@@ -965,31 +971,111 @@ public class DashboardController {
             }
 
             final RuleCardData editingRule = selectedMappingForEdit;
-            ApiService.getInstance().changeMapping(
-                    editingRule.mappingId,
-                    ruleConfig,
-                    useCaseId,
-                    getSelectedUsecaseName(),
-                    chatSessionId
-                )
-                .thenAccept(success -> Platform.runLater(() -> {
-                    if (!success) {
-                        AlertUtils.showErrorAlert("Update Failed", "Could not change mapping ID " + editingRule.mappingId + ".");
-                        return;
-                    }
+            MappingChangeScope scope = resolveActiveMappingChangeScope(editingRule);
+            if (scope == MappingChangeScope.CANCELLED) {
+                return;
+            }
 
-                    clearRuleBuilderForm();
-                    updateSelectedMappingForEdit(null);
-                    loadMappings();
-                    AlertUtils.showInfoAlert("Mapping Updated", "Updated mapping ID " + editingRule.mappingId + ".");
-                }))
-                .exceptionally(ex -> {
-                    AlertUtils.showErrorAlert("Update Failed", "Failed to change mapping: " + ex.getMessage());
-                    return null;
-                });
+            if (scope == MappingChangeScope.CURRENT_USER_ONLY) {
+                User currentUser = state.getSelectedUsers();
+                if (currentUser == null || currentUser.getUserID() <= 0) {
+                    AlertUtils.showErrorAlert("Missing User", "Select the user who should receive the mapping change before choosing Apply to Selected User Only.");
+                    return;
+                }
+                if (!isUserAssignedToRule(currentUser, editingRule)) {
+                    AlertUtils.showErrorAlert("User Not Assigned", "The selected user is not assigned to mapping ID " + editingRule.mappingId + ".");
+                    return;
+                }
+                changeMappingForCurrentUserOnly(editingRule, currentUser, ruleConfig, useCaseId);
+                return;
+            }
+
+            changeMappingForAllUsers(editingRule, ruleConfig, useCaseId);
         } catch (IllegalArgumentException ex) {
             AlertUtils.showErrorAlert("Validation Error", ex.getMessage());
         }
+    }
+
+    private MappingChangeScope resolveActiveMappingChangeScope(RuleCardData rule) {
+        if (workspaceTabPane != null && mappingsTab != null
+                && workspaceTabPane.getSelectionModel().getSelectedItem() != mappingsTab) {
+            return MappingChangeScope.ALL_USERS;
+        }
+
+        List<User> assignedUsers = findUsersAssignedToRule(rule);
+        if (assignedUsers.size() < 2) {
+            return MappingChangeScope.ALL_USERS;
+        }
+
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Shared Mapping");
+        alert.setHeaderText("This mapping is assigned to " + assignedUsers.size() + " users.");
+        alert.setContentText("Choose how to apply your changes.");
+
+        ButtonType applyToAll = new ButtonType("Apply to All Users", ButtonBar.ButtonData.YES);
+        ButtonType applyToMeOnly = new ButtonType("Apply to Selected User Only", ButtonBar.ButtonData.NO);
+        ButtonType cancel = new ButtonType("Cancel", ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(applyToAll, applyToMeOnly, cancel);
+
+        Optional<ButtonType> result = alert.showAndWait();
+        if (result.isEmpty() || result.get() == cancel) {
+            return MappingChangeScope.CANCELLED;
+        }
+        return result.get() == applyToMeOnly
+                ? MappingChangeScope.CURRENT_USER_ONLY
+                : MappingChangeScope.ALL_USERS;
+    }
+
+    private void changeMappingForAllUsers(RuleCardData editingRule, SensorRuleConfig ruleConfig, int useCaseId) {
+        ApiService.getInstance().changeMapping(
+                editingRule.mappingId,
+                ruleConfig,
+                useCaseId,
+                getSelectedUsecaseName(),
+                chatSessionId
+            )
+            .thenAccept(success -> Platform.runLater(() -> handleMappingChangeResult(
+                    success,
+                    "Could not change mapping ID " + editingRule.mappingId + ".",
+                    "Updated mapping ID " + editingRule.mappingId + "."
+            )))
+            .exceptionally(ex -> {
+                Platform.runLater(() -> AlertUtils.showErrorAlert("Update Failed", "Failed to change mapping: " + ex.getMessage()));
+                return null;
+            });
+    }
+
+    private void changeMappingForCurrentUserOnly(RuleCardData editingRule, User currentUser,
+                                                 SensorRuleConfig ruleConfig, int useCaseId) {
+        ApiService.getInstance().changeMappingForUserOnly(
+                editingRule.mappingId,
+                currentUser.getUserID(),
+                ruleConfig,
+                useCaseId,
+                getSelectedUsecaseName(),
+                chatSessionId
+            )
+            .thenAccept(success -> Platform.runLater(() -> handleMappingChangeResult(
+                    success,
+                    "Could not duplicate mapping ID " + editingRule.mappingId + " for user " + currentUser.getUserID() + ".",
+                    "Applied mapping changes only to user " + currentUser.getUserID() + "."
+            )))
+            .exceptionally(ex -> {
+                Platform.runLater(() -> AlertUtils.showErrorAlert("Update Failed", "Failed to change mapping for the selected user: " + ex.getMessage()));
+                return null;
+            });
+    }
+
+    private void handleMappingChangeResult(boolean success, String failureMessage, String successMessage) {
+        if (!success) {
+            AlertUtils.showErrorAlert("Update Failed", failureMessage);
+            return;
+        }
+
+        clearRuleBuilderForm();
+        updateSelectedMappingForEdit(null);
+        refreshMappingData();
+        AlertUtils.showInfoAlert("Mapping Updated", successMessage);
     }
 
     private int parseRequiredInt(TextField field, String fieldName) {
@@ -1478,7 +1564,7 @@ public class DashboardController {
 
         ChatCommandOption selected = chatCommandDropdownList.getSelectionModel().getSelectedItem();
         if (selected == null && !chatCommandDropdownList.getItems().isEmpty()) {
-            selected = chatCommandDropdownList.getItems().getFirst();
+            selected = chatCommandDropdownList.getItems().get(0);
         }
 
         if (selected == null) {
@@ -1713,14 +1799,18 @@ public class DashboardController {
     }
 
     private void loadUserss() {
+        loadUsersAsync();
+    }
+
+    private CompletableFuture<Void> loadUsersAsync() {
         User currentSelection = topBarController.getSelectedUser();
         Integer selectedUserId = currentSelection == null ? null : currentSelection.getUserID();
         users.clear();
-        ApiService.getInstance().get(ApiService.EP_GET_USERS, null)
-            .thenAccept(response -> {
+        return ApiService.getInstance().get(ApiService.EP_GET_USERS, null)
+            .thenCompose(response -> {
                 JsonNode usersArray = ApiService.getInstance().extractArray(response);
                 if (usersArray == null) {
-                    return;
+                    return CompletableFuture.completedFuture(null);
                 }
 
                 List<User> loaded = new ArrayList<>();
@@ -1731,15 +1821,22 @@ public class DashboardController {
                     loaded.add(parseUser(node));
                 }
 
+                CompletableFuture<Void> uiUpdate = new CompletableFuture<>();
                 Platform.runLater(() -> {
-                     users.setAll(loaded);
-                     leftSidebarController.getUsersCountLabel().setText(String.valueOf(users.size()));
+                    try {
+                        users.setAll(loaded);
+                        leftSidebarController.getUsersCountLabel().setText(String.valueOf(users.size()));
 
-                     leftSidebarController.getUsersSidebarList().getItems().setAll(users);
-                     refreshUsersForSelectedUseCase(selectedUserId);
-                     renderMappingsForUseCase(state.getSelectedUseCase());
-                     refreshRuleSummary();
-                 });
+                        leftSidebarController.getUsersSidebarList().getItems().setAll(users);
+                        refreshUsersForSelectedUseCase(selectedUserId);
+                        renderMappingsForUseCase(state.getSelectedUseCase());
+                        refreshRuleSummary();
+                        uiUpdate.complete(null);
+                    } catch (Exception ex) {
+                        uiUpdate.completeExceptionally(ex);
+                    }
+                });
+                return uiUpdate;
             })
             .exceptionally(ex -> {
                 ex.printStackTrace();
@@ -2486,21 +2583,36 @@ public class DashboardController {
     }
 
     private void loadMappings() {
-        ApiService.getInstance().get(ApiService.EP_CURRENT_CONFIGURATION, null)
-            .thenAccept(response -> {
+        loadMappingsAsync();
+    }
+
+    private CompletableFuture<Void> loadMappingsAsync() {
+        return ApiService.getInstance().get(ApiService.EP_CURRENT_CONFIGURATION, null)
+            .thenCompose(response -> {
+                CompletableFuture<Void> uiUpdate = new CompletableFuture<>();
                 Platform.runLater(() -> {
-                    allRules.clear();
-                    new MappingConfigParser(allRules, useCaseRegistry.values().stream().collect(Collectors.toMap(UseCase::getNormalizedName, UseCase::getRawName))).parseMappingsFromConfiguration(response);
-                    refreshUsersForSelectedUseCase(null);
-                    updateUserAssignmentPanel(leftSidebarController.getSelectedUser());
-                    renderMappingsForUseCase(state.getSelectedUseCase());
-                    refreshRuleSummary();
+                    try {
+                        allRules.clear();
+                        new MappingConfigParser(allRules, useCaseRegistry.values().stream().collect(Collectors.toMap(UseCase::getNormalizedName, UseCase::getRawName))).parseMappingsFromConfiguration(response);
+                        refreshUsersForSelectedUseCase(null);
+                        updateUserAssignmentPanel(leftSidebarController.getSelectedUser());
+                        renderMappingsForUseCase(state.getSelectedUseCase());
+                        refreshRuleSummary();
+                        uiUpdate.complete(null);
+                    } catch (Exception ex) {
+                        uiUpdate.completeExceptionally(ex);
+                    }
                 });
+                return uiUpdate;
             })
             .exceptionally(ex -> {
                 ex.printStackTrace();
                 return null;
             });
+    }
+
+    private CompletableFuture<Void> refreshMappingData() {
+        return loadMappingsAsync().thenCompose(ignored -> loadUsersAsync());
     }
 
     @FXML
@@ -3030,19 +3142,19 @@ public class DashboardController {
         setAgentTyping(true);
 
         ApiService.getInstance().postWithResponse(ApiService.EP_CHAT_CONFIG, payload)
-                .thenAccept(response -> Platform.runLater(() -> {
-                    setAgentTyping(false);
-                    if (response != null && response.has("reply")) {
-                        String reply = response.get("reply").asText();
-                        addChatMessage(mappingListRequest ? appendMappingAssignmentSummary(reply, selectedUseCase) : reply, false);
-                    } else {
-                        addChatMessage("AI response did not include reply field.", false);
-                    }
-                    // for future usage?
-                    // if(response.has("action") && response.get("action").asText().equals("newMapping")) {
-                    // refreshMappings();
-                    // }
-                }))
+                .thenAccept(response -> {
+                    CompletableFuture<Void> refresh = mappingListRequest
+                            ? refreshMappingData()
+                            : CompletableFuture.completedFuture(null);
+                    refresh.thenRun(() -> Platform.runLater(() -> handleChatResponse(response, mappingListRequest, selectedUseCase)))
+                            .exceptionally(ex -> {
+                                Platform.runLater(() -> {
+                                    setAgentTyping(false);
+                                    addChatMessage("Error refreshing mappings: " + ex.getMessage(), false);
+                                });
+                                return null;
+                            });
+                })
                 .exceptionally(ex -> {
                     Platform.runLater(() -> {
                         setAgentTyping(false);
@@ -3050,6 +3162,16 @@ public class DashboardController {
                     });
                     return null;
                 });
+    }
+
+    private void handleChatResponse(JsonNode response, boolean mappingListRequest, String selectedUseCase) {
+        setAgentTyping(false);
+        if (response != null && response.has("reply")) {
+            String reply = response.get("reply").asText();
+            addChatMessage(mappingListRequest ? appendMappingAssignmentSummary(reply, selectedUseCase) : reply, false);
+        } else {
+            addChatMessage("AI response did not include reply field.", false);
+        }
     }
 
     private boolean isMappingListRequest(String originalMessage, String expandedMessage) {
