@@ -24,6 +24,7 @@ import com.example.demo.util.FormatUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
+import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.beans.value.ChangeListener;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -45,7 +46,9 @@ import javafx.util.Duration;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.time.LocalDate;
+import java.time.*;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -61,6 +64,37 @@ public class DashboardController {
     private static final String FEEDBACK_GRAPH_TEMPLATE_PATH = "/com/example/demo/view/templates/feedbackGraph.html";
     private static final String MINI_GRAPH_TEMPLATE_PATH = "/com/example/demo/view/templates/miniFeedbackGraph.html";
     private static final Pattern LOG_INTERVAL_PATTERN = Pattern.compile("^\\d+(\\.\\d+)?\\s+(second|seconds|minute|minutes|hour|hours|day|days)$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SCHEDULE_RELATIVE_NEXT_CHECK_PATTERN = Pattern.compile(
+        "^\\s*(?:in\\s+)?(-?\\d+)\\s+(second|seconds|minute|minutes|hour|hours|day|days|week|weeks|month|months)\\s*$",
+        Pattern.CASE_INSENSITIVE
+    );
+    private static final List<DateTimeFormatter> SCHEDULE_NEXT_CHECK_FORMATTERS = List.of(
+        DateTimeFormatter.ISO_INSTANT,
+        DateTimeFormatter.ISO_OFFSET_DATE_TIME,
+        DateTimeFormatter.ISO_ZONED_DATE_TIME,
+        DateTimeFormatter.ISO_LOCAL_DATE_TIME,
+        DateTimeFormatter.ISO_LOCAL_DATE,
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"),
+        DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"),
+        DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"),
+        DateTimeFormatter.ofPattern("dd/MM/yyyy"),
+        DateTimeFormatter.ofPattern("yyyy-M-d HH:mm:ss"),
+        DateTimeFormatter.ofPattern("yyyy-M-d HH:mm"),
+        DateTimeFormatter.ofPattern("yyyy-M-d"),
+        DateTimeFormatter.ofPattern("d/M/yyyy HH:mm:ss"),
+        DateTimeFormatter.ofPattern("d/M/yyyy HH:mm"),
+        DateTimeFormatter.ofPattern("d/M/yyyy"),
+        DateTimeFormatter.ofPattern("M/d/yyyy HH:mm:ss"),
+        DateTimeFormatter.ofPattern("M/d/yyyy HH:mm"),
+        DateTimeFormatter.ofPattern("M/d/yyyy"),
+        DateTimeFormatter.ofPattern("d-M-yyyy HH:mm:ss"),
+        DateTimeFormatter.ofPattern("d-M-yyyy HH:mm"),
+        DateTimeFormatter.ofPattern("d-M-yyyy"),
+        DateTimeFormatter.ofPattern("d.M.yyyy HH:mm:ss"),
+        DateTimeFormatter.ofPattern("d.M.yyyy HH:mm"),
+        DateTimeFormatter.ofPattern("d.M.yyyy")
+    );
     private static final List<ChatCommandOption> CHAT_COMMAND_OPTIONS = createChatCommandOptions();
     private static final Map<String, ChatCommandOption> CHAT_COMMAND_OPTIONS_BY_COMMAND = createChatCommandOptionMap();
 
@@ -176,7 +210,7 @@ public class DashboardController {
     @FXML
     private TableColumn<Schedule, Double> colTrigger;
     @FXML
-    private TableColumn<Schedule, String> colNextCheck;
+    private TableColumn<Schedule, Instant> colNextCheck;
     @FXML
     private TableColumn<Schedule, Integer> colInterval;
     @FXML
@@ -186,11 +220,11 @@ public class DashboardController {
     @FXML
     private TextField userIdField;
     @FXML
-    private TextField intervalDaysField;
+    private Spinner<Integer> intervalDaysSpinner;
     @FXML
     private ComboBox<String> measureTypeComboBox;
     @FXML
-    private TextField triggerPercentageField;
+    private Spinner<Integer> triggerPercentageSpinner;
     @FXML
     private Label scheduleStatusLabel;
     @FXML
@@ -224,6 +258,7 @@ public class DashboardController {
     private String activeMonitoringTypeKey = "";
     private RuleCardData selectedMappingForEdit;
     private DictionaryParameterData selectedYellowBookParameter;
+    private boolean showingActiveSchedulesOnly;
 
     private WebView graphWebView;
     private WebView miniGraphWebView;
@@ -318,8 +353,38 @@ public class DashboardController {
             if (colScheduleId != null) colScheduleId.setCellValueFactory(new PropertyValueFactory<>("scheduleId"));
             if (colUserId != null) colUserId.setCellValueFactory(new PropertyValueFactory<>("userId"));
             if (colMeasureType != null) colMeasureType.setCellValueFactory(new PropertyValueFactory<>("measureType"));
-            if (colTrigger != null) colTrigger.setCellValueFactory(new PropertyValueFactory<>("triggerPercentage"));
-            if (colNextCheck != null) colNextCheck.setCellValueFactory(new PropertyValueFactory<>("nextCheck"));
+            if (colTrigger != null) {
+                colTrigger.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(cell.getValue().getTriggerPercentage()));
+                colTrigger.setComparator(Comparator.nullsLast(Double::compareTo));
+                colTrigger.setCellFactory(column -> new TableCell<>() {
+                    @Override
+                    protected void updateItem(Double item, boolean empty) {
+                        super.updateItem(item, empty);
+                        setText(empty || item == null ? null : String.valueOf((int) Math.round(item)));
+                    }
+                });
+            }
+            if (colNextCheck != null) {
+                colNextCheck.setCellValueFactory(cell -> new ReadOnlyObjectWrapper<>(getScheduleNextCheckSortInstant(cell.getValue())));
+                colNextCheck.setComparator(Comparator.nullsLast(Instant::compareTo));
+                colNextCheck.setCellFactory(column -> new TableCell<>() {
+                    @Override
+                    protected void updateItem(Instant item, boolean empty) {
+                        super.updateItem(item, empty);
+                        if (empty || getIndex() < 0 || getTableView() == null || getIndex() >= getTableView().getItems().size()) {
+                            setText(null);
+                            return;
+                        }
+
+                        Schedule schedule = getTableView().getItems().get(getIndex());
+                        String displayText = schedule.getNextCheck();
+                        if (displayText == null || displayText.isBlank()) {
+                            displayText = schedule.getNextRunDate();
+                        }
+                        setText(displayText == null || displayText.isBlank() ? null : displayText);
+                    }
+                });
+            }
             if (colInterval != null) colInterval.setCellValueFactory(new PropertyValueFactory<>("intervalDays"));
             if (colActive != null) colActive.setCellValueFactory(new PropertyValueFactory<>("active"));
             
@@ -352,8 +417,108 @@ public class DashboardController {
                 measureTypeComboBox.getItems().setAll("average", "median", "mode");
                 measureTypeComboBox.setValue("average");
             }
+            setupPositiveIntegerSpinner(intervalDaysSpinner, 1);
+            setupTriggerPercentageSpinner();
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    private void setupTriggerPercentageSpinner() {
+        if (triggerPercentageSpinner == null) {
+            return;
+        }
+
+        triggerPercentageSpinner.setValueFactory(
+            new SpinnerValueFactory.IntegerSpinnerValueFactory(Integer.MIN_VALUE, Integer.MAX_VALUE, 1, 1)
+        );
+        triggerPercentageSpinner.setEditable(true);
+        triggerPercentageSpinner.getEditor().setTextFormatter(new TextFormatter<>(change -> {
+            String newText = change.getControlNewText();
+            return newText.matches("-?\\d*") ? change : null;
+        }));
+    }
+
+    private Instant getScheduleNextCheckSortInstant(Schedule schedule) {
+        if (schedule == null) {
+            return null;
+        }
+
+        return parseScheduleNextCheckInstant(schedule.getNextRunDate())
+            .or(() -> parseScheduleNextCheckInstant(schedule.getNextCheck()))
+            .orElse(null);
+    }
+
+    private Optional<Instant> parseScheduleNextCheckInstant(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return Optional.empty();
+        }
+
+        String trimmed = value.trim();
+        Optional<Instant> relativeInstant = parseRelativeScheduleNextCheckInstant(trimmed);
+        if (relativeInstant.isPresent()) {
+            return relativeInstant;
+        }
+
+        for (DateTimeFormatter formatter : SCHEDULE_NEXT_CHECK_FORMATTERS) {
+            Optional<Instant> parsed = parseScheduleNextCheckInstant(trimmed, formatter);
+            if (parsed.isPresent()) {
+                return parsed;
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    private Optional<Instant> parseRelativeScheduleNextCheckInstant(String value) {
+        Matcher matcher = SCHEDULE_RELATIVE_NEXT_CHECK_PATTERN.matcher(value);
+        if (!matcher.matches()) {
+            return Optional.empty();
+        }
+
+        long amount;
+        try {
+            amount = Long.parseLong(matcher.group(1));
+        } catch (NumberFormatException e) {
+            return Optional.empty();
+        }
+
+        String unit = matcher.group(2).toLowerCase(Locale.ROOT);
+        long seconds;
+        if (unit.startsWith("second")) {
+            seconds = amount;
+        } else if (unit.startsWith("minute")) {
+            seconds = amount * 60L;
+        } else if (unit.startsWith("hour")) {
+            seconds = amount * 60L * 60L;
+        } else if (unit.startsWith("day")) {
+            seconds = amount * 24L * 60L * 60L;
+        } else if (unit.startsWith("week")) {
+            seconds = amount * 7L * 24L * 60L * 60L;
+        } else {
+            seconds = amount * 30L * 24L * 60L * 60L;
+        }
+
+        return Optional.of(Instant.EPOCH.plusSeconds(seconds));
+    }
+
+    private Optional<Instant> parseScheduleNextCheckInstant(String value, DateTimeFormatter formatter) {
+        try {
+            if (formatter == DateTimeFormatter.ISO_INSTANT) {
+                return Optional.of(Instant.from(formatter.parse(value)));
+            }
+            if (formatter == DateTimeFormatter.ISO_OFFSET_DATE_TIME) {
+                return Optional.of(OffsetDateTime.parse(value, formatter).toInstant());
+            }
+            if (formatter == DateTimeFormatter.ISO_ZONED_DATE_TIME) {
+                return Optional.of(ZonedDateTime.parse(value, formatter).toInstant());
+            }
+            if (formatter == DateTimeFormatter.ISO_LOCAL_DATE_TIME || value.contains(":")) {
+                return Optional.of(LocalDateTime.parse(value, formatter).atZone(ZoneId.systemDefault()).toInstant());
+            }
+            return Optional.of(LocalDate.parse(value, formatter).atStartOfDay(ZoneId.systemDefault()).toInstant());
+        } catch (DateTimeParseException e) {
+            return Optional.empty();
         }
     }
 
@@ -372,15 +537,15 @@ public class DashboardController {
         if (userIdField != null) {
             userIdField.setText(String.valueOf(schedule.getUserId()));
         }
-        if (intervalDaysField != null) {
-            intervalDaysField.setText(String.valueOf(schedule.getIntervalDays()));
+        if (intervalDaysSpinner != null && intervalDaysSpinner.getValueFactory() != null) {
+            intervalDaysSpinner.getValueFactory().setValue(Math.max(1, schedule.getIntervalDays()));
         }
         if (measureTypeComboBox != null) {
             String measureType = schedule.getMeasureType() == null ? "" : schedule.getMeasureType().trim().toLowerCase(Locale.ROOT);
             measureTypeComboBox.setValue(List.of("average", "median", "mode").contains(measureType) ? measureType : "average");
         }
-        if (triggerPercentageField != null) {
-            triggerPercentageField.setText(String.valueOf(schedule.getTriggerPercentage()));
+        if (triggerPercentageSpinner != null && triggerPercentageSpinner.getValueFactory() != null) {
+            triggerPercentageSpinner.getValueFactory().setValue((int) Math.round(schedule.getTriggerPercentage()));
         }
     }
 
@@ -388,10 +553,18 @@ public class DashboardController {
         if (resp == null) return;
         ObservableList<Schedule> list = FXCollections.observableArrayList(resp.getSchedules());
         if (schedulesTable != null) schedulesTable.setItems(list);
-        if (scheduleStatusLabel != null) scheduleStatusLabel.setText(resp.getReply() != null && !resp.getReply().isEmpty() ? resp.getReply() : (resp.isSuccess() ? "OK" : resp.getErrorMessage()));
+        updateScheduleStatus(resp);
+    }
+
+    private void updateScheduleStatus(ScheduleApiResponse resp) {
+        if (resp == null || scheduleStatusLabel == null) {
+            return;
+        }
+        scheduleStatusLabel.setText(resp.getReply() != null && !resp.getReply().isEmpty() ? resp.getReply() : (resp.isSuccess() ? "OK" : resp.getErrorMessage()));
     }
 
     private void refreshSchedulesForCurrentContext(boolean activeOnly) {
+        showingActiveSchedulesOnly = activeOnly;
         String uc = getSelectedUsecaseName();
         User selectedUser = topBarController == null ? null : topBarController.getSelectedUser();
         if (selectedUser == null || uc.isBlank()) {
@@ -415,6 +588,7 @@ public class DashboardController {
     private void onListAllSchedules() {
         String uc = this.getSelectedUsecaseName();
         int userId = getSelectedScheduleUserId();
+        showingActiveSchedulesOnly = false;
         ApiService.getInstance().listAllSchedules(uc, userId).thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
     }
 
@@ -422,6 +596,7 @@ public class DashboardController {
     private void onListActiveSchedules() {
         String uc = this.getSelectedUsecaseName();
         int userId = getSelectedScheduleUserId();
+        showingActiveSchedulesOnly = true;
         ApiService.getInstance().listActiveSchedules(uc, userId).thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
     }
 
@@ -429,14 +604,14 @@ public class DashboardController {
     private void onAddSchedule() {
         try {
             int userId = getSelectedScheduleUserId();
-            int interval = Integer.parseInt(intervalDaysField.getText().trim());
+            int interval = getIntervalDaysValue();
             String measure = getSelectedScheduleMeasure();
-            double trigger = Double.parseDouble(triggerPercentageField.getText().trim());
-            String uc = this.getSelectedUsecaseName();
+            int trigger = getTriggerPercentageValue();
+            String uc = requireSelectedUsecaseName();
             ApiService.getInstance().addSchedule(userId, interval, measure, trigger, uc)
-                .thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
+                .thenAccept(resp -> Platform.runLater(() -> handleScheduleMutationResponse(resp)));
         } catch (Exception e) {
-            AlertUtils.showErrorAlert("Input Error", "Please make sure all schedule fields are valid numbers/text.");
+            showScheduleInputError(e);
         }
     }
 
@@ -445,14 +620,14 @@ public class DashboardController {
         try {
             int schedId = getSelectedScheduleId();
             int userId = getSelectedScheduleUserId();
-            int interval = Integer.parseInt(intervalDaysField.getText().trim());
+            int interval = getIntervalDaysValue();
             String measure = getSelectedScheduleMeasure();
-            double trigger = Double.parseDouble(triggerPercentageField.getText().trim());
-            String uc = this.getSelectedUsecaseName();
+            int trigger = getTriggerPercentageValue();
+            String uc = requireSelectedUsecaseName();
             ApiService.getInstance().changeSchedule(schedId, userId, interval, measure, trigger, uc)
-                .thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
+                .thenAccept(resp -> Platform.runLater(() -> handleScheduleMutationResponse(resp)));
         } catch (Exception e) {
-            AlertUtils.showErrorAlert("Input Error", "Please make sure schedule id and other fields are valid.");
+            showScheduleInputError(e);
         }
     }
 
@@ -460,11 +635,11 @@ public class DashboardController {
     private void onActivateSchedule() {
         try {
             int schedId = getSelectedScheduleId();
-            String uc = this.getSelectedUsecaseName();
+            String uc = requireSelectedUsecaseName();
             ApiService.getInstance().activateSchedule(schedId, uc)
-                .thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
+                .thenAccept(resp -> Platform.runLater(() -> handleScheduleMutationResponse(resp)));
         } catch (Exception e) {
-            AlertUtils.showErrorAlert("Input Error", "Please provide a valid schedule id to activate.");
+            showScheduleInputError(e);
         }
     }
 
@@ -472,11 +647,11 @@ public class DashboardController {
     private void onDeactivateSchedule() {
         try {
             int schedId = getSelectedScheduleId();
-            String uc = this.getSelectedUsecaseName();
+            String uc = requireSelectedUsecaseName();
             ApiService.getInstance().deactivateSchedule(schedId, uc)
-                .thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
+                .thenAccept(resp -> Platform.runLater(() -> handleScheduleMutationResponse(resp)));
         } catch (Exception e) {
-            AlertUtils.showErrorAlert("Input Error", "Please provide a valid schedule id to deactivate.");
+            showScheduleInputError(e);
         }
     }
 
@@ -488,12 +663,116 @@ public class DashboardController {
         return measure.trim().toLowerCase(Locale.ROOT);
     }
 
+    private void handleScheduleMutationResponse(ScheduleApiResponse resp) {
+        if (resp == null) {
+            return;
+        }
+        updateScheduleStatus(resp);
+        if (resp.isSuccess()) {
+            refreshSchedulesForCurrentContext(showingActiveSchedulesOnly);
+        }
+    }
+
+    private int getTriggerPercentageValue() {
+        if (triggerPercentageSpinner == null || triggerPercentageSpinner.getValueFactory() == null) {
+            throw new IllegalStateException("Trigger percentage control is not available.");
+        }
+
+        String editorText = triggerPercentageSpinner.getEditor() == null
+            ? ""
+            : triggerPercentageSpinner.getEditor().getText().trim();
+        if (!editorText.isEmpty()) {
+            int typedValue = parseScheduleInteger(editorText, "Trigger percentage");
+            if (typedValue == 0) {
+                throw new IllegalArgumentException("Trigger percentage cannot be 0.");
+            }
+            triggerPercentageSpinner.getValueFactory().setValue(typedValue);
+            return typedValue;
+        }
+
+        Integer value = triggerPercentageSpinner.getValue();
+        if (value == null) {
+            throw new IllegalArgumentException("Trigger percentage is required.");
+        }
+        if (value == 0) {
+            throw new IllegalArgumentException("Trigger percentage cannot be 0.");
+        }
+        return value;
+    }
+
+    private int getIntervalDaysValue() {
+        return getRequiredSpinnerValue(intervalDaysSpinner, "Interval days", 1);
+    }
+
+    private int getRequiredSpinnerValue(Spinner<Integer> spinner, String fieldName, int minValue) {
+        if (spinner == null || spinner.getValueFactory() == null) {
+            throw new IllegalStateException(fieldName + " control is not available.");
+        }
+
+        String editorText = spinner.getEditor() == null ? "" : spinner.getEditor().getText().trim();
+        int value;
+        if (!editorText.isEmpty()) {
+            value = parseScheduleInteger(editorText, fieldName);
+        } else {
+            Integer spinnerValue = spinner.getValue();
+            if (spinnerValue == null) {
+                throw new IllegalArgumentException(fieldName + " is required.");
+            }
+            value = spinnerValue;
+        }
+
+        if (value < minValue) {
+            throw new IllegalArgumentException(fieldName + " must be " + minValue + " or greater.");
+        }
+
+        spinner.getValueFactory().setValue(value);
+        return value;
+    }
+
+    private void setupPositiveIntegerSpinner(Spinner<Integer> spinner, int initialValue) {
+        if (spinner == null) {
+            return;
+        }
+
+        spinner.setValueFactory(
+            new SpinnerValueFactory.IntegerSpinnerValueFactory(1, Integer.MAX_VALUE, Math.max(1, initialValue), 1)
+        );
+        spinner.setEditable(true);
+        spinner.getEditor().setTextFormatter(new TextFormatter<>(change -> {
+            String newText = change.getControlNewText();
+            return newText.matches("\\d*") ? change : null;
+        }));
+    }
+
+    private void showScheduleInputError(Exception e) {
+        String message = e == null || e.getMessage() == null || e.getMessage().isBlank()
+            ? "Please make sure all schedule values are valid."
+            : e.getMessage();
+        AlertUtils.showErrorAlert("Input Error", message);
+    }
+
+    private int parseScheduleInteger(String text, String fieldName) {
+        try {
+            return Integer.parseInt(text);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(fieldName + " must be a whole number.");
+        }
+    }
+
     private int getSelectedScheduleId() {
         Schedule selected = schedulesTable == null ? null : schedulesTable.getSelectionModel().getSelectedItem();
         if (selected != null && selected.getScheduleId() > 0) {
             return selected.getScheduleId();
         }
-        return Integer.parseInt(scheduleIdField.getText().trim());
+        String text = scheduleIdField == null ? "" : scheduleIdField.getText().trim();
+        if (text.isEmpty()) {
+            throw new IllegalArgumentException("Select a schedule first.");
+        }
+        int scheduleId = parseScheduleInteger(text, "Schedule ID");
+        if (scheduleId <= 0) {
+            throw new IllegalArgumentException("Schedule ID must be greater than 0.");
+        }
+        return scheduleId;
     }
 
     private int getSelectedScheduleUserId() {
@@ -504,7 +783,15 @@ public class DashboardController {
         if (selected != null && selected.getUserID() > 0) {
             return selected.getUserID();
         }
-        return Integer.parseInt(userIdField.getText().trim());
+        String text = userIdField == null ? "" : userIdField.getText().trim();
+        if (text.isEmpty()) {
+            throw new IllegalArgumentException("Select a user first.");
+        }
+        int userId = parseScheduleInteger(text, "User ID");
+        if (userId <= 0) {
+            throw new IllegalArgumentException("User ID must be greater than 0.");
+        }
+        return userId;
     }
 
      private String getSelectedUsecaseName() {
@@ -516,6 +803,14 @@ public class DashboardController {
          }
          return uc == null ? "" : uc.trim();
       }
+
+    private String requireSelectedUsecaseName() {
+        String usecaseName = getSelectedUsecaseName();
+        if (usecaseName.isBlank()) {
+            throw new IllegalArgumentException("Select a use case first.");
+        }
+        return usecaseName;
+    }
 
     private void updateRuleBuilderUseCaseDisplay(String selectedUseCase) {
         if (ruleSensorTypeLabel == null || ruleSensorTypeDescriptionLabel == null) {

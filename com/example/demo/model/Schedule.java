@@ -18,6 +18,9 @@ public class Schedule {
     @JsonProperty("next_check")
     private String nextCheck = "";
 
+    @JsonProperty("next_run_date")
+    private String nextRunDate = "";
+
     @JsonProperty("interval_days")
     private int intervalDays;
 
@@ -67,6 +70,14 @@ public class Schedule {
         this.nextCheck = nextCheck == null ? "" : nextCheck;
     }
 
+    public String getNextRunDate() {
+        return nextRunDate;
+    }
+
+    public void setNextRunDate(String nextRunDate) {
+        this.nextRunDate = nextRunDate == null ? "" : nextRunDate;
+    }
+
     public int getIntervalDays() {
         return intervalDays;
     }
@@ -90,6 +101,7 @@ public class Schedule {
             + ", measureType=" + measureType
             + ", triggerPercentage=" + triggerPercentage
             + ", nextCheck=" + nextCheck
+            + ", nextRunDate=" + nextRunDate
             + ", intervalDays=" + intervalDays
             + ", active=" + active
             + "]";

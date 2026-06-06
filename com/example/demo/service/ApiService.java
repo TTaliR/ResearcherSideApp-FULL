@@ -291,9 +291,9 @@ public class ApiService {
     }
 
     public CompletableFuture<ScheduleApiResponse> addSchedule(int userId, int intervalDays, String measureType,
-                                                              double triggerPercentage, String usecaseName) {
+                                                              int triggerPercentage, String usecaseName) {
         String trimmedMeasureType = measureType == null ? "" : measureType.trim();
-        if (userId <= 0 || intervalDays <= 0 || trimmedMeasureType.isEmpty() || triggerPercentage < 0) {
+        if (userId <= 0 || intervalDays <= 0 || trimmedMeasureType.isEmpty() || triggerPercentage == 0) {
             return CompletableFuture.completedFuture(
                 failedScheduleResponse("Invalid schedule add request: userId, intervalDays, measureType, and triggerPercentage must be valid")
             );
@@ -303,15 +303,15 @@ public class ApiService {
         params.put("user_id", userId);
         params.put("interval_days", intervalDays);
         params.put("measure_type", trimmedMeasureType);
-        params.put("trigger_percentage", triggerPercentage);
+        params.put("trigger_percentage", toScheduleTriggerPayloadValue(triggerPercentage));
         return sendScheduleRequest("add", params, usecaseName, "manual schedule add from researcher UI");
     }
 
     public CompletableFuture<ScheduleApiResponse> changeSchedule(int scheduleId, int userId, int intervalDays,
-                                                                 String measureType, double triggerPercentage,
+                                                                 String measureType, int triggerPercentage,
                                                                  String usecaseName) {
         String trimmedMeasureType = measureType == null ? "" : measureType.trim();
-        if (scheduleId <= 0 || userId <= 0 || intervalDays <= 0 || trimmedMeasureType.isEmpty() || triggerPercentage < 0) {
+        if (scheduleId <= 0 || userId <= 0 || intervalDays <= 0 || trimmedMeasureType.isEmpty() || triggerPercentage == 0) {
             return CompletableFuture.completedFuture(
                 failedScheduleResponse("Invalid schedule change request: scheduleId, userId, intervalDays, measureType, and triggerPercentage must be valid")
             );
@@ -322,8 +322,12 @@ public class ApiService {
         params.put("user_id", userId);
         params.put("interval_days", intervalDays);
         params.put("measure_type", trimmedMeasureType);
-        params.put("trigger_percentage", triggerPercentage);
+        params.put("trigger_percentage", toScheduleTriggerPayloadValue(triggerPercentage));
         return sendScheduleRequest("change", params, usecaseName, "manual schedule edit from researcher UI");
+    }
+
+    private double toScheduleTriggerPayloadValue(int triggerPercentage) {
+        return triggerPercentage / 100.0;
     }
 
     public CompletableFuture<ScheduleApiResponse> deactivateSchedule(int scheduleId, String usecaseName) {
@@ -473,6 +477,7 @@ public class ApiService {
         schedule.setMeasureType(node.path("measure_type").asText(node.path("measureType").asText("")));
         schedule.setTriggerPercentage(node.path("trigger_percentage").asDouble(node.path("triggerPercentage").asDouble(0.0)));
         schedule.setNextCheck(node.path("next_check").asText(node.path("nextCheck").asText("")));
+        schedule.setNextRunDate(node.path("next_run_date").asText(node.path("nextRunDate").asText("")));
         schedule.setIntervalDays(node.path("interval_days").asInt(node.path("intervalDays").asInt(0)));
         schedule.setActive(node.path("active").asBoolean(node.path("isActive").asBoolean(false)));
         return schedule;

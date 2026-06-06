@@ -9,6 +9,7 @@
 <?import javafx.scene.control.ListView?>
 <?import javafx.scene.control.ScrollPane?>
 <?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.Spinner?>
 <?import javafx.scene.control.Tab?>
 <?import javafx.scene.control.TabPane?>
 <?import javafx.scene.control.TableColumn?>
@@ -195,16 +196,21 @@
                                 <TextField fx:id="scheduleIdField" promptText="(for edit/activate)" prefWidth="90" disable="true" />
                                     <Label text="User ID:" />
                                     <TextField fx:id="userIdField" promptText="e.g. 100" prefWidth="80" />
-                                    <Label text="Interval:" />
-                                    <TextField fx:id="intervalDaysField" promptText="days" prefWidth="80" />
+                                    <Label text="Interval" />
+                                    <Spinner fx:id="intervalDaysSpinner" prefWidth="95" editable="true">
+                                        <tooltip>
+                                            <Tooltip text="Interval must be 1 day or more." />
+                                        </tooltip>
+                                    </Spinner>
+                                    <Label text="Days" />
                                     <Label text="Measure:" />
                                     <ComboBox fx:id="measureTypeComboBox" prefWidth="120" promptText="Select" />
                                     <Label text="Trigger %:" />
-                                    <TextField fx:id="triggerPercentageField" promptText="e.g. 15 or -15" prefWidth="95">
+                                    <Spinner fx:id="triggerPercentageSpinner" prefWidth="105" editable="true">
                                         <tooltip>
                                             <Tooltip text="Use a negative % to lower the vibration threshold." />
                                         </tooltip>
-                                    </TextField>
+                                    </Spinner>
                                 </HBox>
                                 <HBox spacing="8.0">
                                     <Button text="Add" onAction="#onAddSchedule" styleClass="primary-button" />
