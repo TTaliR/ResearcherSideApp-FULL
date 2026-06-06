@@ -50,6 +50,7 @@ import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
+import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -322,15 +323,22 @@ public class DashboardController {
             if (colInterval != null) colInterval.setCellValueFactory(new PropertyValueFactory<>("intervalDays"));
             if (colActive != null) colActive.setCellValueFactory(new PropertyValueFactory<>("active"));
             
-            // Add selection listener to populate text fields when a row is clicked
+            if (scheduleIdField != null) {
+                scheduleIdField.setDisable(true);
+                scheduleIdField.setEditable(false);
+            }
+            if (userIdField != null) {
+                userIdField.setDisable(true);
+                userIdField.setEditable(false);
+            }
+
+            // Add selection listener to populate fields when a row is clicked.
             if (schedulesTable != null) {
                 schedulesTable.getSelectionModel().selectedItemProperty().addListener(onNewValueChanged(selectedSchedule -> {
                     if (selectedSchedule != null) {
-                        if (scheduleIdField != null) scheduleIdField.setDisable(false);
                         populateScheduleFields(selectedSchedule);
                     } else {
                         if (scheduleIdField != null) {
-                            scheduleIdField.setDisable(true);
                             scheduleIdField.clear();
                         }
                         User currentUser = state.getSelectedUsers();
@@ -383,22 +391,44 @@ public class DashboardController {
         if (scheduleStatusLabel != null) scheduleStatusLabel.setText(resp.getReply() != null && !resp.getReply().isEmpty() ? resp.getReply() : (resp.isSuccess() ? "OK" : resp.getErrorMessage()));
     }
 
+    private void refreshSchedulesForCurrentContext(boolean activeOnly) {
+        String uc = getSelectedUsecaseName();
+        User selectedUser = topBarController == null ? null : topBarController.getSelectedUser();
+        if (selectedUser == null || uc.isBlank()) {
+            if (schedulesTable != null) {
+                schedulesTable.setItems(FXCollections.observableArrayList());
+            }
+            if (scheduleStatusLabel != null) {
+                scheduleStatusLabel.setText("Select a user and use case to view schedules.");
+            }
+            return;
+        }
+
+        CompletableFuture<ScheduleApiResponse> request = activeOnly
+            ? ApiService.getInstance().listActiveSchedules(uc, selectedUser.getUserID())
+            : ApiService.getInstance().listAllSchedules(uc, selectedUser.getUserID());
+
+        request.thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
+    }
+
     @FXML
     private void onListAllSchedules() {
         String uc = this.getSelectedUsecaseName();
-        ApiService.getInstance().listAllSchedules(uc).thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
+        int userId = getSelectedScheduleUserId();
+        ApiService.getInstance().listAllSchedules(uc, userId).thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
     }
 
     @FXML
     private void onListActiveSchedules() {
         String uc = this.getSelectedUsecaseName();
-        ApiService.getInstance().listActiveSchedules(uc).thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
+        int userId = getSelectedScheduleUserId();
+        ApiService.getInstance().listActiveSchedules(uc, userId).thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
     }
 
     @FXML
     private void onAddSchedule() {
         try {
-            int userId = Integer.parseInt(userIdField.getText().trim());
+            int userId = getSelectedScheduleUserId();
             int interval = Integer.parseInt(intervalDaysField.getText().trim());
             String measure = getSelectedScheduleMeasure();
             double trigger = Double.parseDouble(triggerPercentageField.getText().trim());
@@ -413,8 +443,8 @@ public class DashboardController {
     @FXML
     private void onChangeSchedule() {
         try {
-            int schedId = Integer.parseInt(scheduleIdField.getText().trim());
-            int userId = Integer.parseInt(userIdField.getText().trim());
+            int schedId = getSelectedScheduleId();
+            int userId = getSelectedScheduleUserId();
             int interval = Integer.parseInt(intervalDaysField.getText().trim());
             String measure = getSelectedScheduleMeasure();
             double trigger = Double.parseDouble(triggerPercentageField.getText().trim());
@@ -429,7 +459,7 @@ public class DashboardController {
     @FXML
     private void onActivateSchedule() {
         try {
-            int schedId = Integer.parseInt(scheduleIdField.getText().trim());
+            int schedId = getSelectedScheduleId();
             String uc = this.getSelectedUsecaseName();
             ApiService.getInstance().activateSchedule(schedId, uc)
                 .thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
@@ -441,7 +471,7 @@ public class DashboardController {
     @FXML
     private void onDeactivateSchedule() {
         try {
-            int schedId = Integer.parseInt(scheduleIdField.getText().trim());
+            int schedId = getSelectedScheduleId();
             String uc = this.getSelectedUsecaseName();
             ApiService.getInstance().deactivateSchedule(schedId, uc)
                 .thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
@@ -456,6 +486,25 @@ public class DashboardController {
             throw new IllegalArgumentException("Please choose average, median, or mode.");
         }
         return measure.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private int getSelectedScheduleId() {
+        Schedule selected = schedulesTable == null ? null : schedulesTable.getSelectionModel().getSelectedItem();
+        if (selected != null && selected.getScheduleId() > 0) {
+            return selected.getScheduleId();
+        }
+        return Integer.parseInt(scheduleIdField.getText().trim());
+    }
+
+    private int getSelectedScheduleUserId() {
+        User selected = topBarController == null ? null : topBarController.getSelectedUser();
+        if (selected == null) {
+            selected = state.getSelectedUsers();
+        }
+        if (selected != null && selected.getUserID() > 0) {
+            return selected.getUserID();
+        }
+        return Integer.parseInt(userIdField.getText().trim());
     }
 
      private String getSelectedUsecaseName() {
@@ -799,6 +848,15 @@ public class DashboardController {
             return;
         }
 
+        String normalizedRequestedName = FormatUtils.normalizeUseCaseName(name);
+        boolean duplicateUseCase = useCases.stream()
+            .map(FormatUtils::normalizeUseCaseName)
+            .anyMatch(normalizedRequestedName::equals);
+        if (duplicateUseCase || useCaseRegistry.containsKey(normalizedRequestedName)) {
+            AlertUtils.showErrorAlert("Create Failed", "A use case with this name already exists.");
+            return;
+        }
+
         ApiService.getInstance().createUseCase(name, description)
                 .thenAccept(response -> Platform.runLater(() -> {
                     if (response == null || response.has("error")) {
@@ -825,6 +883,8 @@ public class DashboardController {
                         created = response.get(0);
                     } else if (response.has("data") && response.path("data").isArray() && response.path("data").size() > 0) {
                         created = response.path("data").get(0);
+                    } else if (response.has("data") && response.path("data").isObject()) {
+                        created = response.path("data");
                     } else if (response.has("rows") && response.path("rows").isArray() && response.path("rows").size() > 0) {
                         created = response.path("rows").get(0);
                     }
@@ -835,6 +895,9 @@ public class DashboardController {
                     }
                     if (createdUseCaseId <= 0) {
                         createdUseCaseId = created.path("id").asInt(0);
+                    }
+                    if (createdUseCaseId <= 0) {
+                        createdUseCaseId = created.path("usecaseId").asInt(0);
                     }
 
                     String createdName = created.path("name").asText(name);
@@ -1337,6 +1400,7 @@ public class DashboardController {
             resolveSelectedUseCaseId(newValue);
             applySelectedUseCaseUi(newValue);
             scheduleGraphUpdate();
+            refreshSchedulesForCurrentContext(false);
         }));
 
         state.selectedUsersProperty().addListener(onNewValueChanged(newValue -> {
@@ -1346,6 +1410,8 @@ public class DashboardController {
                     userIdField.setText(String.valueOf(newValue.getUserID()));
                 }
             }
+            renderMappingsForUseCase(state.getSelectedUseCase());
+            refreshSchedulesForCurrentContext(false);
         }));
     }
 
@@ -2448,14 +2514,18 @@ public class DashboardController {
         }
 
         String selectedUseCaseKey = FormatUtils.normalizeUseCaseName(useCase);
+        User selectedUser = topBarController == null ? null : topBarController.getSelectedUser();
         List<RuleCardData> filtered = allRules.stream()
             .filter(rule -> selectedUseCaseKey.equals(rule.useCaseKey))
+            .filter(rule -> selectedUser == null || isUserAssignedToRule(selectedUser, rule))
             .toList();
 
         if (filtered.isEmpty()) {
             mappingsEmptyLabel.setVisible(true);
             mappingsEmptyLabel.setManaged(true);
-            mappingsEmptyLabel.setText("No active mappings found for " + useCase + ".");
+            mappingsEmptyLabel.setText(selectedUser == null
+                ? "No active mappings found for " + useCase + "."
+                : "No active mapping assigned to " + formatUser(selectedUser) + " for " + useCase + ".");
             return;
         }
 
@@ -2543,6 +2613,14 @@ public class DashboardController {
                         .anyMatch(mapping -> isUserMappingAssignedToRule(mapping, rule)))
                 .sorted(Comparator.comparingInt(User::getUserID))
                 .toList();
+    }
+
+    private boolean isUserAssignedToRule(User user, RuleCardData rule) {
+        if (user == null || rule == null) {
+            return false;
+        }
+        return user.getUsecaseMappings().stream()
+            .anyMatch(mapping -> isUserMappingAssignedToRule(mapping, rule));
     }
 
     private boolean isUserMappingAssignedToRule(UserUseCaseMapping mapping, RuleCardData rule) {

@@ -265,12 +265,28 @@ public class ApiService {
     }
 
     public CompletableFuture<ScheduleApiResponse> listAllSchedules(String usecaseName) {
-        return sendScheduleRequest("listAll", new HashMap<>(), usecaseName,
+        return listAllSchedules(usecaseName, 0);
+    }
+
+    public CompletableFuture<ScheduleApiResponse> listAllSchedules(String usecaseName, int userId) {
+        Map<String, Object> params = new HashMap<>();
+        if (userId > 0) {
+            params.put("user_id", userId);
+        }
+        return sendScheduleRequest("listAll", params, usecaseName,
             "manual schedule list from researcher UI");
     }
 
     public CompletableFuture<ScheduleApiResponse> listActiveSchedules(String usecaseName) {
-        return sendScheduleRequest("listActive", new HashMap<>(), usecaseName,
+        return listActiveSchedules(usecaseName, 0);
+    }
+
+    public CompletableFuture<ScheduleApiResponse> listActiveSchedules(String usecaseName, int userId) {
+        Map<String, Object> params = new HashMap<>();
+        if (userId > 0) {
+            params.put("user_id", userId);
+        }
+        return sendScheduleRequest("listActive", params, usecaseName,
             "manual schedule active list from researcher UI");
     }
 
@@ -337,16 +353,25 @@ public class ApiService {
             return CompletableFuture.completedFuture(failedScheduleResponse("usecaseName is required"));
         }
 
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("action", action);
-        payload.put("params", params == null ? new HashMap<>() : params);
-        payload.put("session_id", "researcher-ui");
-        payload.put("usecase_id", 0);
-        payload.put("usecase_name", trimmedUsecaseName);
-        payload.put("message", message == null ? "" : message);
+        return getSensorIdByName(trimmedUsecaseName)
+            .thenCompose(usecaseId -> {
+                if (usecaseId <= 0) {
+                    return CompletableFuture.completedFuture(
+                        failedScheduleResponse("Could not resolve use case id for " + trimmedUsecaseName)
+                    );
+                }
 
-        return postWithResponse(EP_SCHEDULE, payload)
-            .thenApply(this::parseScheduleResponse)
+                Map<String, Object> payload = new HashMap<>();
+                payload.put("action", action);
+                payload.put("params", params == null ? new HashMap<>() : params);
+                payload.put("session_id", "researcher-ui");
+                payload.put("usecase_id", usecaseId);
+                payload.put("usecase_name", trimmedUsecaseName);
+                payload.put("message", message == null ? "" : message);
+
+                return postWithResponse(EP_SCHEDULE, payload)
+                    .thenApply(this::parseScheduleResponse);
+            })
             .exceptionally(ex -> failedScheduleResponse("Schedule request failed: " + ex.getMessage()));
     }
 
