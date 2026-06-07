@@ -28,6 +28,7 @@ import javafx.beans.value.ChangeListener;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
+import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -38,6 +39,7 @@ import javafx.scene.layout.*;
 import javafx.scene.web.WebEvent;
 import javafx.scene.web.WebView;
 import javafx.stage.FileChooser;
+import javafx.stage.Popup;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 
@@ -120,6 +122,7 @@ public class DashboardController {
     private VBox chatHistoryBox;
     @FXML
     private ListView<ChatCommandOption> chatCommandDropdownList;
+    private Popup chatCommandPopup;
     @FXML
     private TextField chatInputField;
     @FXML
@@ -1538,6 +1541,13 @@ public class DashboardController {
             return;
         }
 
+        detachChatCommandDropdownFromComposer();
+        chatCommandPopup = new Popup();
+        chatCommandPopup.setAutoHide(true);
+        chatCommandPopup.setHideOnEscape(false);
+        chatCommandPopup.getContent().add(chatCommandDropdownList);
+        chatCommandPopup.setOnHidden(event -> clearChatCommandDropdownState());
+
         chatCommandDropdownList.setItems(FXCollections.observableArrayList());
         chatCommandDropdownList.setVisible(false);
         chatCommandDropdownList.setManaged(false);
@@ -1583,6 +1593,12 @@ public class DashboardController {
                 acceptSelectedChatCommand();
             }
         });
+    }
+
+    private void detachChatCommandDropdownFromComposer() {
+        if (chatCommandDropdownList.getParent() instanceof Pane parentPane) {
+            parentPane.getChildren().remove(chatCommandDropdownList);
+        }
     }
 
     private void handleChatCommandKeyPress(KeyEvent event) {
@@ -1679,15 +1695,24 @@ public class DashboardController {
         chatCommandDropdownList.setManaged(true);
         chatCommandDropdownList.getSelectionModel().selectFirst();
         chatCommandDropdownList.scrollTo(0);
+        showChatCommandPopup();
 
         if (chatCommandHintLabel != null) {
-            chatCommandHintLabel.setText("Use ↑↓ Enter or click.");
+            chatCommandHintLabel.setText("Use Up/Down, Enter, or click.");
             chatCommandHintLabel.setVisible(true);
             chatCommandHintLabel.setManaged(true);
         }
     }
 
     private void hideChatCommandDropdown() {
+        if (chatCommandPopup != null) {
+            chatCommandPopup.hide();
+        }
+
+        clearChatCommandDropdownState();
+    }
+
+    private void clearChatCommandDropdownState() {
         if (chatCommandDropdownList != null) {
             chatCommandDropdownList.getItems().clear();
             chatCommandDropdownList.getSelectionModel().clearSelection();
@@ -1700,6 +1725,39 @@ public class DashboardController {
             chatCommandHintLabel.setVisible(false);
             chatCommandHintLabel.setManaged(false);
         }
+    }
+
+    private void showChatCommandPopup() {
+        if (chatCommandPopup == null
+                || chatCommandDropdownList == null
+                || chatInputField == null
+                || chatInputField.getScene() == null
+                || chatInputField.getScene().getWindow() == null) {
+            return;
+        }
+
+        if (chatCommandDropdownList.getStylesheets().isEmpty()) {
+            chatCommandDropdownList.getStylesheets().addAll(chatInputField.getScene().getStylesheets());
+        }
+
+        int visibleRows = Math.min(chatCommandDropdownList.getItems().size(), 4);
+        double popupHeight = Math.max(56.0, visibleRows * chatCommandDropdownList.getFixedCellSize() + 2.0);
+        chatCommandDropdownList.setPrefHeight(popupHeight);
+        chatCommandDropdownList.setMaxHeight(popupHeight);
+        chatCommandDropdownList.setPrefWidth(Math.max(280.0, chatInputField.getWidth()));
+
+        Bounds inputBounds = chatInputField.localToScreen(chatInputField.getBoundsInLocal());
+        if (inputBounds == null) {
+            return;
+        }
+
+        double x = inputBounds.getMinX();
+        double y = Math.max(0.0, inputBounds.getMinY() - popupHeight - 6.0);
+        if (!chatCommandPopup.isShowing()) {
+            chatCommandPopup.show(chatInputField.getScene().getWindow());
+        }
+        chatCommandPopup.setX(x);
+        chatCommandPopup.setY(y);
     }
 
     private void acceptSelectedChatCommand() {
@@ -1759,7 +1817,7 @@ public class DashboardController {
             return;
         }
 
-        chatCommandHintLabel.setText("Use ↑↓ Enter or click.");
+        chatCommandHintLabel.setText("Use Up/Down, Enter, or click.");
         chatCommandHintLabel.setVisible(true);
         chatCommandHintLabel.setManaged(true);
     }
