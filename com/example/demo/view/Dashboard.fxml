@@ -3,19 +3,16 @@
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.Button?>
 <?import javafx.scene.control.CheckBox?>
-<?import javafx.scene.control.ComboBox?>
 <?import javafx.scene.control.DatePicker?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.ListView?>
 <?import javafx.scene.control.ScrollPane?>
 <?import javafx.scene.control.Separator?>
-<?import javafx.scene.control.Spinner?>
 <?import javafx.scene.control.Tab?>
 <?import javafx.scene.control.TabPane?>
 <?import javafx.scene.control.TextField?>
 <?import javafx.scene.control.ToggleButton?>
 <?import javafx.scene.control.ToggleGroup?>
-<?import javafx.scene.control.Tooltip?>
 <?import javafx.scene.layout.AnchorPane?>
 <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.FlowPane?>
@@ -25,7 +22,6 @@
 
 <HBox prefHeight="800.0" prefWidth="1280.0" styleClass="dashboard-root" xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.example.demo.controller.DashboardController">
     <fx:define>
-        <ToggleGroup fx:id="scheduleToggleGroup" />
         <ToggleGroup fx:id="mappingToggleGroup" />
     </fx:define>
     <fx:include source="LeftSidebar.fxml" fx:id="leftSidebar" />
@@ -181,51 +177,7 @@
                     </Tab>
                     <Tab fx:id="schedulingTab" text="Schedules">
                         <content>
-                            <VBox spacing="10.0" styleClass="tab-content-root">
-                                <HBox spacing="0" alignment="CENTER_LEFT" styleClass="segmented-button-bar">
-                                    <ToggleButton text="List Active" onAction="#onListActiveSchedules" toggleGroup="$scheduleToggleGroup" selected="true" />
-                                    <ToggleButton text="List All" onAction="#onListAllSchedules" toggleGroup="$scheduleToggleGroup" />
-                                </HBox>
-                                <HBox spacing="8.0" alignment="CENTER_LEFT">
-                                    <Label text="Schedule ID:" styleClass="topbar-label" />
-                                    <TextField fx:id="scheduleIdField" promptText="(for edit)" prefWidth="90" disable="true" />
-                                    <Label text="User ID:" styleClass="topbar-label" />
-                                    <TextField fx:id="userIdField" promptText="e.g. 100" prefWidth="80" />
-                                    <Label text="Interval" styleClass="topbar-label" />
-                                    <Spinner fx:id="intervalDaysSpinner" prefWidth="95" editable="true">
-                                        <tooltip>
-                                            <Tooltip text="Interval must be 1 day or more." />
-                                        </tooltip>
-                                    </Spinner>
-                                    <Label text="Days" styleClass="topbar-muted-value" />
-                                    <Label text="Measure:" styleClass="topbar-label" />
-                                    <ComboBox fx:id="measureTypeComboBox" prefWidth="120" promptText="Select" />
-                                    <Label text="Trigger %:" styleClass="topbar-label" />
-                                    <Spinner fx:id="triggerPercentageSpinner" prefWidth="105" editable="true">
-                                        <tooltip>
-                                            <Tooltip text="Use a negative % to lower the vibration threshold." />
-                                        </tooltip>
-                                    </Spinner>
-                                </HBox>
-                                <HBox spacing="10.0" alignment="CENTER_LEFT">
-                                    <Button fx:id="saveScheduleButton" text="Save" onAction="#onSaveSchedule" styleClass="primary-button" />
-                                    <Label fx:id="scheduleStatusLabel" text="Select a user and use case to view schedules." styleClass="topbar-muted-value" />
-                                </HBox>
-                                <StackPane VBox.vgrow="ALWAYS">
-                                    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="mappings-scroll" VBox.vgrow="ALWAYS">
-                                        <FlowPane fx:id="schedulesFlowPane" hgap="14.0" vgap="14.0" prefWrapLength="920.0">
-                                            <padding>
-                                                <Insets top="12.0" right="12.0" bottom="12.0" left="12.0" />
-                                            </padding>
-                                        </FlowPane>
-                                    </ScrollPane>
-                                    <Label fx:id="schedulesEmptyLabel" text="No schedules found." styleClass="mappings-empty-label" StackPane.alignment="CENTER">
-                                        <StackPane.margin>
-                                            <Insets top="8.0" />
-                                        </StackPane.margin>
-                                    </Label>
-                                </StackPane>
-                            </VBox>
+                            <fx:include source="SchedulesTab.fxml" fx:id="schedulesTabContent" />
                         </content>
                     </Tab>
 
