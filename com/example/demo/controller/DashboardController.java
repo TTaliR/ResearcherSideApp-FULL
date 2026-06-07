@@ -13,11 +13,9 @@ import com.example.demo.model.ChatCommandOption;
 import com.example.demo.model.UseCase;
 import com.example.demo.parser.MappingConfigParser;
 import com.example.demo.service.ApiService;
-import com.example.demo.service.ExportService;
 import com.example.demo.util.AlertUtils;
 import com.example.demo.util.FormatUtils;
 import com.fasterxml.jackson.databind.JsonNode;
-import javafx.animation.PauseTransition;
 import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
 import javafx.collections.FXCollections;
@@ -31,16 +29,11 @@ import javafx.scene.control.*;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.*;
-import javafx.scene.web.WebEvent;
 import javafx.scene.web.WebView;
-import javafx.stage.FileChooser;
 import javafx.stage.Popup;
-import javafx.stage.Stage;
-import javafx.util.Duration;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.time.*;
 import java.util.*;
 import java.util.function.BiConsumer;
@@ -54,7 +47,6 @@ import java.util.stream.Collectors;
 public class DashboardController {
     private static final List<String> DEFAULT_USE_CASES = List.of("HeartRate", "MoonAzimuth", "SunAzimuth", "Pollution");
     private static final String DEFAULT_CHAT_COMMAND_PREFIX = "$";
-    private static final String FEEDBACK_GRAPH_TEMPLATE_PATH = "/com/example/demo/view/templates/feedbackGraph.html";
     private static final String MINI_GRAPH_TEMPLATE_PATH = "/com/example/demo/view/templates/miniFeedbackGraph.html";
     private static final Pattern LOG_INTERVAL_PATTERN = Pattern.compile("^\\d+(\\.\\d+)?\\s+(second|seconds|minute|minutes|hour|hours|day|days)$", Pattern.CASE_INSENSITIVE);
     private static final List<ChatCommandOption> CHAT_COMMAND_OPTIONS = createChatCommandOptions();
@@ -68,6 +60,8 @@ public class DashboardController {
     private YellowBookTabController yellowBookTabContentController;
     @FXML
     private SchedulesTabController schedulesTabContentController;
+    @FXML
+    private GraphTabController graphTabContentController;
 
     @FXML
     private TabPane workspaceTabPane;
@@ -108,17 +102,6 @@ public class DashboardController {
     @FXML
     private AnchorPane miniGraphAnchor;
 
-    @FXML
-    private AnchorPane graphAnchor;
-    @FXML
-    private Button exportGraphCsvButton;
-    @FXML
-    private Button exportGraphPdfButton;
-    @FXML
-    private Button refreshGraphButton;
-    @FXML
-    private Button refreshedSimplifiedGraphButton;
-    @FXML
     private FlowPane mappingsFlowPane;
     @FXML
     private Label mappingsEmptyLabel;
@@ -174,6 +157,7 @@ public class DashboardController {
     private String activeMonitoringTypeKey = "";
     private RuleCardData selectedMappingForEdit;
     private boolean showingActiveMappingsOnly = true;
+    private boolean mappingsRenderRetryScheduled;
 
     private enum MappingChangeScope {
         ALL_USERS,
@@ -181,20 +165,16 @@ public class DashboardController {
         CANCELLED
     }
 
-    private WebView graphWebView;
     private WebView miniGraphWebView;
-    private StackPane graphLoadingOverlay;
     private StackPane miniGraphLoadingOverlay;
     private JsonNode latestGraphData;
-    private final PauseTransition graphUpdateDebounce = new PauseTransition(Duration.millis(250));
-    private static final String GRAPH_EXPORT_ALERT_PREFIX = "__GRAPH_EXPORT__";
 
     @FXML
     private void initialize() {
         initializeSubcontrollers();
         setupTabs();
         setupChat();
-        setupGraph();
+        setupGraphTab();
         setupMappingsRuleBuilder();
         setupSchedulesTab();
         setupYellowBookTab();
@@ -238,7 +218,7 @@ public class DashboardController {
                     schedulesTabContentController.clearSelection();
                 }
                 refreshRuleSummary();
-                renderMappingsForUseCase(state.getSelectedUseCase());
+                renderMappingsWhenReady(state.getSelectedUseCase());
                 scheduleGraphUpdate();
                 return;
             }
@@ -256,7 +236,7 @@ public class DashboardController {
                 state.setSelectedUseCase(userUseCase);
             }
             refreshRuleSummary();
-            renderMappingsForUseCase(state.getSelectedUseCase());
+            renderMappingsWhenReady(state.getSelectedUseCase());
             scheduleGraphUpdate();
         });
 
@@ -408,19 +388,19 @@ public class DashboardController {
     private void clearRuleInputFields() {
         clearRuleBuilderForm();
         updateSelectedMappingForEdit(null);
-        renderMappingsForUseCase(state.getSelectedUseCase());
+        renderMappingsWhenReady(state.getSelectedUseCase());
     }
 
     @FXML
     private void onListActiveMappings() {
         showingActiveMappingsOnly = true;
-        renderMappingsForUseCase(state.getSelectedUseCase());
+        renderMappingsWhenReady(state.getSelectedUseCase());
     }
 
     @FXML
     private void onListAllMappings() {
         showingActiveMappingsOnly = false;
-        renderMappingsForUseCase(state.getSelectedUseCase());
+        renderMappingsWhenReady(state.getSelectedUseCase());
     }
 
     @FXML
@@ -866,7 +846,7 @@ public class DashboardController {
             if (newValue == graphTab) {
                 scheduleGraphUpdate();
             } else if (newValue == mappingsTab) {
-                renderMappingsForUseCase(state.getSelectedUseCase());
+                renderMappingsWhenReady(state.getSelectedUseCase());
                 updateLoggingIntervalDisplay(state.getSelectedUseCase());
             } else if (newValue == agentChatTab) {
                 refreshRuleSummary();
@@ -1256,115 +1236,30 @@ public class DashboardController {
         return map;
     }
 
-    private void setupGraph() {
-        refreshGraphButton.setOnAction(ignored -> scheduleGraphUpdate());
-        exportGraphCsvButton.setOnAction(ignored -> exportGraphData("csv"));
-        exportGraphPdfButton.setOnAction(ignored -> exportGraphData("pdf"));
-        ensureGraphWebView();
+    private void setupGraphTab() {
+        if (graphTabContentController == null) {
+            return;
+        }
+
+        graphTabContentController.setContextSupplier(() -> new GraphTabController.GraphContext(
+            state.getSelectedUsers(),
+            state.getSelectedUseCase(),
+            state.getSelectedTimeRange(),
+            state.getStartDate(),
+            state.getEndDate()
+        ));
+        graphTabContentController.setDataLoadedCallback(dataArray -> {
+            latestGraphData = dataArray;
+            renderMiniGraphFromData(dataArray);
+            setMiniGraphLoadingVisible(false);
+        });
+        graphTabContentController.initializeGraph();
         ensureMiniGraphWebView();
-        setGraphLoadingVisible(false);
         setMiniGraphLoadingVisible(false);
-        renderGraphPlaceholder("Select a use case and Users to render graph data.");
         renderMiniGraphPlaceholder("Graph preview appears here.");
     }
 
-    private void exportGraphData(String format) {
-        User user = state.getSelectedUsers();
-        String useCase = state.getSelectedUseCase();
-        String range = state.getSelectedTimeRange();
-
-        if (user == null || useCase == null || useCase.isBlank() || range == null || range.isBlank()) {
-            AlertUtils.showErrorAlert("Missing Selection", "Please select a Users, use case, and time range before exporting.");
-            return;
-        }
-
-        if ("Custom Date Range".equals(range)) {
-            LocalDate start = state.getStartDate();
-            LocalDate end = state.getEndDate();
-            if (start == null || end == null) {
-                AlertUtils.showErrorAlert("Missing Date Range", "Please select both start and end dates for custom range export.");
-                return;
-            }
-            if (end.isBefore(start)) {
-                AlertUtils.showErrorAlert("Invalid Date Range", "End date cannot be before start date.");
-                return;
-            }
-        }
-
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("csv".equals(format) ? "Save CSV Export" : "Save PDF Export");
-        fileChooser.setInitialDirectory(ExportService.getDefaultExportDirectory());
-        fileChooser.setInitialFileName(ExportService.generateDefaultFilename(user.getUserID(), useCase, format));
-        if ("csv".equals(format)) {
-            fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV Files", "*.csv"));
-        } else {
-            fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PDF Files", "*.pdf"));
-        }
-
-        Stage stage = (Stage) graphAnchor.getScene().getWindow();
-        File selectedFile = fileChooser.showSaveDialog(stage);
-        if (selectedFile == null) {
-            return;
-        }
-
-        ApiService.getInstance().getSensorIdByName(useCase)
-            .thenAccept(sensorId -> {
-                if (sensorId == -1) {
-                    AlertUtils.showErrorAlert("Sensor Not Found", "Could not resolve a sensor id for use case: " + useCase);
-                    return;
-                }
-
-                Map<String, String> params = buildSensorDataParams(user.getUserID(), sensorId, range);
-                ApiService.getInstance().get(ApiService.EP_SENSOR_DATA, params)
-                    .thenAccept(response -> {
-                        try {
-                            String fullPath;
-                            if ("csv".equals(format)) {
-                                fullPath = ExportService.generateCsv(selectedFile.getAbsolutePath(), user.getUserID(), useCase, range, response);
-                            } else {
-                                fullPath = ExportService.generatePdf(selectedFile.getAbsolutePath(), user.getUserID(), useCase, range, response);
-                            }
-                            AlertUtils.showInfoAlert("Export Successful", "Saved to:\n" + fullPath);
-                        } catch (Exception ex) {
-                            AlertUtils.showErrorAlert("Export Failed", ex.getMessage());
-                        }
-                    })
-                    .exceptionally(ex -> {
-                        AlertUtils.showErrorAlert("Data Fetch Failed", "Failed to fetch sensor data: " + ex.getMessage());
-                        return null;
-                    });
-            })
-            .exceptionally(ex -> {
-                AlertUtils.showErrorAlert("Sensor Lookup Failed", "Failed to resolve sensor id: " + ex.getMessage());
-                return null;
-            });
-    }
-
-    private Map<String, String> buildSensorDataParams(int userId, int sensorId, String range) {
-        Map<String, String> params = new HashMap<>();
-        params.put("alert_type", String.valueOf(sensorId));
-        params.put("userid", String.valueOf(userId));
-
-        if ("Custom Date Range".equals(range)) {
-            params.put("range", "custom");
-            LocalDate start = state.getStartDate();
-            LocalDate end = state.getEndDate();
-            if (start != null) {
-                params.put("start_date", start.toString());
-            }
-            if (end != null) {
-                params.put("end_date", end.toString());
-            }
-        } else {
-            params.put("range", range);
-        }
-
-        return params;
-    }
-
     private void setupStateListeners() {
-        graphUpdateDebounce.setOnFinished(ignored -> refreshGraphData());
-
         state.selectedUseCaseProperty().addListener(onChanged((oldValue, newValue) -> {
             resolveSelectedUseCaseId(newValue);
             applySelectedUseCaseUi(newValue);
@@ -1379,7 +1274,7 @@ public class DashboardController {
             if (schedulesTabContentController != null) {
                 schedulesTabContentController.syncSelectedUser(newValue);
             }
-            renderMappingsForUseCase(state.getSelectedUseCase());
+            renderMappingsWhenReady(state.getSelectedUseCase());
             if (schedulesTabContentController != null) {
                 schedulesTabContentController.refreshSchedulesForCurrentContext(false);
             }
@@ -1417,7 +1312,7 @@ public class DashboardController {
 
                         leftSidebarController.getUsersSidebarList().getItems().setAll(users);
                         refreshUsersForSelectedUseCase(selectedUserId);
-                        renderMappingsForUseCase(state.getSelectedUseCase());
+                        renderMappingsWhenReady(state.getSelectedUseCase());
                         refreshRuleSummary();
                         uiUpdate.complete(null);
                     } catch (Exception ex) {
@@ -1848,7 +1743,7 @@ public class DashboardController {
         updateSelectedMappingForEdit(null);
         refreshUsersForSelectedUseCase(null);
         refreshRuleSummary();
-        renderMappingsForUseCase(selectedUseCase);
+        renderMappingsWhenReady(selectedUseCase);
         clearChatMessages();
         addChatMessage("Selected use case: " + selectedUseCase, false);
     }
@@ -2195,7 +2090,7 @@ public class DashboardController {
                         new MappingConfigParser(allRules, useCaseRegistry.values().stream().collect(Collectors.toMap(UseCase::getNormalizedName, UseCase::getRawName))).parseMappingsFromConfiguration(response);
                         refreshUsersForSelectedUseCase(null);
                         updateUserAssignmentPanel(leftSidebarController.getSelectedUser());
-                        renderMappingsForUseCase(state.getSelectedUseCase());
+                        renderMappingsWhenReady(state.getSelectedUseCase());
                         refreshRuleSummary();
                         uiUpdate.complete(null);
                     } catch (Exception ex) {
@@ -2231,6 +2126,11 @@ public class DashboardController {
      * Renders filtered use case mappings or empty state
      */
     private void renderMappingsForUseCase(String useCase) {
+        if (!isMappingsViewReady()) {
+            scheduleMappingsRenderRetry(useCase);
+            return;
+        }
+
         mappingsFlowPane.getChildren().clear();
 
         if (useCase == null || useCase.isBlank()) {
@@ -2305,6 +2205,33 @@ public class DashboardController {
             });
             mappingsFlowPane.getChildren().add(card);
         }
+    }
+
+    private void renderMappingsWhenReady(String useCase) {
+        if (!isMappingsViewReady()) {
+            scheduleMappingsRenderRetry(useCase);
+            return;
+        }
+
+        renderMappingsForUseCase(useCase);
+    }
+
+    private boolean isMappingsViewReady() {
+        return mappingsFlowPane != null && mappingsEmptyLabel != null;
+    }
+
+    private void scheduleMappingsRenderRetry(String useCase) {
+        if (mappingsRenderRetryScheduled) {
+            return;
+        }
+
+        mappingsRenderRetryScheduled = true;
+        Platform.runLater(() -> {
+            mappingsRenderRetryScheduled = false;
+            if (isMappingsViewReady()) {
+                renderMappingsForUseCase(useCase);
+            }
+        });
     }
 
     private Node createMappingAssignedUsersNode(RuleCardData rule) {
@@ -2384,7 +2311,7 @@ public class DashboardController {
 
         updateSelectedMappingForEdit(rule);
         populateRuleBuilderFromMapping(rule);
-        renderMappingsForUseCase(state.getSelectedUseCase());
+        renderMappingsWhenReady(state.getSelectedUseCase());
     }
 
     private void onDeleteMappingRequested(RuleCardData rule) {
@@ -2640,110 +2567,10 @@ public class DashboardController {
 
     @FXML
     private void scheduleGraphUpdate() {
-        graphUpdateDebounce.playFromStart();
-    }
-
-    private void refreshGraphData() {
-        User user = state.getSelectedUsers();
-        String useCase = state.getSelectedUseCase();
-        String range = state.getSelectedTimeRange();
-
-        setGraphLoadingVisible(true);
-        setMiniGraphLoadingVisible(true);
-
-        if (user == null || useCase == null || useCase.isBlank() || range == null) {
-            renderGraphPlaceholder("Select a use case and Users to render graph data.");
-            renderMiniGraphPlaceholder("Graph preview appears here.");
-            setGraphLoadingVisible(false);
-            setMiniGraphLoadingVisible(false);
-            return;
+        if (graphTabContentController != null) {
+            setMiniGraphLoadingVisible(true);
+            graphTabContentController.scheduleGraphUpdate();
         }
-
-        ApiService.getInstance().getSensorIdByName(useCase)
-            .thenAccept(sensorId -> {
-                if (sensorId == -1) {
-                    Platform.runLater(() -> {
-                        renderGraphPlaceholder("Unable to resolve sensor type for use case: " + useCase);
-                        renderMiniGraphPlaceholder("No preview data available.");
-                        setGraphLoadingVisible(false);
-                        setMiniGraphLoadingVisible(false);
-                    });
-                    return;
-                }
-
-                Map<String, String> params = new HashMap<>();
-                params.put("alert_type", String.valueOf(sensorId));
-                params.put("userid", String.valueOf(user.getUserID()));
-
-                if ("Custom Date Range".equals(range)) {
-                    params.put("range", "custom");
-                    LocalDate start = state.getStartDate();
-                    LocalDate end = state.getEndDate();
-                    if (start != null) {
-                        params.put("start_date", start.toString());
-                    }
-                    if (end != null) {
-                        params.put("end_date", end.toString());
-                    }
-                } else {
-                    params.put("range", range);
-                }
-
-                ApiService.getInstance().get(ApiService.EP_SENSOR_DATA, params)
-                    .thenAccept(response -> {
-                        JsonNode dataArray = ApiService.getInstance().extractArray(response);
-                        latestGraphData = dataArray;
-                        Platform.runLater(() -> {
-                            if (dataArray == null || !dataArray.isArray() || dataArray.isEmpty()) {
-                                renderGraphPlaceholder("No sensor data available for current selection.");
-                                renderMiniGraphPlaceholder("No preview data available.");
-                                setGraphLoadingVisible(false);
-                                setMiniGraphLoadingVisible(false);
-                                return;
-                            }
-                            renderGraph(dataArray, user.getUserID(), useCase);
-                            renderMiniGraphFromData(dataArray);
-                        });
-                    })
-                    .exceptionally(ex -> {
-                        ex.printStackTrace();
-                        Platform.runLater(() -> {
-                            renderGraphPlaceholder("Failed to load graph data.");
-                            renderMiniGraphPlaceholder("No preview data available.");
-                            setGraphLoadingVisible(false);
-                            setMiniGraphLoadingVisible(false);
-                        });
-                        return null;
-                    });
-            })
-            .exceptionally(ex -> {
-                ex.printStackTrace();
-                Platform.runLater(() -> {
-                    renderGraphPlaceholder("Failed to resolve sensor id.");
-                    renderMiniGraphPlaceholder("No preview data available.");
-                    setGraphLoadingVisible(false);
-                    setMiniGraphLoadingVisible(false);
-                });
-                return null;
-            });
-    }
-
-    private void renderGraph(JsonNode dataArray, int userId, String useCase) {
-        ensureGraphWebView();
-
-        String template = loadHtmlTemplate(FEEDBACK_GRAPH_TEMPLATE_PATH);
-        if (template == null) {
-            renderGraphPlaceholder("Graph template file is missing.");
-            return;
-        }
-
-        String escapedJson = dataArray.toString().replace("\\", "\\\\").replace("\"", "\\\"");
-        String html = template
-            .replace("const data = DATA_PLACEHOLDER;", "const data = JSON.parse(\"" + escapedJson + "\");")
-            .replace("USER_ID_PLACEHOLDER", String.valueOf(userId))
-            .replace("SENSOR_TYPE_PLACEHOLDER", "\"" + useCase + "\"");
-
-        graphWebView.getEngine().loadContent(html);
     }
 
     /**
@@ -2769,11 +2596,6 @@ public class DashboardController {
         miniGraphWebView.getEngine().loadContent(html);
     }
 
-    private void renderGraphPlaceholder(String message) {
-        ensureGraphWebView();
-        graphWebView.getEngine().loadContent(buildPlaceholderHtml(message));
-    }
-
     private void renderMiniGraphPlaceholder(String message) {
         ensureMiniGraphWebView();
         miniGraphWebView.getEngine().loadContent(buildPlaceholderHtml(message));
@@ -2796,92 +2618,6 @@ public class DashboardController {
             .replace("'", "&#39;");
     }
 
-    private void ensureGraphWebView() {
-        if (graphWebView != null) {
-            ensureGraphLoadingOverlay();
-            return;
-        }
-        graphWebView = new WebView();
-        graphWebView.getEngine().setOnAlert((WebEvent<String> event) -> handleGraphAlert(event == null ? null : event.getData()));
-        graphWebView.getEngine().getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
-            if (newState == javafx.concurrent.Worker.State.SUCCEEDED) {
-                setGraphLoadingVisible(false);
-            } else if (newState == javafx.concurrent.Worker.State.FAILED || newState == javafx.concurrent.Worker.State.CANCELLED) {
-                setGraphLoadingVisible(false);
-            }
-        });
-        AnchorPane.setTopAnchor(graphWebView, 0.0);
-        AnchorPane.setRightAnchor(graphWebView, 0.0);
-        AnchorPane.setBottomAnchor(graphWebView, 0.0);
-        AnchorPane.setLeftAnchor(graphWebView, 0.0);
-        graphAnchor.getChildren().setAll(graphWebView);
-        ensureGraphLoadingOverlay();
-    }
-
-    private void handleGraphAlert(String payload) {
-        if (payload == null || !payload.startsWith(GRAPH_EXPORT_ALERT_PREFIX)) {
-            return;
-        }
-        try {
-            String json = payload.substring(GRAPH_EXPORT_ALERT_PREFIX.length());
-            JsonNode root = ApiService.getInstance().getMapper().readTree(json);
-            if (!"png-export".equals(root.path("type").asText(""))) {
-                return;
-            }
-            String dataUrl = root.path("dataUrl").asText("");
-            String filename = root.path("filename").asText("sensor_chart.png");
-            saveGraphPngFromDataUrl(dataUrl, filename);
-        } catch (Exception ex) {
-            AlertUtils.showErrorAlert("Export Failed", "Could not parse export payload from chart.");
-        }
-    }
-
-    private void saveGraphPngFromDataUrl(String dataUrl, String suggestedFilename) {
-        if (dataUrl == null || !dataUrl.startsWith("data:image/png;base64,")) {
-            AlertUtils.showErrorAlert("Export Failed", "Received invalid image data from chart export.");
-            return;
-        }
-
-        String base64Payload = dataUrl.substring("data:image/png;base64,".length());
-        byte[] imageBytes;
-        try {
-            imageBytes = Base64.getDecoder().decode(base64Payload);
-        } catch (IllegalArgumentException ex) {
-            AlertUtils.showErrorAlert("Export Failed", "Could not decode generated PNG data.");
-            return;
-        }
-
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Save Graph PNG");
-        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("PNG Files", "*.png"));
-        fileChooser.setInitialDirectory(ExportService.getDefaultExportDirectory());
-        fileChooser.setInitialFileName(ensurePngExtension(suggestedFilename));
-
-        Stage stage = (graphAnchor != null && graphAnchor.getScene() != null)
-            ? (Stage) graphAnchor.getScene().getWindow()
-            : null;
-        File selectedFile = fileChooser.showSaveDialog(stage);
-        if (selectedFile == null) {
-            return;
-        }
-
-        try {
-            Files.write(selectedFile.toPath(), imageBytes);
-            AlertUtils.showInfoAlert("Export Successful", "Saved to:\n" + selectedFile.getAbsolutePath());
-        } catch (IOException ex) {
-            AlertUtils.showErrorAlert("Export Failed", "Could not save PNG file: " + ex.getMessage());
-        }
-    }
-
-    private String ensurePngExtension(String filename) {
-        String fallbackName = "sensor_chart.png";
-        if (filename == null || filename.isBlank()) {
-            return fallbackName;
-        }
-        String trimmed = filename.trim();
-        return trimmed.toLowerCase(Locale.ROOT).endsWith(".png") ? trimmed : trimmed + ".png";
-    }
-
     private void ensureMiniGraphWebView() {
         if (miniGraphWebView != null) {
             ensureMiniGraphLoadingOverlay();
@@ -2902,20 +2638,6 @@ public class DashboardController {
         ensureMiniGraphLoadingOverlay();
     }
 
-    private void ensureGraphLoadingOverlay() {
-        if (graphLoadingOverlay == null) {
-            graphLoadingOverlay = SharedUiFactory.createLoadingOverlay("Loading graph data...");
-            AnchorPane.setTopAnchor(graphLoadingOverlay, 0.0);
-            AnchorPane.setRightAnchor(graphLoadingOverlay, 0.0);
-            AnchorPane.setBottomAnchor(graphLoadingOverlay, 0.0);
-            AnchorPane.setLeftAnchor(graphLoadingOverlay, 0.0);
-        }
-
-        if (!graphAnchor.getChildren().contains(graphLoadingOverlay)) {
-            graphAnchor.getChildren().add(graphLoadingOverlay);
-        }
-    }
-
     private void ensureMiniGraphLoadingOverlay() {
         if (miniGraphLoadingOverlay == null) {
             miniGraphLoadingOverlay = SharedUiFactory.createLoadingOverlay("Loading preview...");
@@ -2927,15 +2649,6 @@ public class DashboardController {
 
         if (!miniGraphAnchor.getChildren().contains(miniGraphLoadingOverlay)) {
             miniGraphAnchor.getChildren().add(miniGraphLoadingOverlay);
-        }
-    }
-
-    private void setGraphLoadingVisible(boolean visible) {
-        ensureGraphWebView();
-        graphLoadingOverlay.setVisible(visible);
-        graphLoadingOverlay.setManaged(visible);
-        if (visible) {
-            graphLoadingOverlay.toFront();
         }
     }
 
