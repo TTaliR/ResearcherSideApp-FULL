@@ -569,7 +569,7 @@ public class DashboardController {
         titleRow.setAlignment(Pos.CENTER_LEFT);
 
         VBox details = new VBox(5,
-            createScheduleDetailRow("User", schedule.getUserId() <= 0 ? "-" : String.valueOf(schedule.getUserId())),
+            createScheduleDetailRow("User", formatScheduleUser(schedule.getUserId())),
             createScheduleDetailRow("Measure", normalizeScheduleDisplayValue(schedule.getMeasureType())),
             createScheduleDetailRow("Trigger", formatScheduleTrigger(schedule)),
             createScheduleDetailRow("Interval", Math.max(0, schedule.getIntervalDays()) + " days"),
@@ -599,6 +599,14 @@ public class DashboardController {
         value.setWrapText(true);
         row.getChildren().addAll(label, value);
         return row;
+    }
+
+    private String formatScheduleUser(int userId) {
+        if (userId <= 0) {
+            return "-";
+        }
+        User user = findUserById(userId);
+        return user == null ? String.valueOf(userId) : formatUser(user);
     }
 
     private String normalizeScheduleDisplayValue(String value) {
@@ -646,20 +654,20 @@ public class DashboardController {
     private void refreshSchedulesForCurrentContext(boolean activeOnly) {
         showingActiveSchedulesOnly = activeOnly;
         String uc = getSelectedUsecaseName();
-        User selectedUser = topBarController == null ? null : topBarController.getSelectedUser();
-        if (selectedUser == null || uc.isBlank()) {
+        int userId = getScheduleListUserId();
+        if (uc.isBlank() || (userId <= 0 && !isAllUsersSelectedInTopBar())) {
             schedules.clear();
             selectScheduleForEdit(null);
             renderScheduleCards();
             if (scheduleStatusLabel != null) {
-                scheduleStatusLabel.setText("Select a user and use case to view schedules.");
+                scheduleStatusLabel.setText("Select a user or All Users, and a use case, to view schedules.");
             }
             return;
         }
 
         CompletableFuture<ScheduleApiResponse> request = activeOnly
-            ? ApiService.getInstance().listActiveSchedules(uc, selectedUser.getUserID())
-            : ApiService.getInstance().listAllSchedules(uc, selectedUser.getUserID());
+            ? ApiService.getInstance().listActiveSchedules(uc, userId)
+            : ApiService.getInstance().listAllSchedules(uc, userId);
 
         request.thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
     }
@@ -667,7 +675,7 @@ public class DashboardController {
     @FXML
     private void onListAllSchedules() {
         String uc = this.getSelectedUsecaseName();
-        int userId = getSelectedScheduleUserId();
+        int userId = getScheduleListUserId();
         showingActiveSchedulesOnly = false;
         ApiService.getInstance().listAllSchedules(uc, userId).thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
     }
@@ -675,7 +683,7 @@ public class DashboardController {
     @FXML
     private void onListActiveSchedules() {
         String uc = this.getSelectedUsecaseName();
-        int userId = getSelectedScheduleUserId();
+        int userId = getScheduleListUserId();
         showingActiveSchedulesOnly = true;
         ApiService.getInstance().listActiveSchedules(uc, userId).thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
     }
@@ -924,6 +932,22 @@ public class DashboardController {
             throw new IllegalArgumentException("User ID must be greater than 0.");
         }
         return userId;
+    }
+
+    private int getScheduleListUserId() {
+        User selected = topBarController == null ? null : topBarController.getSelectedUser();
+        if (selected != null && selected.getUserID() > 0) {
+            return selected.getUserID();
+        }
+        if (isAllUsersSelectedInTopBar()) {
+            return 0;
+        }
+        User stateUser = state.getSelectedUsers();
+        return stateUser == null ? 0 : stateUser.getUserID();
+    }
+
+    private boolean isAllUsersSelectedInTopBar() {
+        return topBarController != null && topBarController.isAllUsersSelected();
     }
 
      private String getSelectedUsecaseName() {
