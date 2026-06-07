@@ -4,19 +4,16 @@ import com.example.demo.controller.state.DashboardState;
 import com.example.demo.factory.ChatBubbleFactory;
 import com.example.demo.factory.MappingUiFactory;
 import com.example.demo.factory.SharedUiFactory;
-import com.example.demo.factory.YellowBookUiFactory;
 import com.example.demo.model.Schedule;
 import com.example.demo.model.ScheduleApiResponse;
 import com.example.demo.model.SensorRuleConfig;
 import com.example.demo.model.User;
 import com.example.demo.model.UserUseCaseMapping;
 import com.example.demo.model.RuleCardData;
-import com.example.demo.model.DictionaryParameterData;
 import com.example.demo.model.LoggingIntervalDraft;
 import com.example.demo.model.ChatCommandOption;
 import com.example.demo.model.UseCase;
 import com.example.demo.parser.MappingConfigParser;
-import com.example.demo.parser.YellowBookParser;
 import com.example.demo.service.ApiService;
 import com.example.demo.service.ExportService;
 import com.example.demo.util.AlertUtils;
@@ -102,6 +99,8 @@ public class DashboardController {
     private LeftSidebarController leftSidebarController;
     @FXML
     private TopBarController topBarController;
+    @FXML
+    private YellowBookTabController yellowBookTabContentController;
 
     @FXML
     private TabPane workspaceTabPane;
@@ -218,39 +217,16 @@ public class DashboardController {
     private Button saveScheduleButton;
     @FXML
     private Label scheduleStatusLabel;
-    @FXML
-    private VBox yellowBookContentBox;
-    @FXML
-    private Label yellowBookStatusLabel;
-    @FXML
-    private Label yellowBookSelectedParameterLabel;
-    @FXML
-    private TextField yellowBookParameterNameField;
-    @FXML
-    private TextField yellowBookParameterFormatField;
-    @FXML
-    private TextField yellowBookParameterValueField;
-    @FXML
-    private TextField yellowBookParameterDescriptionField;
-    @FXML
-    private CheckBox yellowBookRequiredCheckBox;
-    @FXML
-    private Button yellowBookSaveButton;
-    @FXML
-    private Button yellowBookClearButton;
-
     private final DashboardState state = DashboardState.getInstance();
     private final ObservableList<User> users = FXCollections.observableArrayList();
     private final ObservableList<String> useCases = FXCollections.observableArrayList();
     private final Map<String, UseCase> useCaseRegistry = new HashMap<>();
-    private final Map<String, List<DictionaryParameterData>> yellowBookEntries = new LinkedHashMap<>();
     private final List<RuleCardData> allRules = new ArrayList<>();
     private final ObservableList<Schedule> schedules = FXCollections.observableArrayList();
     private final String chatSessionId = UUID.randomUUID().toString();
     private String activeMonitoringTypeKey = "";
     private RuleCardData selectedMappingForEdit;
     private Schedule selectedScheduleForEdit;
-    private DictionaryParameterData selectedYellowBookParameter;
     private boolean showingActiveSchedulesOnly;
     private boolean showingActiveMappingsOnly = true;
 
@@ -276,7 +252,7 @@ public class DashboardController {
         setupGraph();
         setupMappingsRuleBuilder();
         setupSchedulesTable();
-        setupYellowBookEditor();
+        setupYellowBookTab();
         setupStateListeners();
 
         loadUserss();
@@ -480,8 +456,16 @@ public class DashboardController {
         }
     }
 
-    private void setupYellowBookEditor() {
-        updateYellowBookEditor(null);
+    private void setupYellowBookTab() {
+        if (yellowBookTabContentController == null) {
+            return;
+        }
+
+        yellowBookTabContentController.setChatSessionId(chatSessionId);
+        yellowBookTabContentController.setContextSupplier(() -> new YellowBookTabController.DictionaryContext(
+            resolveDictionaryContextUseCaseId(),
+            getSelectedUsecaseName()
+        ));
     }
     
     private void populateScheduleFields(Schedule schedule) {
@@ -1515,7 +1499,7 @@ public class DashboardController {
                 refreshRuleSummary();
                 renderMiniGraphFromData(latestGraphData);
             } else if (newValue == yellowBookTab) {
-                loadYellowBookDictionary();
+                yellowBookTabContentController.loadDictionary();
             } else if (newValue == schedulingTab) {
                 refreshSchedulesForCurrentContext(true);
             }
@@ -2853,50 +2837,6 @@ public class DashboardController {
         return loadMappingsAsync().thenCompose(ignored -> loadUsersAsync());
     }
 
-    @FXML
-    private void onRefreshYellowBook() {
-        loadYellowBookDictionary();
-    }
-
-    private void loadYellowBookDictionary() {
-        Integer contextUsecaseId = resolveDictionaryContextUseCaseId();
-        if (contextUsecaseId == null || contextUsecaseId <= 0) {
-            if (yellowBookStatusLabel != null) {
-                yellowBookStatusLabel.setText("Load use cases before opening the Yellow book.");
-            }
-            return;
-        }
-
-        if (yellowBookStatusLabel != null) {
-            yellowBookStatusLabel.setText("Loading dictionary...");
-        }
-
-        String contextUsecaseName = getSelectedUsecaseName();
-        ApiService.getInstance()
-            .sendDictionaryRequest("Show me the full use case dictionary.", contextUsecaseId, contextUsecaseName, chatSessionId)
-            .thenAccept(response -> Platform.runLater(() -> {
-                if (response == null || response.has("error")) {
-                    String message = response == null ? "No response from n8n." : response.path("message").asText("Dictionary request failed.");
-                    yellowBookStatusLabel.setText(message);
-                    return;
-                }
-
-                String reply = response.path("reply").asText("");
-                JsonNode dictionaryEntriesNode = response.path("dictionaryEntries");
-                yellowBookEntries.clear();
-                if (dictionaryEntriesNode.isArray() && !dictionaryEntriesNode.isEmpty()) {
-                    yellowBookEntries.putAll(YellowBookParser.parseEntries(dictionaryEntriesNode));
-                } else {
-                    yellowBookEntries.putAll(YellowBookParser.parse(reply));
-                }
-                renderYellowBook();
-            }))
-            .exceptionally(ex -> {
-                Platform.runLater(() -> yellowBookStatusLabel.setText("Dictionary request failed: " + ex.getMessage()));
-                return null;
-            });
-    }
-
     private Integer resolveDictionaryContextUseCaseId() {
         Integer selectedId = state.getSelectedUseCaseId();
         if (selectedId != null && selectedId > 0) {
@@ -2908,243 +2848,6 @@ public class DashboardController {
             .filter(id -> id > 0)
             .findFirst()
             .orElse(null);
-    }
-
-    private void renderYellowBook() {
-        if (yellowBookContentBox == null || yellowBookStatusLabel == null) {
-            return;
-        }
-
-        yellowBookContentBox.getChildren().clear();
-        if (yellowBookEntries.isEmpty()) {
-            yellowBookStatusLabel.setText("No dictionary parameters found.");
-            return;
-        }
-
-        yellowBookStatusLabel.setText("Loaded " + yellowBookEntries.size() + " use cases.");
-        yellowBookEntries.forEach((useCaseName, parameters) -> yellowBookContentBox.getChildren().add(YellowBookUiFactory.createYellowBookUseCaseCard(useCaseName, parameters, this::onRemoveYellowBookUseCase, this::onEditYellowBookParameter, this::onRemoveYellowBookParameter, selectedYellowBookParameter)));
-    }
-
-    private void onEditYellowBookParameter(DictionaryParameterData parameter) {
-        updateYellowBookEditor(parameter);
-        renderYellowBook();
-    }
-
-    @FXML
-    private void onClearYellowBookSelection() {
-        updateYellowBookEditor(null);
-        renderYellowBook();
-    }
-
-    @FXML
-    private void onSaveYellowBookParameter() {
-        if (selectedYellowBookParameter == null) {
-            AlertUtils.showErrorAlert("Missing Parameter", "Select a dictionary parameter before saving changes.");
-            return;
-        }
-
-        DictionaryParameterData updated = new DictionaryParameterData(
-            selectedYellowBookParameter.useCaseName,
-            readText(yellowBookParameterNameField),
-            readText(yellowBookParameterFormatField),
-            yellowBookRequiredCheckBox != null && yellowBookRequiredCheckBox.isSelected(),
-            readText(yellowBookParameterDescriptionField),
-            readText(yellowBookParameterValueField)
-        );
-
-        if (updated.parameterName.isBlank() || updated.parameterFormat.isBlank()) {
-            AlertUtils.showErrorAlert("Invalid Parameter", "Parameter name and format are required.");
-            return;
-        }
-
-        if (!selectedYellowBookParameter.parameterName.equals(updated.parameterName)) {
-            sendYellowBookRenameMutation(selectedYellowBookParameter, updated);
-            return;
-        }
-
-        sendYellowBookMutation(
-            "Edit dictionary parameter " + selectedYellowBookParameter.parameterName
-                + " in use case " + selectedYellowBookParameter.useCaseName
-                + ". Set usecase_parameter_name to " + updated.parameterName
-                + ", parameter_format to " + updated.parameterFormat
-                + ", is_required to " + updated.required
-                + ", Description to " + updated.description
-                + ", and param_value to " + updated.paramValue + ".",
-            "Parameter Updated"
-        );
-    }
-
-    private void sendYellowBookRenameMutation(DictionaryParameterData original, DictionaryParameterData updated) {
-        Integer contextUsecaseId = resolveDictionaryContextUseCaseId();
-        if (contextUsecaseId == null || contextUsecaseId <= 0) {
-            AlertUtils.showErrorAlert("Missing Use Case Id", "Could not resolve a use case id for the dictionary request.");
-            return;
-        }
-
-        if (yellowBookStatusLabel != null) {
-            yellowBookStatusLabel.setText("Renaming dictionary parameter...");
-        }
-
-        String addMessage = "Add dictionary parameter " + updated.parameterName
-            + " to use case " + updated.useCaseName
-            + " with usecase_parameter_name " + updated.parameterName
-            + ", parameter_format " + updated.parameterFormat
-            + ", is_required " + updated.required
-            + ", description " + updated.description
-            + ", and param_value " + updated.paramValue + ".";
-        String deleteMessage = "Delete dictionary parameter " + original.parameterName
-            + " from use case " + original.useCaseName + ".";
-
-        ApiService.getInstance()
-            .sendDictionaryRequest(addMessage, contextUsecaseId, getSelectedUsecaseName(), chatSessionId)
-            .thenAccept(addResponse -> {
-                if (isDictionaryErrorResponse(addResponse)) {
-                    Platform.runLater(() -> {
-                        String error = extractDictionaryError(addResponse, "Could not add the new parameter name.");
-                        yellowBookStatusLabel.setText(error);
-                        AlertUtils.showErrorAlert("Rename Failed", error);
-                    });
-                    return;
-                }
-
-                ApiService.getInstance()
-                    .sendDictionaryRequest(deleteMessage, contextUsecaseId, getSelectedUsecaseName(), chatSessionId)
-                    .thenAccept(deleteResponse -> Platform.runLater(() -> {
-                        if (isDictionaryErrorResponse(deleteResponse)) {
-                            String error = extractDictionaryError(deleteResponse, "Added the new name, but could not remove the old parameter.");
-                            yellowBookStatusLabel.setText(error);
-                            AlertUtils.showErrorAlert("Rename Failed", error);
-                            loadYellowBookDictionary();
-                            return;
-                        }
-
-                        AlertUtils.showInfoAlert("Parameter Renamed", "Renamed " + original.parameterName + " to " + updated.parameterName + ".");
-                        updateYellowBookEditor(null);
-                        loadYellowBookDictionary();
-                    }))
-                    .exceptionally(ex -> {
-                        Platform.runLater(() -> AlertUtils.showErrorAlert("Rename Failed", ex.getMessage()));
-                        return null;
-                    });
-            })
-            .exceptionally(ex -> {
-                Platform.runLater(() -> AlertUtils.showErrorAlert("Rename Failed", ex.getMessage()));
-                return null;
-            });
-    }
-
-    private boolean isDictionaryErrorResponse(JsonNode response) {
-        return response == null || response.has("error");
-    }
-
-    private String extractDictionaryError(JsonNode response, String fallback) {
-        if (response == null) {
-            return "No response from n8n.";
-        }
-        return response.path("message").asText(fallback);
-    }
-
-    private void updateYellowBookEditor(DictionaryParameterData parameter) {
-        selectedYellowBookParameter = parameter;
-
-        boolean hasSelection = parameter != null;
-        if (yellowBookSelectedParameterLabel != null) {
-            yellowBookSelectedParameterLabel.setText(hasSelection ? parameter.useCaseName + " / " + parameter.parameterName : "None selected");
-        }
-        setText(yellowBookParameterNameField, hasSelection ? parameter.parameterName : "");
-        setText(yellowBookParameterFormatField, hasSelection ? parameter.parameterFormat : "");
-        setText(yellowBookParameterValueField, hasSelection ? parameter.paramValue : "");
-        setText(yellowBookParameterDescriptionField, hasSelection ? parameter.description : "");
-        if (yellowBookRequiredCheckBox != null) {
-            yellowBookRequiredCheckBox.setSelected(hasSelection && parameter.required);
-            yellowBookRequiredCheckBox.setDisable(!hasSelection);
-        }
-        setDisabled(yellowBookParameterNameField, !hasSelection);
-        setDisabled(yellowBookParameterFormatField, !hasSelection);
-        setDisabled(yellowBookParameterValueField, !hasSelection);
-        setDisabled(yellowBookParameterDescriptionField, !hasSelection);
-        if (yellowBookSaveButton != null) {
-            yellowBookSaveButton.setDisable(!hasSelection);
-        }
-        if (yellowBookClearButton != null) {
-            yellowBookClearButton.setDisable(!hasSelection);
-        }
-    }
-
-    private String readText(TextField field) {
-        return field == null || field.getText() == null ? "" : field.getText().trim();
-    }
-
-    private void setText(TextField field, String value) {
-        if (field != null) {
-            field.setText(value == null ? "" : value);
-        }
-    }
-
-    private void setDisabled(Node node, boolean disabled) {
-        if (node != null) {
-            node.setDisable(disabled);
-        }
-    }
-
-    private void onRemoveYellowBookParameter(DictionaryParameterData parameter) {
-        if (!confirmDestructiveAction("Remove Parameter", "Remove " + parameter.parameterName + " from " + parameter.useCaseName + "?")) {
-            return;
-        }
-
-        sendYellowBookMutation(
-            "Delete dictionary parameter " + parameter.parameterName + " from use case " + parameter.useCaseName + ".",
-            "Parameter Removed"
-        );
-    }
-
-    private void onRemoveYellowBookUseCase(String useCaseName) {
-        if (!confirmDestructiveAction("Remove Use Case", "Remove all dictionary parameters for " + useCaseName + "?")) {
-            return;
-        }
-
-        sendYellowBookMutation("Delete use case " + useCaseName + " from the dictionary.", "Use Case Removed");
-    }
-
-    private boolean confirmDestructiveAction(String title, String message) {
-        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.setTitle(title);
-        alert.setHeaderText(title);
-        alert.setContentText(message);
-        Optional<ButtonType> result = alert.showAndWait();
-        return result.isPresent() && result.get() == ButtonType.OK;
-    }
-
-    private void sendYellowBookMutation(String message, String successTitle) {
-        Integer contextUsecaseId = resolveDictionaryContextUseCaseId();
-        if (contextUsecaseId == null || contextUsecaseId <= 0) {
-            AlertUtils.showErrorAlert("Missing Use Case Id", "Could not resolve a use case id for the dictionary request.");
-            return;
-        }
-
-        if (yellowBookStatusLabel != null) {
-            yellowBookStatusLabel.setText("Sending dictionary update...");
-        }
-
-        ApiService.getInstance()
-            .sendDictionaryRequest(message, contextUsecaseId, getSelectedUsecaseName(), chatSessionId)
-            .thenAccept(response -> Platform.runLater(() -> {
-                if (response == null || response.has("error")) {
-                    String error = response == null ? "No response from n8n." : response.path("message").asText("Dictionary update failed.");
-                    AlertUtils.showErrorAlert("Dictionary Update Failed", error);
-                    yellowBookStatusLabel.setText(error);
-                    return;
-                }
-
-                String reply = response.path("reply").asText("Dictionary update completed.");
-                AlertUtils.showInfoAlert(successTitle, reply);
-                updateYellowBookEditor(null);
-                loadYellowBookDictionary();
-            }))
-            .exceptionally(ex -> {
-                Platform.runLater(() -> AlertUtils.showErrorAlert("Dictionary Update Failed", ex.getMessage()));
-                return null;
-            });
     }
 
     /**
