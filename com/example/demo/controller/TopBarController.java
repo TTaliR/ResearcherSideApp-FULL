@@ -167,12 +167,25 @@ public class TopBarController {
     }
 
     public void setUsers(Collection<User> availableUsers, boolean includeAllUsers) {
+        User currentSelection = UsersComboBox.getValue();
+        boolean restoreAllUsers = isAllUsersOption(currentSelection);
+        Integer selectedUserId = currentSelection == null || restoreAllUsers ? null : currentSelection.getUserID();
+
         users.clear();
         if (includeAllUsers) {
             users.add(allUsersOption);
         }
         if (availableUsers != null) {
             users.addAll(availableUsers);
+        }
+
+        if (restoreAllUsers && includeAllUsers) {
+            UsersComboBox.setValue(allUsersOption);
+        } else if (selectedUserId != null) {
+            User matchingUser = findUserById(selectedUserId);
+            if (matchingUser != null) {
+                UsersComboBox.setValue(matchingUser);
+            }
         }
     }
 
@@ -222,7 +235,13 @@ public class TopBarController {
     }
 
     public void setSelectedUser(User user) {
-        UsersComboBox.setValue(user);
+        if (user == null) {
+            UsersComboBox.setValue(null);
+            return;
+        }
+
+        User matchingUser = findUserById(user.getUserID());
+        UsersComboBox.setValue(matchingUser == null ? user : matchingUser);
     }
 
     public void selectAllUsers() {
@@ -234,6 +253,13 @@ public class TopBarController {
 
     public boolean isAllUsersSelected() {
         return isAllUsersOption(UsersComboBox.getValue());
+    }
+
+    private User findUserById(int userId) {
+        return users.stream()
+                .filter(user -> user != null && user.getUserID() == userId)
+                .findFirst()
+                .orElse(null);
     }
 
     public String getSelectedTimeRange() {

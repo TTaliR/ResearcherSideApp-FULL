@@ -5,6 +5,7 @@ import javafx.beans.property.SimpleStringProperty;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 public class User {
    private final SimpleIntegerProperty userID;
@@ -185,5 +186,21 @@ public class User {
    public String toString() {
       String name = (getFName() + " " + getLName()).trim();
       return name.isEmpty() ? String.valueOf(getUserID()) : getUserID() + " - " + name;
+   }
+
+   @Override
+   public boolean equals(Object obj) {
+      if (this == obj) {
+         return true;
+      }
+      if (!(obj instanceof User other)) {
+         return false;
+      }
+      return getUserID() == other.getUserID();
+   }
+
+   @Override
+   public int hashCode() {
+      return Objects.hash(getUserID());
    }
 }
