@@ -1777,7 +1777,7 @@ public class DashboardController {
                 card.getStyleClass().add("mapping-card-selected");
             }
 
-            Label title = new Label(rule.rangeLabel);
+            Label title = new Label(formatMappingCardTitle(rule));
             title.getStyleClass().add("mapping-card-title");
 
             HBox titleRow = new HBox(8);
@@ -1790,6 +1790,7 @@ public class DashboardController {
             Button deleteButton = MappingUiFactory.createDeleteMappingButton(rule, this::onDeleteMappingRequested);
             titleRow.getChildren().addAll(title, spacer, selectButton, deleteButton);
 
+            Label values = new Label("Values: " + formatMappingValues(rule));
             Label pulses = new Label("Pulse count: " + rule.pulseLabel);
             Label intensity = new Label("Intensity: " + rule.intensityLabel);
             Label duration = new Label("Duration: " + rule.durationLabel);
@@ -1798,9 +1799,9 @@ public class DashboardController {
             if (!assignedToSelectedUser) {
                 Label inactiveHint = new Label("Not assigned to selected user");
                 inactiveHint.getStyleClass().add("mapping-assigned-muted");
-                card.getChildren().addAll(titleRow, pulses, intensity, duration, interval, inactiveHint, assignedUsers);
+                card.getChildren().addAll(titleRow, values, pulses, intensity, duration, interval, inactiveHint, assignedUsers);
             } else {
-                card.getChildren().addAll(titleRow, pulses, intensity, duration, interval, assignedUsers);
+                card.getChildren().addAll(titleRow, values, pulses, intensity, duration, interval, assignedUsers);
             }
 
             card.setOnMouseClicked(event -> {
@@ -1811,6 +1812,24 @@ public class DashboardController {
             });
             mappingsFlowPane.getChildren().add(card);
         }
+    }
+
+    private String formatMappingCardTitle(RuleCardData rule) {
+        if (rule == null) {
+            return "Unknown: -";
+        }
+
+        String useCaseName = rule.useCaseLabel == null || rule.useCaseLabel.isBlank()
+            ? toUseCaseLabel(rule.useCaseKey)
+            : rule.useCaseLabel.trim();
+        return useCaseName + ": " + (rule.mappingId > 0 ? rule.mappingId : "-");
+    }
+
+    private String formatMappingValues(RuleCardData rule) {
+        if (rule == null) {
+            return "-";
+        }
+        return rule.minValue + "-" + rule.maxValue;
     }
 
     private void renderMappingsWhenReady(String useCase) {

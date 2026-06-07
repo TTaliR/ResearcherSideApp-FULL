@@ -536,7 +536,9 @@ public class SchedulesTabController {
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
         confirm.setTitle(requestedActive ? "Activate Schedule" : "Deactivate Schedule");
         confirm.setHeaderText("Are you sure you want to " + action + " schedule #" + schedule.getScheduleId() + "?");
-        confirm.setContentText("This will send the existing " + action + " schedule request.");
+        confirm.setContentText(requestedActive
+            ? "This will deactivate the current active schedule."
+            : "This will deactivate the current schedule, and the user will have no active schedules.");
 
         Optional<ButtonType> result = confirm.showAndWait();
         if (result.isEmpty() || result.get() != ButtonType.OK) {

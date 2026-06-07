@@ -158,6 +158,20 @@
     -fx-border-radius: 10;
 }
 
+.button,
+.toggle-button,
+.radio-button,
+.check-box {
+    -fx-cursor: hand;
+}
+
+.button:disabled,
+.toggle-button:disabled,
+.radio-button:disabled,
+.check-box:disabled {
+    -fx-cursor: default;
+}
+
 .primary-button {
     -fx-background-color: #2563eb;
     -fx-text-fill: white;
