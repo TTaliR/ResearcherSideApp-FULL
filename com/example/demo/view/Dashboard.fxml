@@ -5,7 +5,6 @@
 <?import javafx.scene.control.CheckBox?>
 <?import javafx.scene.control.DatePicker?>
 <?import javafx.scene.control.Label?>
-<?import javafx.scene.control.ListView?>
 <?import javafx.scene.control.ScrollPane?>
 <?import javafx.scene.control.Separator?>
 <?import javafx.scene.control.Tab?>
@@ -13,7 +12,6 @@
 <?import javafx.scene.control.TextField?>
 <?import javafx.scene.control.ToggleButton?>
 <?import javafx.scene.control.ToggleGroup?>
-<?import javafx.scene.layout.AnchorPane?>
 <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.FlowPane?>
 <?import javafx.scene.layout.HBox?>
@@ -37,46 +35,7 @@
                 <tabs>
                     <Tab fx:id="agentChatTab" text="AI Agent Chat">
                         <content>
-                            <BorderPane styleClass="tab-content-root">
-                                <center>
-                                    <VBox spacing="10.0" styleClass="chat-panel" BorderPane.alignment="CENTER">
-                                        <ScrollPane fx:id="chatScrollPane" fitToWidth="true" fitToHeight="false" styleClass="chat-scroll" VBox.vgrow="ALWAYS">
-                                            <VBox fx:id="chatHistoryBox" spacing="6.0" styleClass="chat-history" />
-                                        </ScrollPane>
-                                        <Label fx:id="agentTypingLabel" text="Agent is typing..." visible="false" managed="false" styleClass="sidebar-muted-text" />
-                                        <VBox spacing="6.0">
-                                            <HBox spacing="10.0" alignment="CENTER_LEFT">
-                                                <TextField fx:id="chatInputField" promptText="Type your instruction or query..." HBox.hgrow="ALWAYS" />
-                                                <Button fx:id="chatSendButton" text="Send" styleClass="primary-button" />
-                                                <Button fx:id="contextDrawerToggleButton" text="Hide Context" styleClass="secondary-button" />
-                                            </HBox>
-                                            <VBox spacing="4.0">
-                                                <Label fx:id="chatCommandHintLabel" visible="false" managed="false" wrapText="true" styleClass="chat-command-hint" />
-                                                <ListView fx:id="chatCommandDropdownList" visible="false" managed="false" prefHeight="220.0" styleClass="chat-command-dropdown" />
-                                            </VBox>
-                                        </VBox>
-                                    </VBox>
-                                </center>
-                                <right>
-                                    <VBox fx:id="contextDrawer" prefWidth="330.0" spacing="10.0" styleClass="context-drawer">
-                                        <Label text="Context Drawer" styleClass="drawer-title" />
-                                        <Label text="Use Case" styleClass="drawer-label" />
-                                        <Label fx:id="contextUseCaseLabel" text="-" />
-                                        <Label text="Users" styleClass="drawer-label" />
-                                        <Label fx:id="contextUsersLabel" text="-" />
-                                        <Separator />
-                                        <Label text="Simplified Graph" styleClass="drawer-label" />
-                                        <AnchorPane fx:id="miniGraphAnchor" prefHeight="180.0" />
-                                        <Label text="Active Rule Summary" styleClass="drawer-label" />
-                                        <VBox fx:id="activeRulesSummaryBox" spacing="6.0" />
-                                        <Separator />
-                                        <HBox spacing="10.0">
-                                            <Button fx:id="refreshedSimplifiedGraphButton" styleClass="secondary-button" text="Refresh Graph" onAction="#scheduleGraphUpdate"/>
-                                            <Button fx:id="refreshRuleSummaryButton" styleClass="secondary-button" text="Refresh Mappings" onAction="#refreshMappings" />
-                                        </HBox>
-                                    </VBox>
-                                </right>
-                            </BorderPane>
+                            <fx:include source="AgentChatTab.fxml" fx:id="agentChatTabContent" />
                         </content>
                     </Tab>
 

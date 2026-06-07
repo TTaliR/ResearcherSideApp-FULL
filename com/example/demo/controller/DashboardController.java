@@ -1,15 +1,12 @@
 package com.example.demo.controller;
 
 import com.example.demo.controller.state.DashboardState;
-import com.example.demo.factory.ChatBubbleFactory;
 import com.example.demo.factory.MappingUiFactory;
-import com.example.demo.factory.SharedUiFactory;
 import com.example.demo.model.SensorRuleConfig;
 import com.example.demo.model.User;
 import com.example.demo.model.UserUseCaseMapping;
 import com.example.demo.model.RuleCardData;
 import com.example.demo.model.LoggingIntervalDraft;
-import com.example.demo.model.ChatCommandOption;
 import com.example.demo.model.UseCase;
 import com.example.demo.parser.MappingConfigParser;
 import com.example.demo.service.ApiService;
@@ -21,19 +18,12 @@ import javafx.beans.value.ChangeListener;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
-import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.*;
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.*;
-import javafx.scene.web.WebView;
-import javafx.stage.Popup;
 
-import java.io.*;
-import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.util.*;
 import java.util.function.BiConsumer;
@@ -46,11 +36,7 @@ import java.util.stream.Collectors;
 
 public class DashboardController {
     private static final List<String> DEFAULT_USE_CASES = List.of("HeartRate", "MoonAzimuth", "SunAzimuth", "Pollution");
-    private static final String DEFAULT_CHAT_COMMAND_PREFIX = "$";
-    private static final String MINI_GRAPH_TEMPLATE_PATH = "/com/example/demo/view/templates/miniFeedbackGraph.html";
     private static final Pattern LOG_INTERVAL_PATTERN = Pattern.compile("^\\d+(\\.\\d+)?\\s+(second|seconds|minute|minutes|hour|hours|day|days)$", Pattern.CASE_INSENSITIVE);
-    private static final List<ChatCommandOption> CHAT_COMMAND_OPTIONS = createChatCommandOptions();
-    private static final Map<String, ChatCommandOption> CHAT_COMMAND_OPTIONS_BY_COMMAND = createChatCommandOptionMap();
 
     @FXML
     private LeftSidebarController leftSidebarController;
@@ -62,6 +48,8 @@ public class DashboardController {
     private SchedulesTabController schedulesTabContentController;
     @FXML
     private GraphTabController graphTabContentController;
+    @FXML
+    private AgentChatTabController agentChatTabContentController;
 
     @FXML
     private TabPane workspaceTabPane;
@@ -77,31 +65,6 @@ public class DashboardController {
     private Tab yellowBookTab;
 
     @FXML
-    private ScrollPane chatScrollPane;
-    @FXML
-    private VBox chatHistoryBox;
-    @FXML
-    private ListView<ChatCommandOption> chatCommandDropdownList;
-    private Popup chatCommandPopup;
-    @FXML
-    private TextField chatInputField;
-    @FXML
-    private Button chatSendButton;
-    @FXML
-    private Label chatCommandHintLabel;
-    @FXML
-    private VBox contextDrawer;
-    @FXML
-    private Button contextDrawerToggleButton;
-    @FXML
-    private Label contextUseCaseLabel;
-    @FXML
-    private Label contextUsersLabel;
-    @FXML
-    private VBox activeRulesSummaryBox;
-    @FXML
-    private AnchorPane miniGraphAnchor;
-
     private FlowPane mappingsFlowPane;
     @FXML
     private Label mappingsEmptyLabel;
@@ -143,11 +106,6 @@ public class DashboardController {
     private Label loggingIntervalValueLabel;
     @FXML
     private Button editLoggingIntervalButton;
-    @FXML
-    private Button refreshRuleSummaryButton;
-    @FXML
-    private Label agentTypingLabel;
-
     private final DashboardState state = DashboardState.getInstance();
     private final ObservableList<User> users = FXCollections.observableArrayList();
     private final ObservableList<String> useCases = FXCollections.observableArrayList();
@@ -165,15 +123,13 @@ public class DashboardController {
         CANCELLED
     }
 
-    private WebView miniGraphWebView;
-    private StackPane miniGraphLoadingOverlay;
     private JsonNode latestGraphData;
 
     @FXML
     private void initialize() {
         initializeSubcontrollers();
         setupTabs();
-        setupChat();
+        setupAgentChatTab();
         setupGraphTab();
         setupMappingsRuleBuilder();
         setupSchedulesTab();
@@ -211,7 +167,7 @@ public class DashboardController {
             if (newValue == null) {
                 boolean allUsersSelected = topBarController.isAllUsersSelected();
                 state.setSelectedUsers(null);
-                contextUsersLabel.setText(allUsersSelected ? "All Users" : "-");
+                updateAgentChatUsersLabel(allUsersSelected ? "All Users" : "-");
                 leftSidebarController.getUsersSidebarList().getSelectionModel().clearSelection();
                 syncMonitoringEditorToSelectedUser(null);
                 if (schedulesTabContentController != null) {
@@ -223,7 +179,7 @@ public class DashboardController {
                 return;
             }
             state.setSelectedUsers(newValue);
-            contextUsersLabel.setText(formatUser(newValue));
+            updateAgentChatUsersLabel(formatUser(newValue));
             if (leftSidebarController.getUsersSidebarList().getSelectionModel().getSelectedItem() != newValue) {
                 leftSidebarController.selectUser(newValue);
             }
@@ -849,8 +805,9 @@ public class DashboardController {
                 renderMappingsWhenReady(state.getSelectedUseCase());
                 updateLoggingIntervalDisplay(state.getSelectedUseCase());
             } else if (newValue == agentChatTab) {
-                refreshRuleSummary();
-                renderMiniGraphFromData(latestGraphData);
+                if (agentChatTabContentController != null) {
+                    agentChatTabContentController.onTabActivated();
+                }
             } else if (newValue == yellowBookTab) {
                 yellowBookTabContentController.loadDictionary();
             } else if (newValue == schedulingTab) {
@@ -861,379 +818,29 @@ public class DashboardController {
         }));
     }
 
-    private void setupChat() {
-        setupChatShortcuts();
-        setupChatAutocomplete();
-        chatSendButton.setOnAction(ignored -> onSendMessage());
-        chatInputField.setOnAction(ignored -> onSendMessage());
-
-        chatHistoryBox.heightProperty().addListener(onNewValueChanged(newValue -> chatScrollPane.setVvalue(1.0)));
-        chatInputField.textProperty().addListener((obs, oldValue, newValue) -> {
-            updateChatShortcutHint(newValue);
-            updateChatCommandSuggestions(newValue);
-        });
-        chatInputField.addEventFilter(KeyEvent.KEY_PRESSED, this::handleChatCommandKeyPress);
-
-        if (agentTypingLabel != null) {
-            agentTypingLabel.setVisible(false);
-            agentTypingLabel.setManaged(false);
-        }
-
-        contextDrawer.setVisible(false);
-        contextDrawer.setManaged(false);
-        contextDrawerToggleButton.setText("Show Context");
-
-        contextDrawerToggleButton.setOnAction(ignored -> {
-            boolean nextVisible = !contextDrawer.isVisible();
-            contextDrawer.setVisible(nextVisible);
-            contextDrawer.setManaged(nextVisible);
-            contextDrawerToggleButton.setText(nextVisible ? "Hide Context" : "Show Context");
-        });
-    }
-
-    private void setupChatShortcuts() {
-        if (chatInputField != null) {
-            chatInputField.setPromptText("Type a chat message or start with $ for commands...");
-        }
-
-        updateChatShortcutHint(chatInputField == null ? "" : chatInputField.getText());
-    }
-
-    private void setupChatAutocomplete() {
-        if (chatCommandDropdownList == null) {
+    private void setupAgentChatTab() {
+        if (agentChatTabContentController == null) {
             return;
         }
 
-        detachChatCommandDropdownFromComposer();
-        chatCommandPopup = new Popup();
-        chatCommandPopup.setAutoHide(true);
-        chatCommandPopup.setHideOnEscape(false);
-        chatCommandPopup.getContent().add(chatCommandDropdownList);
-        chatCommandPopup.setOnHidden(event -> clearChatCommandDropdownState());
-
-        chatCommandDropdownList.setItems(FXCollections.observableArrayList());
-        chatCommandDropdownList.setVisible(false);
-        chatCommandDropdownList.setManaged(false);
-        chatCommandDropdownList.setFocusTraversable(false);
-        chatCommandDropdownList.setMouseTransparent(false);
-        chatCommandDropdownList.setFixedCellSize(56.0);
-        chatCommandDropdownList.setCellFactory(listView -> new ListCell<>() {
-            private final Label commandLabel = new Label();
-            private final Label descriptionLabel = new Label();
-            private final VBox content = new VBox(2.0, commandLabel, descriptionLabel);
-
-            {
-                commandLabel.getStyleClass().add("chat-command-name");
-                descriptionLabel.getStyleClass().add("chat-command-description");
-                descriptionLabel.setWrapText(true);
-                content.getStyleClass().add("chat-command-cell-content");
-            }
-
-            @Override
-            protected void updateItem(ChatCommandOption item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setText(null);
-                    setGraphic(null);
-                    return;
-                }
-
-                commandLabel.setText(item.command());
-                descriptionLabel.setText(item.description());
-                setText(null);
-                setGraphic(content);
-            }
-        });
-
-        chatCommandDropdownList.getSelectionModel().selectedItemProperty().addListener((observable, oldValue, newValue) -> {
-            if (newValue != null) {
-                chatCommandDropdownList.scrollTo(chatCommandDropdownList.getItems().indexOf(newValue));
-            }
-        });
-
-        chatCommandDropdownList.setOnMouseClicked(event -> {
-            if (event.getClickCount() >= 1) {
-                acceptSelectedChatCommand();
-            }
-        });
-    }
-
-    private void detachChatCommandDropdownFromComposer() {
-        if (chatCommandDropdownList.getParent() instanceof Pane parentPane) {
-            parentPane.getChildren().remove(chatCommandDropdownList);
-        }
-    }
-
-    private void handleChatCommandKeyPress(KeyEvent event) {
-        if (chatCommandDropdownList == null || !chatCommandDropdownList.isVisible()) {
-            return;
-        }
-
-        if (event.getCode() == KeyCode.ESCAPE) {
-            hideChatCommandDropdown();
-            event.consume();
-            return;
-        }
-
-        if (event.getCode() == KeyCode.UP) {
-            moveChatCommandSelection(-1);
-            event.consume();
-            return;
-        }
-
-        if (event.getCode() == KeyCode.DOWN) {
-            moveChatCommandSelection(1);
-            event.consume();
-            return;
-        }
-
-        if (event.getCode() == KeyCode.ENTER) {
-            acceptSelectedChatCommand();
-            event.consume();
-        }
-    }
-
-    private void moveChatCommandSelection(int delta) {
-        if (chatCommandDropdownList == null || chatCommandDropdownList.getItems().isEmpty()) {
-            return;
-        }
-
-        int size = chatCommandDropdownList.getItems().size();
-        int currentIndex = chatCommandDropdownList.getSelectionModel().getSelectedIndex();
-        int nextIndex = currentIndex < 0 ? 0 : (currentIndex + delta + size) % size;
-        chatCommandDropdownList.getSelectionModel().select(nextIndex);
-        chatCommandDropdownList.scrollTo(nextIndex);
-    }
-
-    private void updateChatCommandSuggestions(String inputText) {
-        if (chatCommandDropdownList == null) {
-            return;
-        }
-
-        String normalized = inputText == null ? "" : inputText.stripLeading();
-        if (!normalized.startsWith(DEFAULT_CHAT_COMMAND_PREFIX)) {
-            hideChatCommandDropdown();
-            return;
-        }
-
-        String afterPrefix = normalized.substring(DEFAULT_CHAT_COMMAND_PREFIX.length());
-        String query = afterPrefix.stripLeading();
-        if (query.isEmpty()) {
-            showChatCommandDropdown(CHAT_COMMAND_OPTIONS);
-            return;
-        }
-
-        int spaceIndex = query.indexOf(' ');
-        String searchText = spaceIndex >= 0 ? query.substring(0, spaceIndex).trim() : query.trim();
-        String trailingText = spaceIndex >= 0 ? query.substring(spaceIndex).trim() : "";
-
-        if (!trailingText.isEmpty() && CHAT_COMMAND_OPTIONS_BY_COMMAND.containsKey(searchText.toLowerCase(Locale.ROOT))) {
-            hideChatCommandDropdown();
-            return;
-        }
-
-        List<ChatCommandOption> filtered = new ArrayList<>();
-        String lowerQuery = searchText.toLowerCase(Locale.ROOT);
-        for (ChatCommandOption option : CHAT_COMMAND_OPTIONS) {
-            if (option.matches(lowerQuery)) {
-                filtered.add(option);
-            }
-        }
-
-        if (filtered.isEmpty()) {
-            hideChatCommandDropdown();
-            return;
-        }
-
-        showChatCommandDropdown(filtered);
-    }
-
-    private void showChatCommandDropdown(List<ChatCommandOption> items) {
-        if (chatCommandDropdownList == null) {
-            return;
-        }
-
-        chatCommandDropdownList.getItems().setAll(items);
-        chatCommandDropdownList.setVisible(true);
-        chatCommandDropdownList.setManaged(true);
-        chatCommandDropdownList.getSelectionModel().selectFirst();
-        chatCommandDropdownList.scrollTo(0);
-        showChatCommandPopup();
-
-        if (chatCommandHintLabel != null) {
-            chatCommandHintLabel.setText("Use Up/Down, Enter, or click.");
-            chatCommandHintLabel.setVisible(true);
-            chatCommandHintLabel.setManaged(true);
-        }
-    }
-
-    private void hideChatCommandDropdown() {
-        if (chatCommandPopup != null) {
-            chatCommandPopup.hide();
-        }
-
-        clearChatCommandDropdownState();
-    }
-
-    private void clearChatCommandDropdownState() {
-        if (chatCommandDropdownList != null) {
-            chatCommandDropdownList.getItems().clear();
-            chatCommandDropdownList.getSelectionModel().clearSelection();
-            chatCommandDropdownList.setVisible(false);
-            chatCommandDropdownList.setManaged(false);
-        }
-
-        if (chatCommandHintLabel != null) {
-            chatCommandHintLabel.setText("");
-            chatCommandHintLabel.setVisible(false);
-            chatCommandHintLabel.setManaged(false);
-        }
-    }
-
-    private void showChatCommandPopup() {
-        if (chatCommandPopup == null
-                || chatCommandDropdownList == null
-                || chatInputField == null
-                || chatInputField.getScene() == null
-                || chatInputField.getScene().getWindow() == null) {
-            return;
-        }
-
-        if (chatCommandDropdownList.getStylesheets().isEmpty()) {
-            chatCommandDropdownList.getStylesheets().addAll(chatInputField.getScene().getStylesheets());
-        }
-
-        int visibleRows = Math.min(chatCommandDropdownList.getItems().size(), 4);
-        double popupHeight = Math.max(56.0, visibleRows * chatCommandDropdownList.getFixedCellSize() + 2.0);
-        chatCommandDropdownList.setPrefHeight(popupHeight);
-        chatCommandDropdownList.setMaxHeight(popupHeight);
-        chatCommandDropdownList.setPrefWidth(Math.max(280.0, chatInputField.getWidth()));
-
-        Bounds inputBounds = chatInputField.localToScreen(chatInputField.getBoundsInLocal());
-        if (inputBounds == null) {
-            return;
-        }
-
-        double x = inputBounds.getMinX();
-        double y = Math.max(0.0, inputBounds.getMinY() - popupHeight - 6.0);
-        if (!chatCommandPopup.isShowing()) {
-            chatCommandPopup.show(chatInputField.getScene().getWindow());
-        }
-        chatCommandPopup.setX(x);
-        chatCommandPopup.setY(y);
-    }
-
-    private void acceptSelectedChatCommand() {
-        if (chatCommandDropdownList == null || !chatCommandDropdownList.isVisible() || chatInputField == null) {
-            return;
-        }
-
-        ChatCommandOption selected = chatCommandDropdownList.getSelectionModel().getSelectedItem();
-        if (selected == null && !chatCommandDropdownList.getItems().isEmpty()) {
-            selected = chatCommandDropdownList.getItems().get(0);
-        }
-
-        if (selected == null) {
-            hideChatCommandDropdown();
-            return;
-        }
-
-        String currentText = chatInputField.getText() == null ? "" : chatInputField.getText();
-        String replacement = selected.command() + " ";
-        String newText = replaceLeadingCommandToken(currentText, replacement);
-
-        chatInputField.setText(newText);
-        chatInputField.positionCaret(newText.length());
-        hideChatCommandDropdown();
-    }
-
-    private String replaceLeadingCommandToken(String currentText, String replacement) {
-        String text = currentText == null ? "" : currentText;
-        String normalized = text.stripLeading();
-        if (!normalized.startsWith(DEFAULT_CHAT_COMMAND_PREFIX)) {
-            return replacement;
-        }
-
-        int firstSpace = normalized.indexOf(' ');
-        if (firstSpace < 0) {
-            return replacement;
-        }
-
-        String suffix = normalized.substring(firstSpace).stripLeading();
-        if (suffix.isEmpty()) {
-            return replacement;
-        }
-
-        return replacement + suffix;
-    }
-
-    private void updateChatShortcutHint(String inputText) {
-        if (chatCommandHintLabel == null || (chatCommandDropdownList != null && chatCommandDropdownList.isVisible())) {
-            return;
-        }
-
-        String normalized = inputText == null ? "" : inputText.trim();
-        if (!normalized.startsWith(DEFAULT_CHAT_COMMAND_PREFIX)) {
-            chatCommandHintLabel.setVisible(false);
-            chatCommandHintLabel.setManaged(false);
-            chatCommandHintLabel.setText("");
-            return;
-        }
-
-        chatCommandHintLabel.setText("Use Up/Down, Enter, or click.");
-        chatCommandHintLabel.setVisible(true);
-        chatCommandHintLabel.setManaged(true);
-    }
-
-    private String expandChatCommand(String message) {
-        String trimmed = message == null ? "" : message.trim();
-        if (trimmed.isEmpty()) {
-            return trimmed;
-        }
-
-        return expandChatCommandForPrefix(trimmed, DEFAULT_CHAT_COMMAND_PREFIX);
-    }
-
-    private String expandChatCommandForPrefix(String message, String prefix) {
-        if (prefix == null || prefix.isBlank() || !message.startsWith(prefix)) {
-            return message;
-        }
-
-        String commandPortion = message.substring(prefix.length()).trim();
-        if (commandPortion.isEmpty()) {
-            return message;
-        }
-
-        String[] parts = commandPortion.split("\\s+", 2);
-        String command = parts[0].toLowerCase(Locale.ROOT).replace('-', '_');
-        ChatCommandOption option = CHAT_COMMAND_OPTIONS_BY_COMMAND.get(command);
-        if (option == null) {
-            return message;
-        }
-
-        if (parts.length == 1 || parts[1].isBlank()) {
-            return option.prompt();
-        }
-
-        return option.prompt() + " " + parts[1].trim();
-    }
-
-    private static List<ChatCommandOption> createChatCommandOptions() {
-        List<ChatCommandOption> options = new ArrayList<>();
-        options.add(new ChatCommandOption("$mapping", "Show Active Mappings", "Show the current feedback mappings", "show me the current feedback mappings"));
-        options.add(new ChatCommandOption("$knowledge", "Experiment Background", "What is the background of this experiment", "what is the background of this experiment"));
-        options.add(new ChatCommandOption("$dictionary", "Show Use Cases", "Show the use cases in the dictionary", "show me the use cases in the dictionary"));
-        options.add(new ChatCommandOption("$schedule", "Show Active Schedules", "Show the active schedules", "show me the active schedules"));
-        options.add(new ChatCommandOption("$usecase", "Show Use Case Configuration", "Show the use case configuration", "show me the use case configuration"));
-        return List.copyOf(options);
-    }
-
-    private static Map<String, ChatCommandOption> createChatCommandOptionMap() {
-        Map<String, ChatCommandOption> map = new LinkedHashMap<>();
-        for (ChatCommandOption option : CHAT_COMMAND_OPTIONS) {
-            map.put(option.command().substring(1), option);
-        }
-        return map;
+        agentChatTabContentController.setSelectedUseCaseSupplier(state::getSelectedUseCase);
+        agentChatTabContentController.setSelectedUseCaseIdSupplier(state::getSelectedUseCaseId);
+        agentChatTabContentController.setSelectedUseCaseIdConsumer(state::setSelectedUseCaseId);
+        agentChatTabContentController.setSelectedUserSupplier(() -> topBarController == null ? null : topBarController.getSelectedUser());
+        agentChatTabContentController.setAllUsersSelectedSupplier(() -> topBarController != null && topBarController.isAllUsersSelected());
+        agentChatTabContentController.setUseCaseLookup(useCaseRegistry::get);
+        agentChatTabContentController.setUserFormatter(this::formatUser);
+        agentChatTabContentController.setUserUseCaseAssignmentValidator(this::isUserAssignedToUseCase);
+        agentChatTabContentController.setUserUseCaseContextApplier(this::applyUserUseCaseContext);
+        agentChatTabContentController.setRefreshUsersForSelectedUseCaseCallback(this::refreshUsersForSelectedUseCase);
+        agentChatTabContentController.setRulesSupplier(() -> List.copyOf(allRules));
+        agentChatTabContentController.setRuleAssignmentResolver(this::isUserAssignedToRule);
+        agentChatTabContentController.setUsersAssignedToRuleResolver(this::findUsersAssignedToRule);
+        agentChatTabContentController.setMappingRefreshCallback(this::refreshMappingData);
+        agentChatTabContentController.setGraphRefreshCallback(this::scheduleGraphUpdate);
+        agentChatTabContentController.setMappingsRefreshCallback(this::refreshMappings);
+        agentChatTabContentController.setChatSessionIdSupplier(() -> chatSessionId);
+        agentChatTabContentController.initializeChat();
     }
 
     private void setupGraphTab() {
@@ -1250,13 +857,12 @@ public class DashboardController {
         ));
         graphTabContentController.setDataLoadedCallback(dataArray -> {
             latestGraphData = dataArray;
-            renderMiniGraphFromData(dataArray);
-            setMiniGraphLoadingVisible(false);
+            if (agentChatTabContentController != null) {
+                agentChatTabContentController.renderMiniGraphFromData(dataArray);
+                agentChatTabContentController.showMiniGraphLoading(false);
+            }
         });
         graphTabContentController.initializeGraph();
-        ensureMiniGraphWebView();
-        setMiniGraphLoadingVisible(false);
-        renderMiniGraphPlaceholder("Graph preview appears here.");
     }
 
     private void setupStateListeners() {
@@ -1727,9 +1333,7 @@ public class DashboardController {
             }
         }
 
-        if (contextUseCaseLabel != null) {
-            contextUseCaseLabel.setText((selectedUseCase == null || selectedUseCase.isBlank()) ? "-" : selectedUseCase);
-        }
+        updateAgentChatUseCaseLabel(selectedUseCase);
 
         if (leftSidebarController.getUseCaseListView() != null && selectedUseCase != null && !selectedUseCase.isBlank()) {
             String current = leftSidebarController.getUseCaseListView().getSelectionModel().getSelectedItem();
@@ -1744,8 +1348,10 @@ public class DashboardController {
         refreshUsersForSelectedUseCase(null);
         refreshRuleSummary();
         renderMappingsWhenReady(selectedUseCase);
-        clearChatMessages();
-        addChatMessage("Selected use case: " + selectedUseCase, false);
+        if (agentChatTabContentController != null) {
+            agentChatTabContentController.clearMessages();
+            agentChatTabContentController.addSystemMessage("Selected use case: " + selectedUseCase);
+        }
     }
 
     private void refreshUsersForSelectedUseCase(Integer preferredUserId) {
@@ -1773,7 +1379,7 @@ public class DashboardController {
             state.setSelectedUsers(null);
             leftSidebarController.getUsersSidebarList().getSelectionModel().clearSelection();
             syncMonitoringEditorToSelectedUser(null);
-            contextUsersLabel.setText("All Users");
+            updateAgentChatUsersLabel("All Users");
             return;
         }
 
@@ -1795,12 +1401,12 @@ public class DashboardController {
             state.setSelectedUsers(nextSelection);
             leftSidebarController.selectUser(nextSelection);
             syncMonitoringEditorToSelectedUser(nextSelection);
-            contextUsersLabel.setText(formatUser(nextSelection));
+            updateAgentChatUsersLabel(formatUser(nextSelection));
         } else {
             state.setSelectedUsers(null);
             leftSidebarController.getUsersSidebarList().getSelectionModel().clearSelection();
             syncMonitoringEditorToSelectedUser(null);
-            contextUsersLabel.setText("-");
+            updateAgentChatUsersLabel("-");
         }
     }
 
@@ -2339,344 +1945,31 @@ public class DashboardController {
             });
     }
 
-    private void onSendMessage() {
-        String message = chatInputField.getText() == null ? "" : chatInputField.getText().trim();
-        if (message.isEmpty()) {
-            return;
-        }
-
-        String selectedUseCase = state.getSelectedUseCase();
-        Integer useCaseId = state.getSelectedUseCaseId();
-
-        if ((useCaseId == null || useCaseId <= 0) && selectedUseCase != null && !selectedUseCase.isBlank()) {
-            String normalized = FormatUtils.normalizeUseCaseName(selectedUseCase);
-            UseCase useCase = useCaseRegistry.get(normalized);
-            if (useCase != null) {
-                useCaseId = useCase.getId();
-            }
-
-            if (useCaseId != null && useCaseId > 0) {
-                state.setSelectedUseCaseId(useCaseId);
-            }
-        }
-
-        if (useCaseId == null || useCaseId <= 0) {
-            addChatMessage(
-                    "I could not resolve the ID for the selected use case '" + selectedUseCase + "'. Please refresh the use cases and try again.",
-                    false
-            );
-            return;
-        }
-
-        String expandedMessage = expandChatCommand(message);
-        boolean mappingListRequest = isMappingListRequest(message, expandedMessage);
-        User selectedUser = topBarController.getSelectedUser();
-        if (selectedUser != null && !isUserAssignedToUseCase(selectedUser, selectedUseCase)) {
-            AlertUtils.showErrorAlert("Invalid User", "Please select a user assigned to " + selectedUseCase + " before chatting.");
-            refreshUsersForSelectedUseCase(null);
-            return;
-        }
-        applyUserUseCaseContext(selectedUser, selectedUseCase);
-
-        addChatMessage(message, true);
-        chatInputField.clear();
-
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("message", expandedMessage);
-        payload.put("session_id", chatSessionId);
-        payload.put("usecase_id", useCaseId);
-        payload.put("usecase_name", selectedUseCase);
-        if (selectedUser != null) {
-            payload.put("user_id", selectedUser.getUserID());
-            payload.put("user_name", formatUser(selectedUser));
-            payload.put("user_usecase_id", selectedUser.getUsecaseId());
-            payload.put("user_usecase_name", selectedUser.getUsecaseName());
-            payload.put("user_mapping_id", selectedUser.getMappingId());
-        }
-
-        setAgentTyping(true);
-
-        ApiService.getInstance().postWithResponse(ApiService.EP_CHAT_CONFIG, payload)
-                .thenAccept(response -> {
-                    CompletableFuture<Void> refresh = mappingListRequest
-                            ? refreshMappingData()
-                            : CompletableFuture.completedFuture(null);
-                    refresh.thenRun(() -> Platform.runLater(() -> handleChatResponse(response, mappingListRequest, selectedUseCase)))
-                            .exceptionally(ex -> {
-                                Platform.runLater(() -> {
-                                    setAgentTyping(false);
-                                    addChatMessage("Error refreshing mappings: " + ex.getMessage(), false);
-                                });
-                                return null;
-                            });
-                })
-                .exceptionally(ex -> {
-                    Platform.runLater(() -> {
-                        setAgentTyping(false);
-                        addChatMessage("Error: " + ex.getMessage(), false);
-                    });
-                    return null;
-                });
-    }
-
-    private void handleChatResponse(JsonNode response, boolean mappingListRequest, String selectedUseCase) {
-        setAgentTyping(false);
-        if (response != null && response.has("reply")) {
-            String reply = response.get("reply").asText();
-            addChatMessage(mappingListRequest ? appendMappingAssignmentSummary(reply, selectedUseCase) : reply, false);
-        } else {
-            addChatMessage("AI response did not include reply field.", false);
-        }
-    }
-
-    private boolean isMappingListRequest(String originalMessage, String expandedMessage) {
-        String original = originalMessage == null ? "" : originalMessage.trim().toLowerCase(Locale.ROOT);
-        String expanded = expandedMessage == null ? "" : expandedMessage.trim().toLowerCase(Locale.ROOT);
-
-        if (original.startsWith("$mapping")) {
-            return true;
-        }
-
-        return isMappingListText(expanded) || isMappingListText(original);
-    }
-
-    private boolean isMappingListText(String text) {
-        if (text == null || text.isBlank()) {
-            return false;
-        }
-
-        return text.contains("mapping")
-                && (text.contains("show") || text.contains("list") || text.contains("current") || text.contains("active"));
-    }
-
-    private String appendMappingAssignmentSummary(String reply, String useCase) {
-        String summary = buildMappingAssignmentSummary(useCase);
-        if (summary.isBlank()) {
-            return reply == null ? "" : reply;
-        }
-
-        String baseReply = reply == null ? "" : reply.trim();
-        if (baseReply.toLowerCase(Locale.ROOT).contains("assigned users by mapping")) {
-            return baseReply;
-        }
-        if (baseReply.isBlank()) {
-            return summary;
-        }
-
-        return baseReply + "\n\n" + summary;
-    }
-
-    private String buildMappingAssignmentSummary(String useCase) {
-        if (useCase == null || useCase.isBlank()) {
-            return "";
-        }
-
-        String selectedUseCaseKey = FormatUtils.normalizeUseCaseName(useCase);
-        List<RuleCardData> filtered = allRules.stream()
-                .filter(rule -> selectedUseCaseKey.equals(rule.useCaseKey))
-                .toList();
-        if (filtered.isEmpty()) {
-            return "";
-        }
-
-        StringBuilder summary = new StringBuilder("Assigned users by mapping:\n");
-        for (RuleCardData rule : filtered) {
-            List<User> assignedUsers = findUsersAssignedToRule(rule);
-            summary.append("- ID ")
-                    .append(rule.mappingId)
-                    .append(": ")
-                    .append(assignedUsers.size())
-                    .append(assignedUsers.size() == 1 ? " user" : " users");
-
-            if (!assignedUsers.isEmpty()) {
-                summary.append(" - ")
-                        .append(assignedUsers.stream()
-                                .map(this::formatUser)
-                                .collect(Collectors.joining(", ")));
-            }
-            summary.append('\n');
-        }
-
-        return summary.toString().trim();
-    }
-
-
-    private void setAgentTyping(boolean typing) {
-        if (agentTypingLabel == null) {
-            return;
-        }
-        agentTypingLabel.setText("Agent is typing...");
-        agentTypingLabel.setVisible(typing);
-        agentTypingLabel.setManaged(typing);
-    }
-
-    private void addChatMessage(String text, boolean userMessage) {
-         WebView bubble = ChatBubbleFactory.createChatBubbleView(text, userMessage);
-
-         HBox row = new HBox(bubble);
-         row.getStyleClass().add("chat-message-row");
-         row.setFillHeight(false);
-         row.setAlignment(userMessage ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
-
-         chatHistoryBox.getChildren().add(row);
-     }
-
-    private double clamp(double value, double min, double max) {
-        return Math.max(min, Math.min(max, value));
-    }
-
-    private void clearChatMessages() {
-        chatHistoryBox.getChildren().clear();
-    }
-
     private void refreshRuleSummary() {
-        activeRulesSummaryBox.getChildren().clear();
-
-        String selectedUseCase = state.getSelectedUseCase();
-        if (selectedUseCase == null || selectedUseCase.isBlank()) {
-            activeRulesSummaryBox.getChildren().add(new Label("No use case selected."));
-            return;
-        }
-
-        User selectedUser = topBarController == null ? null : topBarController.getSelectedUser();
-        boolean allUsersSelected = topBarController != null && topBarController.isAllUsersSelected();
-        if (selectedUser == null && !allUsersSelected) {
-            activeRulesSummaryBox.getChildren().add(new Label("No user selected."));
-            return;
-        }
-
-        String selectedUseCaseKey = FormatUtils.normalizeUseCaseName(selectedUseCase);
-        List<RuleCardData> filtered = allRules.stream()
-            .filter(rule -> selectedUseCaseKey.equals(rule.useCaseKey))
-            .filter(rule -> selectedUser == null || isUserAssignedToRule(selectedUser, rule))
-            .toList();
-
-        if (filtered.isEmpty()) {
-            activeRulesSummaryBox.getChildren().add(new Label(allUsersSelected
-                ? "No mappings for this use case."
-                : "No active mapping for this user."));
-            return;
-        }
-
-        for (RuleCardData rule : filtered) {
-            Label line = new Label(rule.rangeLabel + " | Pulses " + rule.pulseLabel + " | Intensity " + rule.intensityLabel);
-            line.getStyleClass().add("drawer-rule-line");
-            activeRulesSummaryBox.getChildren().add(line);
+        if (agentChatTabContentController != null) {
+            agentChatTabContentController.refreshRuleSummary();
         }
     }
 
     @FXML
     private void scheduleGraphUpdate() {
         if (graphTabContentController != null) {
-            setMiniGraphLoadingVisible(true);
+            if (agentChatTabContentController != null) {
+                agentChatTabContentController.showMiniGraphLoading(true);
+            }
             graphTabContentController.scheduleGraphUpdate();
         }
     }
 
-    /**
-     * Renders mini-graph from the external HTML template using validated data
-     */
-    private void renderMiniGraphFromData(JsonNode dataArray) {
-        ensureMiniGraphWebView();
-
-        if (dataArray == null || !dataArray.isArray() || dataArray.isEmpty()) {
-            renderMiniGraphPlaceholder("No preview data available.");
-            return;
-        }
-
-        String template = loadHtmlTemplate(MINI_GRAPH_TEMPLATE_PATH);
-        if (template == null) {
-            renderMiniGraphPlaceholder("Mini graph template file is missing.");
-            return;
-        }
-
-        String escapedJson = dataArray.toString().replace("\\", "\\\\").replace("\"", "\\\"");
-        String html = template.replace("const data = DATA_PLACEHOLDER;", "const data = JSON.parse(\"" + escapedJson + "\");");
-
-        miniGraphWebView.getEngine().loadContent(html);
-    }
-
-    private void renderMiniGraphPlaceholder(String message) {
-        ensureMiniGraphWebView();
-        miniGraphWebView.getEngine().loadContent(buildPlaceholderHtml(message));
-    }
-
-    private String buildPlaceholderHtml(String message) {
-        return "<html><body style='font-family:Segoe UI, sans-serif;display:flex;align-items:center;justify-content:center;height:100%;margin:0;color:#4b5563;background:#ffffff;'>"
-            + "<div style='text-align:center;padding:20px;'>" + escapeHtml(message) + "</div></body></html>";
-    }
-
-    private String escapeHtml(String text) {
-        if (text == null) {
-            return "";
-        }
-        return text
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("\"", "&quot;")
-            .replace("'", "&#39;");
-    }
-
-    private void ensureMiniGraphWebView() {
-        if (miniGraphWebView != null) {
-            ensureMiniGraphLoadingOverlay();
-            return;
-        }
-        miniGraphWebView = new WebView();
-        miniGraphWebView.getEngine().getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
-            if (newState == javafx.concurrent.Worker.State.SUCCEEDED || newState == javafx.concurrent.Worker.State.FAILED || newState == javafx.concurrent.Worker.State.CANCELLED) {
-                setMiniGraphLoadingVisible(false);
-            }
-        });
-        miniGraphWebView.setPrefHeight(180);
-        AnchorPane.setTopAnchor(miniGraphWebView, 0.0);
-        AnchorPane.setRightAnchor(miniGraphWebView, 0.0);
-        AnchorPane.setBottomAnchor(miniGraphWebView, 0.0);
-        AnchorPane.setLeftAnchor(miniGraphWebView, 0.0);
-        miniGraphAnchor.getChildren().setAll(miniGraphWebView);
-        ensureMiniGraphLoadingOverlay();
-    }
-
-    private void ensureMiniGraphLoadingOverlay() {
-        if (miniGraphLoadingOverlay == null) {
-            miniGraphLoadingOverlay = SharedUiFactory.createLoadingOverlay("Loading preview...");
-            AnchorPane.setTopAnchor(miniGraphLoadingOverlay, 0.0);
-            AnchorPane.setRightAnchor(miniGraphLoadingOverlay, 0.0);
-            AnchorPane.setBottomAnchor(miniGraphLoadingOverlay, 0.0);
-            AnchorPane.setLeftAnchor(miniGraphLoadingOverlay, 0.0);
-        }
-
-        if (!miniGraphAnchor.getChildren().contains(miniGraphLoadingOverlay)) {
-            miniGraphAnchor.getChildren().add(miniGraphLoadingOverlay);
+    private void updateAgentChatUsersLabel(String label) {
+        if (agentChatTabContentController != null) {
+            agentChatTabContentController.updateUsersLabel(label);
         }
     }
 
-    private void setMiniGraphLoadingVisible(boolean visible) {
-        ensureMiniGraphWebView();
-        miniGraphLoadingOverlay.setVisible(visible);
-        miniGraphLoadingOverlay.setManaged(visible);
-        if (visible) {
-            miniGraphLoadingOverlay.toFront();
-        }
-    }
-
-    private String loadHtmlTemplate(String resourcePath) {
-        try {
-            InputStream inputStream = this.getClass().getResourceAsStream(resourcePath);
-            if (inputStream == null) {
-                return null;
-            }
-            BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
-            StringBuilder htmlContent = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                htmlContent.append(line).append("\n");
-            }
-            return htmlContent.toString();
-        } catch (IOException ex) {
-            ex.printStackTrace();
-            return null;
+    private void updateAgentChatUseCaseLabel(String selectedUseCase) {
+        if (agentChatTabContentController != null) {
+            agentChatTabContentController.updateUseCaseLabel(selectedUseCase);
         }
     }
 
