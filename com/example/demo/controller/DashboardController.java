@@ -1789,8 +1789,9 @@ public class DashboardController {
             HBox.setHgrow(spacer, Priority.ALWAYS);
 
             Button selectButton = MappingUiFactory.createSelectMappingButton(rule, this::selectMappingForEdit);
+            Button assignButton = createAssignUsersToMappingButton(rule);
             Button deleteButton = MappingUiFactory.createDeleteMappingButton(rule, this::onDeleteMappingRequested);
-            titleRow.getChildren().addAll(title, spacer, selectButton, deleteButton);
+            titleRow.getChildren().addAll(title, spacer, assignButton, selectButton, deleteButton);
 
             Label values = new Label("Values: " + formatMappingValues(rule));
             Label pulses = new Label("Pulse count: " + rule.pulseLabel);
@@ -1952,6 +1953,152 @@ public class DashboardController {
         updateSelectedMappingForEdit(rule);
         populateRuleBuilderFromMapping(rule);
         renderMappingsWhenReady(state.getSelectedUseCase());
+    }
+
+    private Button createAssignUsersToMappingButton(RuleCardData rule) {
+        Button button = new Button("Assign");
+        button.getStyleClass().add("mapping-assign-button");
+        button.setTooltip(new Tooltip("Assign users to this mapping"));
+        button.setOnMouseClicked(event -> event.consume());
+        button.setOnAction(ignored -> onAssignUsersToMappingRequested(rule));
+        return button;
+    }
+
+    private void onAssignUsersToMappingRequested(RuleCardData rule) {
+        if (rule == null || rule.mappingId <= 0) {
+            AlertUtils.showErrorAlert("Missing Mapping", "Could not resolve mapping id for the selected card.");
+            return;
+        }
+
+        String useCaseName = resolveUseCaseDisplayName(rule.useCaseLabel);
+        if (useCaseName == null || useCaseName.isBlank() || "-".equals(useCaseName)) {
+            useCaseName = state.getSelectedUseCase();
+        }
+
+        int useCaseId = resolveUseCaseId(useCaseName);
+        if (useCaseId <= 0) {
+            AlertUtils.showErrorAlert("Missing Use Case", "Could not resolve use case id for " + useCaseName + ".");
+            return;
+        }
+
+        final String resolvedUseCaseName = useCaseName;
+        List<User> candidateUsers = users.stream()
+                .filter(user -> isUserAssignedToUseCase(user, resolvedUseCaseName))
+                .sorted(Comparator.comparingInt(User::getUserID))
+                .toList();
+
+        if (candidateUsers.isEmpty()) {
+            AlertUtils.showErrorAlert("No Users", "No users are assigned to " + resolvedUseCaseName + ".");
+            return;
+        }
+
+        List<User> selectedUsers = showAssignUsersToMappingDialog(rule, resolvedUseCaseName, candidateUsers);
+        if (selectedUsers.isEmpty()) {
+            return;
+        }
+
+        assignUsersToMapping(rule, useCaseId, resolvedUseCaseName, selectedUsers);
+    }
+
+    private List<User> showAssignUsersToMappingDialog(RuleCardData rule, String useCaseName, List<User> candidateUsers) {
+        Dialog<List<User>> dialog = new Dialog<>();
+        dialog.setTitle("Assign Users");
+        dialog.setHeaderText("Assign users to mapping " + rule.mappingId + " for " + useCaseName + ".");
+
+        ButtonType assignButtonType = new ButtonType("Assign Selected", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(assignButtonType, ButtonType.CANCEL);
+
+        VBox listBox = new VBox(6);
+        listBox.getStyleClass().add("mapping-assignment-dialog-list");
+
+        Map<CheckBox, User> selections = new LinkedHashMap<>();
+        for (User user : candidateUsers) {
+            boolean alreadyAssigned = isUserAssignedToRule(user, rule);
+            CheckBox checkBox = new CheckBox(formatUser(user));
+            checkBox.getStyleClass().add("mapping-assignment-checkbox");
+            checkBox.setSelected(alreadyAssigned);
+            checkBox.setDisable(alreadyAssigned);
+            if (alreadyAssigned) {
+                checkBox.setText(formatUser(user) + " (already assigned)");
+            }
+            selections.put(checkBox, user);
+            listBox.getChildren().add(checkBox);
+        }
+
+        Label hint = new Label("Choose users to assign to this mapping.");
+        hint.getStyleClass().add("topbar-muted-value");
+        hint.setWrapText(true);
+
+        ScrollPane scrollPane = new ScrollPane(listBox);
+        scrollPane.setFitToWidth(true);
+        scrollPane.setPrefViewportHeight(Math.min(320, Math.max(160, candidateUsers.size() * 34)));
+        scrollPane.getStyleClass().add("mappings-scroll");
+
+        VBox content = new VBox(10, hint, scrollPane);
+        content.setPadding(new Insets(12, 12, 4, 12));
+        content.setPrefWidth(380);
+        dialog.getDialogPane().setContent(content);
+
+        Node assignButtonNode = dialog.getDialogPane().lookupButton(assignButtonType);
+        Runnable updateAssignState = () -> {
+            boolean hasNewSelection = selections.entrySet().stream()
+                    .anyMatch(entry -> entry.getKey().isSelected() && !isUserAssignedToRule(entry.getValue(), rule));
+            assignButtonNode.setDisable(!hasNewSelection);
+        };
+        selections.keySet().forEach(checkBox ->
+                checkBox.selectedProperty().addListener((obs, oldValue, newValue) -> updateAssignState.run()));
+        updateAssignState.run();
+
+        dialog.setResultConverter(buttonType -> {
+            if (buttonType != assignButtonType) {
+                return List.of();
+            }
+            return selections.entrySet().stream()
+                    .filter(entry -> entry.getKey().isSelected())
+                    .map(Map.Entry::getValue)
+                    .filter(user -> !isUserAssignedToRule(user, rule))
+                    .toList();
+        });
+
+        Optional<List<User>> result = dialog.showAndWait();
+        return result.orElse(List.of());
+    }
+
+    private void assignUsersToMapping(RuleCardData rule, int useCaseId, String useCaseName, List<User> selectedUsers) {
+        List<CompletableFuture<Boolean>> assignments = selectedUsers.stream()
+                .map(user -> ApiService.getInstance().assignMappingToUser(
+                        user.getUserID(),
+                        rule.mappingId,
+                        useCaseId,
+                        useCaseName,
+                        chatSessionId
+                ))
+                .toList();
+
+        CompletableFuture.allOf(assignments.toArray(CompletableFuture[]::new))
+                .thenRun(() -> {
+                    boolean allSuccessful = assignments.stream().allMatch(CompletableFuture::join);
+                    Platform.runLater(() -> handleMappingAssignmentResult(allSuccessful, rule, useCaseName, selectedUsers));
+                })
+                .exceptionally(ex -> {
+                    Platform.runLater(() -> AlertUtils.showErrorAlert("Assignment Failed", "Failed to assign users: " + ex.getMessage()));
+                    return null;
+                });
+    }
+
+    private void handleMappingAssignmentResult(boolean allSuccessful, RuleCardData rule, String useCaseName, List<User> selectedUsers) {
+        if (!allSuccessful) {
+            AlertUtils.showErrorAlert("Assignment Failed", "Could not assign every selected user to mapping " + rule.mappingId + ".");
+            return;
+        }
+
+        AlertUtils.showInfoAlert(
+                "Users Assigned",
+                "Assigned " + selectedUsers.size() + (selectedUsers.size() == 1 ? " user" : " users")
+                        + " to mapping " + rule.mappingId + " for " + useCaseName + "."
+        );
+        state.setSelectedUseCase(useCaseName);
+        refreshMappingData();
     }
 
     private void onDeleteMappingRequested(RuleCardData rule) {

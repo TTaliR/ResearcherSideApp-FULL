@@ -156,6 +156,43 @@ public class ApiService {
         return post(EP_ASSIGN_USECASE, payload);
     }
 
+    public CompletableFuture<Boolean> assignMappingToUser(int userId, int mappingId,
+                                                          int usecaseId, String usecaseName,
+                                                          String sessionId) {
+        String trimmedUsecaseName = usecaseName == null ? "" : usecaseName.trim();
+        String trimmedSessionId = sessionId == null ? "" : sessionId.trim();
+        if (userId <= 0 || mappingId <= 0 || usecaseId <= 0
+                || trimmedUsecaseName.isEmpty() || trimmedSessionId.isEmpty()) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("session_id", trimmedSessionId);
+        payload.put("usecase_id", usecaseId);
+        payload.put("usecase_name", trimmedUsecaseName);
+        payload.put("action", "assign_mapping_to_user");
+        payload.put("user_id", userId);
+        payload.put("mapping_id", mappingId);
+        payload.put("feedback_config_rule_id", mappingId);
+        payload.put("message", "Assign mapping ID " + mappingId + " for " + trimmedUsecaseName
+            + " to user " + userId + ".");
+
+        return postWithResponse(EP_CHAT_CONFIG, payload)
+            .thenApply(response -> {
+                if (response == null || response.has("error")) {
+                    return false;
+                }
+                String reply = extractTextField(response, "reply").toLowerCase();
+                String message = extractTextField(response, "message").toLowerCase();
+                String combined = reply + " " + message;
+                return combined.contains("assigned")
+                    || combined.contains("updated")
+                    || combined.contains("now active")
+                    || combined.contains("success");
+            })
+            .exceptionally(ex -> false);
+    }
+
     public CompletableFuture<Boolean> deleteMapping(int mappingId) {
         if (mappingId <= 0) {
             return CompletableFuture.completedFuture(false);

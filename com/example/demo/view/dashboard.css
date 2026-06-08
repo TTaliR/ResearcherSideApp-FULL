@@ -404,6 +404,31 @@
     -fx-background-color: #dbeafe;
 }
 
+.mapping-assign-button {
+    -fx-background-color: #f0fdf4;
+    -fx-text-fill: #166534;
+    -fx-border-color: #bbf7d0;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-font-size: 11px;
+    -fx-padding: 2 8;
+    -fx-cursor: hand;
+}
+
+.mapping-assign-button:hover {
+    -fx-background-color: #dcfce7;
+}
+
+.mapping-assignment-dialog-list {
+    -fx-padding: 4 2 4 2;
+}
+
+.mapping-assignment-checkbox {
+    -fx-text-fill: #334155;
+    -fx-font-size: 12px;
+    -fx-padding: 4 2 4 2;
+}
+
 .mapping-delete-button {
     -fx-background-color: transparent;
     -fx-padding: 2;
