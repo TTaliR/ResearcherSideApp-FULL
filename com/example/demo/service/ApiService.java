@@ -50,6 +50,8 @@ public class ApiService {
     public static final String EP_SCHEDULE = "/schedule";
     public static final String EP_CREATE_USECASE = "/create-usecase";
     public static final String EP_ASSIGN_USECASE = "/assign-usecase";
+    public static final String EP_GET_USER_MAPPING_HISTORY = "/users-mappings-history";
+
 
     private static final ApiService INSTANCE = new ApiService();
     private final ObjectMapper mapper;
@@ -329,6 +331,20 @@ public class ApiService {
         payload.put("usecase_id", usecaseId);
         payload.put("interval", interval.trim());
         return post(EP_SET_LOGGING_INTERVAL, payload);
+    }
+
+    public CompletableFuture<JsonNode> getUserMappingHistory(int userId, String useCaseName) {
+        if (userId <= 0 || useCaseName == null || useCaseName.isBlank()) {
+            return CompletableFuture.completedFuture(
+                mapper.createObjectNode().put("status", "error").put("message", "Missing required parameters.")
+            );
+        }
+
+        Map<String, String> params = new HashMap<>();
+        params.put("userId", String.valueOf(userId));
+        params.put("useCaseName", useCaseName);
+
+        return get(EP_GET_USER_MAPPING_HISTORY, params);
     }
 
     public CompletableFuture<JsonNode> sendDictionaryRequest(String message, int contextUsecaseId,
@@ -1042,4 +1058,3 @@ public class ApiService {
         }
     }
 }
-

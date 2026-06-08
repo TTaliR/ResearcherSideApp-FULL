@@ -1748,8 +1748,26 @@ public class DashboardController {
 
         String selectedUseCaseKey = FormatUtils.normalizeUseCaseName(useCase);
         User selectedUser = topBarController == null ? null : topBarController.getSelectedUser();
+
+        if (selectedUser != null && !showingActiveMappingsOnly) {
+             ApiService.getInstance().getUserMappingHistory(selectedUser.getUserID(), useCase)
+                     .thenAccept(response -> Platform.runLater(() -> {
+                         renderUserMappingHistory(response, useCase, selectedUser);
+                     }));
+             return;
+        }
+
         List<RuleCardData> filtered = allRules.stream()
             .filter(rule -> selectedUseCaseKey.equals(rule.useCaseKey))
+            .filter(rule -> {
+                if (!showingActiveMappingsOnly) {
+                    return true;
+                }
+                if (selectedUser != null) {
+                    return isUserAssignedToRule(selectedUser, rule);
+                }
+                return !findUsersAssignedToRule(rule).isEmpty();
+            })
             .filter(rule -> !showingActiveMappingsOnly || isRuleActiveForMappingsView(selectedUser, rule))
             .toList();
 
@@ -1757,7 +1775,7 @@ public class DashboardController {
             mappingsEmptyLabel.setVisible(true);
             mappingsEmptyLabel.setManaged(true);
             mappingsEmptyLabel.setText(selectedUser == null
-                ? "No mappings found for " + useCase + "."
+                ? "No active mappings found for " + useCase + "."
                 : "No active mapping assigned to " + formatUser(selectedUser) + " for " + useCase + ".");
             return;
         }
@@ -1822,6 +1840,42 @@ public class DashboardController {
                 ? isRuleAssignedToAnyUser(rule)
                 : isUserAssignedToRule(selectedUser, rule);
     }
+
+    private void renderUserMappingHistory(JsonNode response, String useCase, User selectedUser) {
+        mappingsFlowPane.getChildren().clear();
+
+        if (response == null || !response.isArray() || response.isEmpty()) {
+            mappingsEmptyLabel.setVisible(true);
+            mappingsEmptyLabel.setManaged(true);
+            mappingsEmptyLabel.setText("Failed to load mapping history.");
+            return;
+        }
+
+        JsonNode data = response.get(0);
+        if (data == null || !data.has("status") || "error".equals(data.get("status").asText())) {
+            mappingsEmptyLabel.setVisible(true);
+            mappingsEmptyLabel.setManaged(true);
+            mappingsEmptyLabel.setText("Failed to load mapping history.");
+            return;
+        }
+
+        JsonNode mappingsArray = data.get("mappings");
+        if (mappingsArray == null || mappingsArray.isEmpty()) {
+            mappingsEmptyLabel.setVisible(true);
+            mappingsEmptyLabel.setManaged(true);
+            mappingsEmptyLabel.setText("No mapping history found for " + formatUser(selectedUser) + " and " + useCase + ".");
+            return;
+        }
+
+         mappingsEmptyLabel.setVisible(false);
+         mappingsEmptyLabel.setManaged(false);
+
+         for (JsonNode mappingNode : mappingsArray) {
+             VBox card = MappingUiFactory.createHistoryMappingCard(mappingNode, useCase);
+             mappingsFlowPane.getChildren().add(card);
+         }
+    }
+
 
     private String formatMappingCardTitle(RuleCardData rule) {
         if (rule == null) {
