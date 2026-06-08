@@ -1750,7 +1750,7 @@ public class DashboardController {
         User selectedUser = topBarController == null ? null : topBarController.getSelectedUser();
         List<RuleCardData> filtered = allRules.stream()
             .filter(rule -> selectedUseCaseKey.equals(rule.useCaseKey))
-            .filter(rule -> !showingActiveMappingsOnly || selectedUser == null || isUserAssignedToRule(selectedUser, rule))
+            .filter(rule -> !showingActiveMappingsOnly || isRuleActiveForMappingsView(selectedUser, rule))
             .toList();
 
         if (filtered.isEmpty()) {
@@ -1767,7 +1767,9 @@ public class DashboardController {
 
         // Builds and adds rule detail cards to flow pane
         for (RuleCardData rule : filtered) {
-            boolean assignedToSelectedUser = selectedUser == null || isUserAssignedToRule(selectedUser, rule);
+            boolean assignedToSelectedUser = selectedUser == null
+                    ? isRuleAssignedToAnyUser(rule)
+                    : isUserAssignedToRule(selectedUser, rule);
             VBox card = new VBox(8);
             card.getStyleClass().add("mapping-card");
             if (!assignedToSelectedUser) {
@@ -1812,6 +1814,12 @@ public class DashboardController {
             });
             mappingsFlowPane.getChildren().add(card);
         }
+    }
+
+    private boolean isRuleActiveForMappingsView(User selectedUser, RuleCardData rule) {
+        return selectedUser == null
+                ? isRuleAssignedToAnyUser(rule)
+                : isUserAssignedToRule(selectedUser, rule);
     }
 
     private String formatMappingCardTitle(RuleCardData rule) {
@@ -1910,6 +1918,13 @@ public class DashboardController {
         }
         return user.getUsecaseMappings().stream()
             .anyMatch(mapping -> isUserMappingAssignedToRule(mapping, rule));
+    }
+
+    private boolean isRuleAssignedToAnyUser(RuleCardData rule) {
+        if (rule == null) {
+            return false;
+        }
+        return users.stream().anyMatch(user -> isUserAssignedToRule(user, rule));
     }
 
     private boolean isUserMappingAssignedToRule(UserUseCaseMapping mapping, RuleCardData rule) {
