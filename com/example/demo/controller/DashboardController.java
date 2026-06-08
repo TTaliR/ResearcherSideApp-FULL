@@ -812,7 +812,7 @@ public class DashboardController {
                 yellowBookTabContentController.loadDictionary();
             } else if (newValue == schedulingTab) {
                 if (schedulesTabContentController != null) {
-                    schedulesTabContentController.refreshSchedulesForCurrentContext(true);
+                    schedulesTabContentController.refreshSchedulesForCurrentFilter();
                 }
             }
         }));
@@ -871,7 +871,7 @@ public class DashboardController {
             applySelectedUseCaseUi(newValue);
             scheduleGraphUpdate();
             if (schedulesTabContentController != null) {
-                schedulesTabContentController.refreshSchedulesForCurrentContext(false);
+                schedulesTabContentController.refreshSchedulesForCurrentFilter();
             }
         }));
 
@@ -882,7 +882,7 @@ public class DashboardController {
             }
             renderMappingsWhenReady(state.getSelectedUseCase());
             if (schedulesTabContentController != null) {
-                schedulesTabContentController.refreshSchedulesForCurrentContext(false);
+                schedulesTabContentController.refreshSchedulesForCurrentFilter();
             }
         }));
     }

@@ -100,7 +100,7 @@ public class SchedulesTabController {
     private Supplier<ScheduleContext> contextSupplier = () -> new ScheduleContext("", null, false);
     private Function<Integer, String> userFormatter = userId -> userId == null || userId <= 0 ? "-" : String.valueOf(userId);
     private Schedule selectedScheduleForEdit;
-    private boolean showingActiveSchedulesOnly;
+    private boolean showingActiveSchedulesOnly = true;
 
     public record ScheduleContext(String useCaseName, User selectedUser, boolean allUsersSelected) {}
 
@@ -142,6 +142,10 @@ public class SchedulesTabController {
             : ApiService.getInstance().listAllSchedules(uc, userId);
 
         request.thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
+    }
+
+    public void refreshSchedulesForCurrentFilter() {
+        refreshSchedulesForCurrentContext(showingActiveSchedulesOnly);
     }
 
     public void clearSelection() {
