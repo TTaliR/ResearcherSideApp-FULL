@@ -3,19 +3,46 @@ package com.example.demo.model;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+
 public class User {
    private final SimpleIntegerProperty userID;
    private final SimpleStringProperty fName;
    private final SimpleStringProperty lName;
-   private final SimpleIntegerProperty activeUsecaseId;
-   private final SimpleStringProperty usecaseName;
 
-   public User(int userID, String fName, String lName, int activeUsecaseId, String usecaseName) {
+   /*
+    * UI-level current use case/mapping.
+    * These are NOT database columns.
+    * They are derived from usecaseMappings or from the user's current UI selection.
+    */
+   private final SimpleIntegerProperty currentUsecaseId;
+   private final SimpleStringProperty currentUsecaseName;
+   private final SimpleIntegerProperty currentMappingId;
+
+   private final List<UserUseCaseMapping> usecaseMappings;
+
+   public User(int userID, String fName, String lName) {
+      this(userID, fName, lName, new ArrayList<>());
+   }
+
+   public User(int userID, String fName, String lName, List<UserUseCaseMapping> usecaseMappings) {
       this.userID = new SimpleIntegerProperty(userID);
       this.fName = new SimpleStringProperty(fName);
       this.lName = new SimpleStringProperty(lName);
-      this.activeUsecaseId = new SimpleIntegerProperty(activeUsecaseId);
-      this.usecaseName = new SimpleStringProperty(usecaseName == null ? "" : usecaseName);
+      this.usecaseMappings = usecaseMappings == null ? new ArrayList<>() : new ArrayList<>(usecaseMappings);
+
+      UserUseCaseMapping first = getFirstUsecaseMapping();
+
+      this.currentUsecaseId = new SimpleIntegerProperty(first == null ? 0 : first.getUsecaseId());
+      this.currentUsecaseName = new SimpleStringProperty(first == null ? "" : first.getUsecaseName());
+      this.currentMappingId = new SimpleIntegerProperty(first == null ? 0 : first.getEffectiveMappingId());
+   }
+
+   public User(int userID, String fName, String lName, String usecaseName) {
+      this(userID, fName, lName);
+      setUsecaseName(usecaseName);
    }
 
    public int getUserID() {
@@ -42,27 +69,138 @@ public class User {
       return this.lName;
    }
 
-   public int getActiveUsecaseId() {
-      return this.activeUsecaseId.get();
+   public List<UserUseCaseMapping> getUsecaseMappings() {
+      return usecaseMappings;
    }
 
-   public SimpleIntegerProperty activeUsecaseIdProperty() {
-      return this.activeUsecaseId;
+   public void setUsecaseMappings(List<UserUseCaseMapping> mappings) {
+      this.usecaseMappings.clear();
+
+      if (mappings != null) {
+         this.usecaseMappings.addAll(mappings);
+      }
+
+      UserUseCaseMapping first = getFirstUsecaseMapping();
+      if (first != null) {
+         setCurrentUsecase(first);
+      } else {
+         setCurrentUsecaseId(0);
+         setUsecaseName("");
+         setCurrentMappingId(0);
+      }
    }
 
-   public void setActiveUsecaseId(int activeUsecaseId) {
-      this.activeUsecaseId.set(activeUsecaseId);
+   public UserUseCaseMapping getFirstUsecaseMapping() {
+      return usecaseMappings.isEmpty() ? null : usecaseMappings.get(0);
    }
 
+   public UserUseCaseMapping findMappingForUsecase(int usecaseId) {
+      for (UserUseCaseMapping mapping : usecaseMappings) {
+         if (mapping.getUsecaseId() == usecaseId) {
+            return mapping;
+         }
+      }
+      return null;
+   }
+
+   public UserUseCaseMapping findMappingForUsecaseName(String usecaseName) {
+      if (usecaseName == null || usecaseName.isBlank()) {
+         return null;
+      }
+
+      for (UserUseCaseMapping mapping : usecaseMappings) {
+         if (usecaseName.equalsIgnoreCase(mapping.getUsecaseName())) {
+            return mapping;
+         }
+      }
+
+      return null;
+   }
+
+   public void setCurrentUsecase(UserUseCaseMapping mapping) {
+      if (mapping == null) {
+         setCurrentUsecaseId(0);
+         setUsecaseName("");
+         setCurrentMappingId(0);
+         return;
+      }
+
+      setCurrentUsecaseId(mapping.getUsecaseId());
+      setUsecaseName(mapping.getUsecaseName());
+      setCurrentMappingId(mapping.getEffectiveMappingId());
+   }
+
+   public int getCurrentUsecaseId() {
+      return currentUsecaseId.get();
+   }
+
+   public void setCurrentUsecaseId(int usecaseId) {
+      this.currentUsecaseId.set(usecaseId);
+   }
+
+   public SimpleIntegerProperty currentUsecaseIdProperty() {
+      return currentUsecaseId;
+   }
+
+   /*
+    * Compatibility for existing DashboardController code.
+    * This is UI state only, not DB active_usecase_id.
+    */
    public String getUsecaseName() {
-      return this.usecaseName.get();
+      return currentUsecaseName.get();
    }
 
-   public SimpleStringProperty usecaseNameProperty() {
-      return this.usecaseName;
-   }
-
+   /*
+    * Compatibility for existing DashboardController code.
+    * This is UI state only, not DB active_usecase_id.
+    */
    public void setUsecaseName(String usecaseName) {
-      this.usecaseName.set(usecaseName == null ? "" : usecaseName);
+      this.currentUsecaseName.set(usecaseName == null ? "" : usecaseName);
+   }
+
+   public SimpleStringProperty currentUsecaseNameProperty() {
+      return currentUsecaseName;
+   }
+
+   public int getUsecaseId() {
+      return getCurrentUsecaseId();
+   }
+
+   public int getCurrentMappingId() {
+      return currentMappingId.get();
+   }
+
+   public void setCurrentMappingId(int mappingId) {
+      this.currentMappingId.set(mappingId);
+   }
+
+   public int getMappingId() {
+      return getCurrentMappingId();
+   }
+
+   public SimpleIntegerProperty currentMappingIdProperty() {
+      return currentMappingId;
+   }
+
+   @Override
+   public String toString() {
+      String name = (getFName() + " " + getLName()).trim();
+      return name.isEmpty() ? String.valueOf(getUserID()) : getUserID() + " - " + name;
+   }
+
+   @Override
+   public boolean equals(Object obj) {
+      if (this == obj) {
+         return true;
+      }
+      if (!(obj instanceof User other)) {
+         return false;
+      }
+      return getUserID() == other.getUserID();
+   }
+
+   @Override
+   public int hashCode() {
+      return Objects.hash(getUserID());
    }
 }

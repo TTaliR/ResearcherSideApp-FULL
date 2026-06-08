@@ -12,6 +12,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.function.Consumer;
 
 /**
@@ -19,6 +20,9 @@ import java.util.function.Consumer;
  * Handles user selection, time range, and date filtering
  */
 public class TopBarController {
+    private static final int ALL_USERS_ID = -1;
+    private final User allUsersOption = new User(ALL_USERS_ID, "All", "Users");
+
     @FXML
     private Label selectedUseCaseLabel;
     @FXML
@@ -64,6 +68,23 @@ public class TopBarController {
 
         UsersComboBox.valueProperty().addListener((obs, oldValue, newValue) -> {
             if (newValue == null) {
+                state.setSelectedUsers(null);
+                if (onUserSelected != null) {
+                    onUserSelected.accept(null);
+                }
+                if (onGraphUpdateRequested != null) {
+                    onGraphUpdateRequested.run();
+                }
+                return;
+            }
+            if (isAllUsersOption(newValue)) {
+                state.setSelectedUsers(null);
+                if (onUserSelected != null) {
+                    onUserSelected.accept(null);
+                }
+                if (onGraphUpdateRequested != null) {
+                    onGraphUpdateRequested.run();
+                }
                 return;
             }
             state.setSelectedUsers(newValue);
@@ -129,12 +150,43 @@ public class TopBarController {
     }
 
     private String formatUser(User user) {
-        return user.getUserID() + " - " + user.getFName() + " " + user.getLName();
+        if (isAllUsersOption(user)) {
+            return "All Users";
+        }
+        String name = (user.getFName() + " " + user.getLName()).trim();
+        return name.isEmpty() ? String.valueOf(user.getUserID()) : user.getUserID() + " - " + name;
+    }
+
+    private boolean isAllUsersOption(User user) {
+        return user == allUsersOption || (user != null && user.getUserID() == ALL_USERS_ID);
     }
 
     // Public API for parent controller
     public ObservableList<User> getUsers() {
         return users;
+    }
+
+    public void setUsers(Collection<User> availableUsers, boolean includeAllUsers) {
+        User currentSelection = UsersComboBox.getValue();
+        boolean restoreAllUsers = isAllUsersOption(currentSelection);
+        Integer selectedUserId = currentSelection == null || restoreAllUsers ? null : currentSelection.getUserID();
+
+        users.clear();
+        if (includeAllUsers) {
+            users.add(allUsersOption);
+        }
+        if (availableUsers != null) {
+            users.addAll(availableUsers);
+        }
+
+        if (restoreAllUsers && includeAllUsers) {
+            UsersComboBox.setValue(allUsersOption);
+        } else if (selectedUserId != null) {
+            User matchingUser = findUserById(selectedUserId);
+            if (matchingUser != null) {
+                UsersComboBox.setValue(matchingUser);
+            }
+        }
     }
 
     public void setOnUserSelected(Consumer<User> callback) {
@@ -178,11 +230,36 @@ public class TopBarController {
     }
 
     public User getSelectedUser() {
-        return UsersComboBox.getValue();
+        User selected = UsersComboBox.getValue();
+        return isAllUsersOption(selected) ? null : selected;
     }
 
     public void setSelectedUser(User user) {
-        UsersComboBox.setValue(user);
+        if (user == null) {
+            UsersComboBox.setValue(null);
+            return;
+        }
+
+        User matchingUser = findUserById(user.getUserID());
+        UsersComboBox.setValue(matchingUser == null ? user : matchingUser);
+    }
+
+    public void selectAllUsers() {
+        if (!users.contains(allUsersOption)) {
+            users.add(0, allUsersOption);
+        }
+        UsersComboBox.setValue(allUsersOption);
+    }
+
+    public boolean isAllUsersSelected() {
+        return isAllUsersOption(UsersComboBox.getValue());
+    }
+
+    private User findUserById(int userId) {
+        return users.stream()
+                .filter(user -> user != null && user.getUserID() == userId)
+                .findFirst()
+                .orElse(null);
     }
 
     public String getSelectedTimeRange() {

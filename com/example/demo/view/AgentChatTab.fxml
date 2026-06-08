@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+
+<BorderPane styleClass="tab-content-root" xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.example.demo.controller.AgentChatTabController">
+    <center>
+        <VBox spacing="10.0" styleClass="chat-panel" BorderPane.alignment="CENTER">
+            <ScrollPane fx:id="chatScrollPane" fitToWidth="true" fitToHeight="false" styleClass="chat-scroll" VBox.vgrow="ALWAYS">
+                <VBox fx:id="chatHistoryBox" spacing="6.0" styleClass="chat-history" />
+            </ScrollPane>
+            <Label fx:id="agentTypingLabel" text="Agent is typing..." visible="false" managed="false" styleClass="sidebar-muted-text" />
+            <VBox spacing="6.0">
+                <HBox spacing="10.0" alignment="CENTER_LEFT">
+                    <TextField fx:id="chatInputField" promptText="Type your instruction or query..." HBox.hgrow="ALWAYS" />
+                    <Button fx:id="chatSendButton" text="Send" styleClass="primary-button" />
+                    <Button fx:id="contextDrawerToggleButton" text="Hide Context" styleClass="secondary-button" />
+                </HBox>
+                <VBox spacing="4.0">
+                    <Label fx:id="chatCommandHintLabel" visible="false" managed="false" wrapText="true" styleClass="chat-command-hint" />
+                    <ListView fx:id="chatCommandDropdownList" visible="false" managed="false" prefHeight="220.0" styleClass="chat-command-dropdown" />
+                </VBox>
+            </VBox>
+        </VBox>
+    </center>
+    <right>
+        <fx:include source="ContextDrawer.fxml" fx:id="contextDrawerContent" />
+    </right>
+</BorderPane>

@@ -32,7 +32,10 @@ public class MappingConfigParser {
         }
 
         for (JsonNode node : arrayNode) {
-            String rawType = node.path("type").asText("").trim();
+            String rawType = node.path("usecase_name").asText("").trim();
+            if (rawType.isEmpty()) {
+                rawType = node.path("type").asText("").trim();
+            }
             String useCaseKey = rawType.isEmpty()
                 ? inferUseCaseFromConfigKey(configKey)
                 : FormatUtils.normalizeUseCaseName(rawType);
@@ -138,6 +141,9 @@ public class MappingConfigParser {
         }
         if (node.has("mapping_id")) {
             return node.path("mapping_id").asInt(0);
+        }
+        if (node.has("feedback_config_rule_id")) {
+            return node.path("feedback_config_rule_id").asInt(0);
         }
         if (node.has("id")) {
             return node.path("id").asInt(0);

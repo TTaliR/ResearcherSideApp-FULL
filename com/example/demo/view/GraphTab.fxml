@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.layout.AnchorPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+
+<VBox spacing="10.0" styleClass="tab-content-root" xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.example.demo.controller.GraphTabController">
+    <HBox alignment="CENTER_RIGHT" spacing="10.0">
+        <Button fx:id="exportGraphCsvButton" text="Export CSV" styleClass="secondary-button" />
+        <Button fx:id="exportGraphPdfButton" text="Generate PDF" styleClass="secondary-button" />
+        <Button fx:id="refreshGraphButton" text="Refresh Graph" styleClass="primary-button" />
+    </HBox>
+    <AnchorPane fx:id="graphAnchor" VBox.vgrow="ALWAYS" />
+</VBox>

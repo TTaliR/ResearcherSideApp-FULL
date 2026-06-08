@@ -1,8 +1,8 @@
 package com.example.demo.factory;
 
 import com.example.demo.model.DictionaryParameterData;
-import javafx.geometry.Pos;
 import javafx.animation.PauseTransition;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -90,7 +90,6 @@ public class YellowBookUiFactory {
             content.putString(textToCopy);
             clipboard.setContent(content);
 
-            // Inline "toast" feedback on the button itself
             String originalText = copyButton.getText();
             Node originalGraphic = copyButton.getGraphic();
             copyButton.setGraphic(null);

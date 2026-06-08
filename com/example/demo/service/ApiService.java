@@ -49,6 +49,9 @@ public class ApiService {
     public static final String EP_SET_USERS = "/edit-users";
     public static final String EP_SCHEDULE = "/schedule";
     public static final String EP_CREATE_USECASE = "/create-usecase";
+    public static final String EP_ASSIGN_USECASE = "/assign-usecase";
+    public static final String EP_GET_USER_MAPPING_HISTORY = "/users-mappings-history";
+
 
     private static final ApiService INSTANCE = new ApiService();
     private final ObjectMapper mapper;
@@ -143,6 +146,55 @@ public class ApiService {
         return postWithResponse(EP_CREATE_USECASE, payload);
     }
 
+    public CompletableFuture<Boolean> assignUseCaseToUser(int userId, int usecaseId) {
+        if (userId <= 0 || usecaseId <= 0) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("userId", userId);
+        payload.put("usecaseId", usecaseId);
+
+        return post(EP_ASSIGN_USECASE, payload);
+    }
+
+    public CompletableFuture<Boolean> assignMappingToUser(int userId, int mappingId,
+                                                          int usecaseId, String usecaseName,
+                                                          String sessionId) {
+        String trimmedUsecaseName = usecaseName == null ? "" : usecaseName.trim();
+        String trimmedSessionId = sessionId == null ? "" : sessionId.trim();
+        if (userId <= 0 || mappingId <= 0 || usecaseId <= 0
+                || trimmedUsecaseName.isEmpty() || trimmedSessionId.isEmpty()) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("session_id", trimmedSessionId);
+        payload.put("usecase_id", usecaseId);
+        payload.put("usecase_name", trimmedUsecaseName);
+        payload.put("action", "assign_mapping_to_user");
+        payload.put("user_id", userId);
+        payload.put("mapping_id", mappingId);
+        payload.put("feedback_config_rule_id", mappingId);
+        payload.put("message", "Assign mapping ID " + mappingId + " for " + trimmedUsecaseName
+            + " to user " + userId + ".");
+
+        return postWithResponse(EP_CHAT_CONFIG, payload)
+            .thenApply(response -> {
+                if (response == null || response.has("error")) {
+                    return false;
+                }
+                String reply = extractTextField(response, "reply").toLowerCase();
+                String message = extractTextField(response, "message").toLowerCase();
+                String combined = reply + " " + message;
+                return combined.contains("assigned")
+                    || combined.contains("updated")
+                    || combined.contains("now active")
+                    || combined.contains("success");
+            })
+            .exceptionally(ex -> false);
+    }
+
     public CompletableFuture<Boolean> deleteMapping(int mappingId) {
         if (mappingId <= 0) {
             return CompletableFuture.completedFuture(false);
@@ -162,24 +214,17 @@ public class ApiService {
             return CompletableFuture.completedFuture(false);
         }
 
-        Map<String, Object> params = new HashMap<>();
-        params.put("id", mappingId);
-        params.put("minvalue", ruleConfig.getMinvalue());
-        params.put("maxvalue", ruleConfig.getMaxvalue());
-        params.put("minpulses", ruleConfig.getMinpulses());
-        params.put("maxpulses", ruleConfig.getMaxpulses());
-        params.put("minintensity", ruleConfig.getMinintensity());
-        params.put("maxintensity", ruleConfig.getMaxintensity());
-        params.put("minduration", ruleConfig.getMinduration());
-        params.put("maxduration", ruleConfig.getMaxduration());
-        params.put("mininterval", ruleConfig.getMininterval());
-        params.put("maxinterval", ruleConfig.getMaxinterval());
+        Map<String, Object> params = buildMappingChangeParams(mappingId, ruleConfig);
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("session_id", trimmedSessionId);
         payload.put("usecase_id", usecaseId);
         payload.put("usecase_name", trimmedUsecaseName);
-        payload.put("message", buildMappingChangeMessage(trimmedUsecaseName, params));
+        payload.put("action", "change");
+        payload.put("apply_scope", "all_users");
+        payload.put("original_mapping_id", mappingId);
+        payload.put("params", params);
+        payload.put("message", buildMappingChangeForAllUsersMessage(trimmedUsecaseName, params));
 
         return postWithResponse(EP_CHAT_CONFIG, payload)
             .thenApply(response -> {
@@ -193,8 +238,62 @@ public class ApiService {
             .exceptionally(ex -> false);
     }
 
-    private String buildMappingChangeMessage(String usecaseName, Map<String, Object> params) {
-        return "Change mapping ID " + params.get("id") + " for " + usecaseName
+    public CompletableFuture<Boolean> changeMappingForUserOnly(int mappingId, int userId, SensorRuleConfig ruleConfig,
+                                                               int usecaseId, String usecaseName,
+                                                               String sessionId) {
+        String trimmedUsecaseName = usecaseName == null ? "" : usecaseName.trim();
+        String trimmedSessionId = sessionId == null ? "" : sessionId.trim();
+        if (mappingId <= 0 || userId <= 0 || ruleConfig == null || usecaseId <= 0
+                || trimmedUsecaseName.isEmpty() || trimmedSessionId.isEmpty()) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        Map<String, Object> params = buildMappingChangeParams(mappingId, ruleConfig);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("session_id", trimmedSessionId);
+        payload.put("usecase_id", usecaseId);
+        payload.put("usecase_name", trimmedUsecaseName);
+        payload.put("action", "duplicate_mapping_for_user");
+        payload.put("apply_scope", "current_user");
+        payload.put("user_id", userId);
+        payload.put("original_mapping_id", mappingId);
+        payload.put("params", params);
+        payload.put("message", buildMappingChangeForUserOnlyMessage(trimmedUsecaseName, userId, params));
+
+        return postWithResponse(EP_CHAT_CONFIG, payload)
+            .thenApply(response -> {
+                if (response == null || response.has("error")) {
+                    return false;
+                }
+                String reply = extractTextField(response, "reply").toLowerCase();
+                return !reply.isBlank()
+                    && (reply.contains("duplicated")
+                        || reply.contains("created")
+                        || reply.contains("assigned")
+                        || reply.contains("updated"));
+            })
+            .exceptionally(ex -> false);
+    }
+
+    private Map<String, Object> buildMappingChangeParams(int mappingId, SensorRuleConfig ruleConfig) {
+        Map<String, Object> params = new HashMap<>();
+        params.put("id", mappingId);
+        params.put("minvalue", ruleConfig.getMinvalue());
+        params.put("maxvalue", ruleConfig.getMaxvalue());
+        params.put("minpulses", ruleConfig.getMinpulses());
+        params.put("maxpulses", ruleConfig.getMaxpulses());
+        params.put("minintensity", ruleConfig.getMinintensity());
+        params.put("maxintensity", ruleConfig.getMaxintensity());
+        params.put("minduration", ruleConfig.getMinduration());
+        params.put("maxduration", ruleConfig.getMaxduration());
+        params.put("mininterval", ruleConfig.getMininterval());
+        params.put("maxinterval", ruleConfig.getMaxinterval());
+        return params;
+    }
+
+    private String buildMappingChangeForAllUsersMessage(String usecaseName, Map<String, Object> params) {
+        return "Apply to all users: change mapping ID " + params.get("id") + " for " + usecaseName
             + " with minvalue " + params.get("minvalue")
             + ", maxvalue " + params.get("maxvalue")
             + ", minpulses " + params.get("minpulses")
@@ -207,6 +306,22 @@ public class ApiService {
             + ", and maxinterval " + params.get("maxinterval") + ".";
     }
 
+    private String buildMappingChangeForUserOnlyMessage(String usecaseName, int userId, Map<String, Object> params) {
+        return "Duplicate mapping ID " + params.get("id") + " for user " + userId
+            + " only, assign the duplicate to that user, and change the duplicate for " + usecaseName
+            + " with minvalue " + params.get("minvalue")
+            + ", maxvalue " + params.get("maxvalue")
+            + ", minpulses " + params.get("minpulses")
+            + ", maxpulses " + params.get("maxpulses")
+            + ", minintensity " + params.get("minintensity")
+            + ", maxintensity " + params.get("maxintensity")
+            + ", minduration " + params.get("minduration")
+            + ", maxduration " + params.get("maxduration")
+            + ", mininterval " + params.get("mininterval")
+            + ", and maxinterval " + params.get("maxinterval")
+            + ". Leave the original mapping unchanged for all other users.";
+    }
+
     public CompletableFuture<Boolean> setLoggingInterval(int usecaseId, String interval) {
         if (usecaseId <= 0 || interval == null || interval.isBlank()) {
             return CompletableFuture.completedFuture(false);
@@ -216,6 +331,20 @@ public class ApiService {
         payload.put("usecase_id", usecaseId);
         payload.put("interval", interval.trim());
         return post(EP_SET_LOGGING_INTERVAL, payload);
+    }
+
+    public CompletableFuture<JsonNode> getUserMappingHistory(int userId, String useCaseName) {
+        if (userId <= 0 || useCaseName == null || useCaseName.isBlank()) {
+            return CompletableFuture.completedFuture(
+                mapper.createObjectNode().put("status", "error").put("message", "Missing required parameters.")
+            );
+        }
+
+        Map<String, String> params = new HashMap<>();
+        params.put("userId", String.valueOf(userId));
+        params.put("useCaseName", useCaseName);
+
+        return get(EP_GET_USER_MAPPING_HISTORY, params);
     }
 
     public CompletableFuture<JsonNode> sendDictionaryRequest(String message, int contextUsecaseId,
@@ -252,19 +381,35 @@ public class ApiService {
     }
 
     public CompletableFuture<ScheduleApiResponse> listAllSchedules(String usecaseName) {
-        return sendScheduleRequest("listAll", new HashMap<>(), usecaseName,
+        return listAllSchedules(usecaseName, 0);
+    }
+
+    public CompletableFuture<ScheduleApiResponse> listAllSchedules(String usecaseName, int userId) {
+        Map<String, Object> params = new HashMap<>();
+        if (userId > 0) {
+            params.put("user_id", userId);
+        }
+        return sendScheduleRequest("listAll", params, usecaseName,
             "manual schedule list from researcher UI");
     }
 
     public CompletableFuture<ScheduleApiResponse> listActiveSchedules(String usecaseName) {
-        return sendScheduleRequest("listActive", new HashMap<>(), usecaseName,
+        return listActiveSchedules(usecaseName, 0);
+    }
+
+    public CompletableFuture<ScheduleApiResponse> listActiveSchedules(String usecaseName, int userId) {
+        Map<String, Object> params = new HashMap<>();
+        if (userId > 0) {
+            params.put("user_id", userId);
+        }
+        return sendScheduleRequest("listActive", params, usecaseName,
             "manual schedule active list from researcher UI");
     }
 
     public CompletableFuture<ScheduleApiResponse> addSchedule(int userId, int intervalDays, String measureType,
-                                                              double triggerPercentage, String usecaseName) {
+                                                              int triggerPercentage, String usecaseName) {
         String trimmedMeasureType = measureType == null ? "" : measureType.trim();
-        if (userId <= 0 || intervalDays <= 0 || trimmedMeasureType.isEmpty() || triggerPercentage < 0) {
+        if (userId <= 0 || intervalDays <= 0 || trimmedMeasureType.isEmpty() || triggerPercentage == 0) {
             return CompletableFuture.completedFuture(
                 failedScheduleResponse("Invalid schedule add request: userId, intervalDays, measureType, and triggerPercentage must be valid")
             );
@@ -274,15 +419,15 @@ public class ApiService {
         params.put("user_id", userId);
         params.put("interval_days", intervalDays);
         params.put("measure_type", trimmedMeasureType);
-        params.put("trigger_percentage", triggerPercentage);
+        params.put("trigger_percentage", toScheduleTriggerPayloadValue(triggerPercentage));
         return sendScheduleRequest("add", params, usecaseName, "manual schedule add from researcher UI");
     }
 
     public CompletableFuture<ScheduleApiResponse> changeSchedule(int scheduleId, int userId, int intervalDays,
-                                                                 String measureType, double triggerPercentage,
+                                                                 String measureType, int triggerPercentage,
                                                                  String usecaseName) {
         String trimmedMeasureType = measureType == null ? "" : measureType.trim();
-        if (scheduleId <= 0 || userId <= 0 || intervalDays <= 0 || trimmedMeasureType.isEmpty() || triggerPercentage < 0) {
+        if (scheduleId <= 0 || userId <= 0 || intervalDays <= 0 || trimmedMeasureType.isEmpty() || triggerPercentage == 0) {
             return CompletableFuture.completedFuture(
                 failedScheduleResponse("Invalid schedule change request: scheduleId, userId, intervalDays, measureType, and triggerPercentage must be valid")
             );
@@ -293,8 +438,12 @@ public class ApiService {
         params.put("user_id", userId);
         params.put("interval_days", intervalDays);
         params.put("measure_type", trimmedMeasureType);
-        params.put("trigger_percentage", triggerPercentage);
+        params.put("trigger_percentage", toScheduleTriggerPayloadValue(triggerPercentage));
         return sendScheduleRequest("change", params, usecaseName, "manual schedule edit from researcher UI");
+    }
+
+    private double toScheduleTriggerPayloadValue(int triggerPercentage) {
+        return triggerPercentage / 100.0;
     }
 
     public CompletableFuture<ScheduleApiResponse> deactivateSchedule(int scheduleId, String usecaseName) {
@@ -324,16 +473,25 @@ public class ApiService {
             return CompletableFuture.completedFuture(failedScheduleResponse("usecaseName is required"));
         }
 
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("action", action);
-        payload.put("params", params == null ? new HashMap<>() : params);
-        payload.put("session_id", "researcher-ui");
-        payload.put("usecase_id", 0);
-        payload.put("usecase_name", trimmedUsecaseName);
-        payload.put("message", message == null ? "" : message);
+        return getSensorIdByName(trimmedUsecaseName)
+            .thenCompose(usecaseId -> {
+                if (usecaseId <= 0) {
+                    return CompletableFuture.completedFuture(
+                        failedScheduleResponse("Could not resolve use case id for " + trimmedUsecaseName)
+                    );
+                }
 
-        return postWithResponse(EP_SCHEDULE, payload)
-            .thenApply(this::parseScheduleResponse)
+                Map<String, Object> payload = new HashMap<>();
+                payload.put("action", action);
+                payload.put("params", params == null ? new HashMap<>() : params);
+                payload.put("session_id", "researcher-ui");
+                payload.put("usecase_id", usecaseId);
+                payload.put("usecase_name", trimmedUsecaseName);
+                payload.put("message", message == null ? "" : message);
+
+                return postWithResponse(EP_SCHEDULE, payload)
+                    .thenApply(this::parseScheduleResponse);
+            })
             .exceptionally(ex -> failedScheduleResponse("Schedule request failed: " + ex.getMessage()));
     }
 
@@ -435,6 +593,7 @@ public class ApiService {
         schedule.setMeasureType(node.path("measure_type").asText(node.path("measureType").asText("")));
         schedule.setTriggerPercentage(node.path("trigger_percentage").asDouble(node.path("triggerPercentage").asDouble(0.0)));
         schedule.setNextCheck(node.path("next_check").asText(node.path("nextCheck").asText("")));
+        schedule.setNextRunDate(node.path("next_run_date").asText(node.path("nextRunDate").asText("")));
         schedule.setIntervalDays(node.path("interval_days").asInt(node.path("intervalDays").asInt(0)));
         schedule.setActive(node.path("active").asBoolean(node.path("isActive").asBoolean(false)));
         return schedule;
@@ -899,4 +1058,3 @@ public class ApiService {
         }
     }
 }
-

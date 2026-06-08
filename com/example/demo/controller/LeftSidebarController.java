@@ -236,7 +236,8 @@ public class LeftSidebarController {
     }
 
     private String formatUser(User user) {
-        return user.getUserID() + " - " + user.getFName() + " " + user.getLName();
+        String name = (user.getFName() + " " + user.getLName()).trim();
+        return name.isEmpty() ? String.valueOf(user.getUserID()) : user.getUserID() + " - " + name;
     }
 
     // Public API for parent controller
@@ -290,6 +291,10 @@ public class LeftSidebarController {
 
     public ComboBox<String> getUserUseCaseComboBox() {
         return userUseCaseComboBox;
+    }
+
+    public Button getAssignUserUseCaseButton() {
+        return assignUserUseCaseButton;
     }
 
     public void selectUser(User user) {
