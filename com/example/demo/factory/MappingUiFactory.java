@@ -27,6 +27,10 @@ public class MappingUiFactory {
         button.setTooltip(new Tooltip("Edit mapping"));
         button.setOnMouseClicked(event -> event.consume());
         button.setOnAction(ignored -> onSelect.accept(rule));
+        if (rule != null && !rule.active) {
+            button.setDisable(true);
+            button.setTooltip(new Tooltip("Inactive mapping cannot be edited"));
+        }
         return button;
     }
 
@@ -46,12 +50,11 @@ public class MappingUiFactory {
                                                 Consumer<RuleCardData> onDelete,
                                                 boolean selected) {
         RuleCardData rule = createRuleFromHistoryMapping(mappingNode, useCase);
-        boolean isActive = isHistoryMappingActive(mappingNode);
 
         VBox card = new VBox(8);
         card.setUserData(rule.mappingId);
         card.getStyleClass().add("mapping-card");
-        if (!isActive) {
+        if (!rule.active) {
             card.getStyleClass().add("mapping-card-inactive");
         }
         if (selected) {
@@ -73,7 +76,7 @@ public class MappingUiFactory {
         }
         if (onDelete != null) {
             Button deleteButton = createDeleteMappingButton(rule, onDelete);
-            if (!isActive) {
+            if (!rule.active) {
                 deleteButton.setDisable(true);
                 deleteButton.setTooltip(new Tooltip("Inactive mapping is already deactivated"));
             }
@@ -90,19 +93,19 @@ public class MappingUiFactory {
         String deactivatedAt = DateUtils.formatReadable(mappingNode.path("deactivatedAt").asText());
 
         Label dateInfo = new Label("Assigned: " + assignedAt);
-        if (!isActive && !deactivatedAt.isBlank() && !"N/A".equals(deactivatedAt)) {
+        if (!rule.active && !deactivatedAt.isBlank() && !"N/A".equals(deactivatedAt)) {
             dateInfo.setText(dateInfo.getText() + " \nDeactivated: " + deactivatedAt);
         }
         dateInfo.getStyleClass().add("mapping-assigned-muted");
 
         card.getChildren().addAll(titleRow, values, pulses, intensity, duration, interval, dateInfo);
-        if (!isActive) {
+        if (!rule.active) {
             Label inactiveHint = new Label("Historical mapping (Inactive)");
             inactiveHint.getStyleClass().add("mapping-assigned-muted");
             card.getChildren().add(inactiveHint);
         }
 
-        if (onSelect != null) {
+        if (onSelect != null && rule.active) {
             card.setOnMouseClicked(event -> {
                 if (event.getTarget() instanceof ButtonBase) {
                     return;
@@ -134,6 +137,7 @@ public class MappingUiFactory {
         rule.durationLabel = rule.minDuration + "-" + rule.maxDuration;
         rule.intervalLabel = rule.minInterval + "-" + rule.maxInterval;
         rule.rangeLabel = rule.useCaseLabel + ": " + rule.minValue + "-" + rule.maxValue;
+        rule.active = isHistoryMappingActive(mappingNode);
         return rule;
     }
 

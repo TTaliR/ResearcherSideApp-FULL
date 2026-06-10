@@ -260,27 +260,15 @@ public class MappingsTabController {
 
         int minPulses = parseRequiredInt(ruleMinPulsesField, "Min Pulses");
         int maxPulses = parseRequiredInt(ruleMaxPulsesField, "Max Pulses");
-        if (minPulses > maxPulses) {
-            throw new IllegalArgumentException("Min Pulses cannot be greater than Max Pulses.");
-        }
 
         int minIntensity = parseRequiredInt(ruleMinIntensityField, "Min Intensity");
         int maxIntensity = parseRequiredInt(ruleMaxIntensityField, "Max Intensity");
-        if (minIntensity > maxIntensity) {
-            throw new IllegalArgumentException("Min Intensity cannot be greater than Max Intensity.");
-        }
 
         int minDuration = parseRequiredInt(ruleMinDurationField, "Min Duration");
         int maxDuration = parseRequiredInt(ruleMaxDurationField, "Max Duration");
-        if (minDuration > maxDuration) {
-            throw new IllegalArgumentException("Min Duration cannot be greater than Max Duration.");
-        }
 
         int minInterval = parseRequiredInt(ruleMinIntervalField, "Min Interval");
         int maxInterval = parseRequiredInt(ruleMaxIntervalField, "Max Interval");
-        if (minInterval > maxInterval) {
-            throw new IllegalArgumentException("Min Interval cannot be greater than Max Interval.");
-        }
 
         SensorRuleConfig rule = new SensorRuleConfig();
         rule.setType(sensorType.trim());
@@ -494,11 +482,14 @@ public class MappingsTabController {
             boolean assignedToSelectedUser = selectedUser == null
                     ? isRuleAssignedToAnyUser(rule)
                     : isUserAssignedToRule(selectedUser, rule);
+            boolean inactiveInDatabase = !rule.active;
             VBox card = new VBox(8);
             card.setUserData(rule.mappingId);
             card.getStyleClass().add("mapping-card");
-            if (!assignedToSelectedUser) {
+            if (inactiveInDatabase) {
                 card.getStyleClass().add("mapping-card-inactive");
+            } else if (!assignedToSelectedUser) {
+                card.getStyleClass().add("mapping-card-unassigned");
             }
             if (selectedMappingForEdit != null && selectedMappingForEdit.mappingId == rule.mappingId) {
                 card.getStyleClass().add("mapping-card-selected");
@@ -516,7 +507,7 @@ public class MappingsTabController {
             Button selectButton = MappingUiFactory.createSelectMappingButton(rule, this::selectMappingForEdit);
             Button assignButton = createAssignUsersToMappingButton(rule);
             Button deleteButton = MappingUiFactory.createDeleteMappingButton(rule, this::onDeleteMappingRequested);
-            if (!assignedToSelectedUser) {
+            if (inactiveInDatabase) {
                 deleteButton.setDisable(true);
                 deleteButton.setTooltip(new Tooltip("Inactive mapping is already deactivated"));
             }
@@ -528,8 +519,8 @@ public class MappingsTabController {
             Label duration = new Label("Duration: " + rule.durationLabel);
             Label interval = new Label("Interval: " + rule.intervalLabel);
             Node assignedUsers = createMappingAssignedUsersNode(rule);
-            if (!assignedToSelectedUser) {
-                Label inactiveHint = new Label("Not assigned to selected user");
+            if (inactiveInDatabase || !assignedToSelectedUser) {
+                Label inactiveHint = new Label(inactiveInDatabase ? "Inactive mapping" : "Not assigned to selected user");
                 inactiveHint.getStyleClass().add("mapping-assigned-muted");
                 card.getChildren().addAll(titleRow, values, pulses, intensity, duration, interval, inactiveHint, assignedUsers);
             } else {
@@ -537,7 +528,7 @@ public class MappingsTabController {
             }
 
             card.setOnMouseClicked(event -> {
-                if (event.getTarget() instanceof Button) {
+                if (event.getTarget() instanceof ButtonBase || inactiveInDatabase) {
                     return;
                 }
                 selectMappingForEdit(rule);
@@ -637,13 +628,16 @@ public class MappingsTabController {
     }
 
     private boolean isRuleActiveForMappingsView(User selectedUser, RuleCardData rule) {
+        if (rule == null || !rule.active) {
+            return false;
+        }
         return selectedUser == null
                 ? isRuleAssignedToAnyUser(rule)
                 : isUserAssignedToRule(selectedUser, rule);
     }
 
     private void selectMappingForEdit(RuleCardData rule) {
-        if (rule == null) {
+        if (rule == null || rule.mappingId <= 0 || !rule.active) {
             return;
         }
 

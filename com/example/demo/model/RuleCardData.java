@@ -20,4 +20,5 @@ public class RuleCardData {
     public int maxDuration;
     public int minInterval;
     public int maxInterval;
+    public boolean active = true;
 }

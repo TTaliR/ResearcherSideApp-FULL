@@ -61,6 +61,7 @@ public class MappingConfigParser {
             rule.intensityLabel = readRangeValue(node, "minintensity", "maxintensity", "N/A");
             rule.durationLabel = readRangeValue(node, "minduration", "maxduration", "N/A ms");
             rule.intervalLabel = readRangeValue(node, "mininterval", "maxinterval", "N/A ms");
+            rule.active = readBoolean(node, true, "active", "is_active", "isActive", "assignmentActive");
             allRules.add(rule);
         }
     }
@@ -149,5 +150,17 @@ public class MappingConfigParser {
             return node.path("id").asInt(0);
         }
         return 0;
+    }
+
+    private boolean readBoolean(JsonNode node, boolean fallback, String... fieldNames) {
+        if (node == null || !node.isObject()) {
+            return fallback;
+        }
+        for (String fieldName : fieldNames) {
+            if (fieldName != null && !fieldName.isBlank() && node.has(fieldName)) {
+                return node.path(fieldName).asBoolean(fallback);
+            }
+        }
+        return fallback;
     }
 }

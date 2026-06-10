@@ -311,8 +311,8 @@
 }
 
 .mapping-card {
-    -fx-background-color: #ffffff;
-    -fx-border-color: #d7e0eb;
+    -fx-background-color: #fffdf5;
+    -fx-border-color: #f2c94c;
     -fx-border-radius: 10;
     -fx-background-radius: 10;
     -fx-padding: 12;
@@ -322,6 +322,25 @@
 .mapping-card-selected {
     -fx-border-color: #2563eb;
     -fx-background-color: #f8fbff;
+}
+
+.mapping-card-unassigned {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d7e0eb;
+    -fx-border-style: solid;
+}
+
+.mapping-card-unassigned .mapping-card-title {
+    -fx-text-fill: #7a4b00;
+}
+
+.mapping-card-unassigned .mapping-assigned-muted {
+    -fx-text-fill: #a16207;
+}
+
+.mapping-card-unassigned.mapping-card-selected {
+    -fx-background-color: #fffbeb;
+    -fx-border-color: #2563eb;
 }
 
 .mapping-card-inactive {
