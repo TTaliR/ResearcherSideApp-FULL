@@ -1,12 +1,12 @@
 # Researcher Side Dashboard
 
-A JavaFX/Spring Boot desktop application designed for researchers to manage experiments and monitor user data in real-time.
+A JavaFX/Spring Boot desktop application designed for researchers to manage experiments, configure feedback mappings, and monitor user sensor data in real-time.
 
 ## 🚀 Features
-- **Rule Editor:** A visual interface to Create, Read, Update, and Delete (CRUD) haptic rules in the database.
-- **AI Assistent chatbot:** Provides information and can perform CRUD actions on the DB.
-- **Data Visualization:** Embedded web views (`feedbackGraph.html`) to see live sensor trends.
-- **User Management:** Track active users, their baselines, and assigned hardware.
+- **Rule & Mapping Editor:** A visual interface to Create, Read, Update, and Delete (CRUD) haptic feedback rules and view historical user mappings.
+- **AI Assistant Chatbot:** Provides contextual information, manages the "Yellow Book" data dictionary, and performs DB CRUD actions using natural language.
+- **Data Visualization & Export:** Embedded D3.js web views (`feedbackGraph.html`) for interactive sensor trends, with the ability to export data reports to CSV and PDF formats.
+- **User & Schedule Management:** Track active users, assign specific hardware/use cases, and manage active measurement schedules.
 
 ## 🛠 Setup
 1. **Java:** Requires JDK 17.
