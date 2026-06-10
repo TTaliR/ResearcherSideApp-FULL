@@ -33,6 +33,55 @@
   transform: translateY(-10px);
 }
 
+.detail-panel {
+  position: absolute;
+  display: none;
+  width: min(560px, calc(100vw - 48px));
+  max-height: 260px;
+  overflow: auto;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid #9ca3af;
+  border-radius: 6px;
+  padding: 10px 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  font-size: 12px;
+  line-height: 1.45;
+  z-index: 10;
+}
+
+.detail-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.detail-panel-close {
+  border: 0;
+  background: #e5e7eb;
+  color: #111827;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 3px 7px 5px;
+}
+
+.detail-panel-close:hover {
+  background: #d1d5db;
+}
+
+.cluster-count {
+  font-size: 10px;
+  font-weight: 700;
+  text-anchor: middle;
+  pointer-events: none;
+  stroke-width: 1.2px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+
     .legend {
       font-size: 12px;
     }
@@ -163,6 +212,7 @@
 
   <!-- tooltip element updated by JS on hover -->
   <div class="tooltip"></div>
+  <div class="detail-panel" id="detailPanel"></div>
 
   <script>
 /*
@@ -194,6 +244,117 @@ const normalizedData = data
 if (normalizedData.length === 0) {
   document.body.innerHTML = '<div style="font-family:sans-serif;text-align:center;padding:40px;color:#6b7280;">No valid time/value points</div>';
   throw new Error("No valid chart points available");
+}
+
+const MAX_LINE_POINTS = 2400;
+const MAX_VISIBLE_DOTS = 900;
+const CLUSTER_CELL_PX = 22;
+
+function downsampleTimeSeries(points, maxPoints) {
+  if (!Array.isArray(points) || points.length <= maxPoints) {
+    return points;
+  }
+
+  const result = [points[0]];
+  const bucketSize = Math.ceil(points.length / Math.max(1, Math.floor(maxPoints / 2)));
+
+  for (let i = 1; i < points.length - 1; i += bucketSize) {
+    const bucket = points.slice(i, Math.min(i + bucketSize, points.length - 1));
+    if (bucket.length === 0) {
+      continue;
+    }
+
+    let minPoint = bucket[0];
+    let maxPoint = bucket[0];
+    bucket.forEach(point => {
+      if (point.value < minPoint.value) minPoint = point;
+      if (point.value > maxPoint.value) maxPoint = point;
+    });
+
+    if (minPoint.parsedTime <= maxPoint.parsedTime) {
+      result.push(minPoint, maxPoint);
+    } else {
+      result.push(maxPoint, minPoint);
+    }
+  }
+
+  result.push(points[points.length - 1]);
+  return result
+    .filter((point, index, array) => index === 0 || point !== array[index - 1])
+    .sort((a, b) => a.parsedTime - b.parsedTime);
+}
+
+function clusterPoints(points, xScale, yScale) {
+  if (!Array.isArray(points) || points.length <= MAX_VISIBLE_DOTS) {
+    return points.map(point => ({
+      ...point,
+      points: [point],
+      count: 1,
+      maxPulses: point.pulses || 0,
+      maxIntensity: point.intensity || 0
+    }));
+  }
+
+  const buckets = new Map();
+  points.forEach(point => {
+    const cellX = Math.floor(xScale(point.parsedTime) / CLUSTER_CELL_PX);
+    const cellY = Math.floor(yScale(point.value) / CLUSTER_CELL_PX);
+    const key = `${cellX}:${cellY}`;
+    if (!buckets.has(key)) {
+      buckets.set(key, []);
+    }
+    buckets.get(key).push(point);
+  });
+
+  return Array.from(buckets.values()).map(group => {
+    if (group.length === 1) {
+      const point = group[0];
+      return {
+        ...point,
+        points: [point],
+        count: 1,
+        maxPulses: point.pulses || 0,
+        maxIntensity: point.intensity || 0
+      };
+    }
+
+    const avgMs = d3.mean(group, d => d.parsedTime.getTime());
+    const avgValue = d3.mean(group, d => d.value);
+    const representative = group.reduce((best, point) => {
+      const bestScore = (best.pulses || 0) + (best.intensity || 0) / 255;
+      const pointScore = (point.pulses || 0) + (point.intensity || 0) / 255;
+      return pointScore > bestScore ? point : best;
+    }, group[0]);
+
+    return {
+      ...representative,
+      parsedTime: new Date(avgMs),
+      value: avgValue,
+      points: group,
+      count: group.length,
+      maxPulses: d3.max(group, d => d.pulses || 0) || 0,
+      maxIntensity: d3.max(group, d => d.intensity || 0) || 0
+    };
+  });
+}
+
+/**
+ * Determines if a hex color is light or dark for contrast purposes.
+ * @param {string} color - The hex color string (e.g., "#RRGGBB").
+ * @returns {boolean} - True if the color is light, false if dark.
+ */
+function isColorLight(color) {
+  if (!color.startsWith("#")) {
+    // Can't determine brightness for non-hex colors. Default to assuming a light background.
+    return true;
+  }
+  const hex = color.replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  // YIQ formula to determine perceived brightness
+  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+  return yiq >= 140; // Threshold of 140 provides good balance
 }
 
     // Basic meta values injected by runtime
@@ -276,6 +437,18 @@ const dataLayer = g.append("g")
     .range([2, 10]);
 
     const tooltip = d3.select(".tooltip");
+    const detailPanel = d3.select("#detailPanel");
+    const closeDetailPanel = () => detailPanel.style("display", "none");
+    document.addEventListener("click", event => {
+      if (!event.target.closest("#detailPanel") && event.target.tagName.toLowerCase() !== "circle") {
+        closeDetailPanel();
+      }
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        closeDetailPanel();
+      }
+    });
         const toggleLine = document.getElementById("toggleLine");
         const toggleCircles = document.getElementById("toggleCircles");
 
@@ -373,18 +546,13 @@ document.getElementById("data-stats").textContent = statsText;
       .y(d => y(d.value))
       .curve(d3.curveMonotoneX);
 
-    // Group time-series points into per-minute buckets to avoid overplotting
-    // reducedData will contain one representative per minute (preferentially an alert)
-    // Filter to only include points with pulses > 0
-    const filteredData = normalizedData.filter(d => d.pulses > 0);
-    const bucketedData = d3.groups(filteredData, d => d3.timeMinute(d.parsedTime));
-    const reducedData = bucketedData.map(([, group]) =>
-      group.find(d => d.alert_type) || group[0]
-    );
+    const visualLineData = downsampleTimeSeries(normalizedData, MAX_LINE_POINTS);
+    const alertSourceData = normalizedData.filter(d => d.pulses > 0 && d.alert_type);
+    let renderedCircleData = clusterPoints(alertSourceData, x, y);
 
-    // Draw animated path for the full data (smooth curve)
+    // Draw a downsampled visual path; the original data array stays intact for export.
 const linePath = dataLayer.append("path")
-      .datum(normalizedData)
+      .datum(visualLineData)
       .attr("fill", "none")
       .attr("stroke", "#4682B4")
       .attr("stroke-width", 2)
@@ -406,19 +574,37 @@ const linePath = dataLayer.append("path")
     // Draw feedback circles only for points marked as alerts
     // Animated grow-in and staggered delays for clarity
 dataLayer.selectAll("circle")
-      .data(reducedData.filter(d => d.alert_type))
+      .data(renderedCircleData)
       .enter().append("circle")
       .attr("cx", d => x(d.parsedTime))
       .attr("cy", d => y(d.value))
       .attr("r", 0)
-      .attr("fill", d => color(d.intensity))
+      .attr("fill", d => color(d.maxIntensity))
       .attr("stroke", "#333")
       .attr("opacity", 0)
       .transition()
-      .duration(1000)
-      .delay((d, i) => i * 250)
-      .attr("r", d => radius(d.pulses))
+      .duration(180)
+      .delay((d, i) => Math.min(i * 3, 350))
+      .attr("r", d => Math.max(radius(d.maxPulses || d.pulses), d.count > 1 ? 7 : 2))
       .attr("opacity", 1);
+
+    const clusterTexts = dataLayer.selectAll("text.cluster-count")
+      .data(renderedCircleData.filter(d => d.count > 1))
+      .enter().append("text")
+      .attr("class", "cluster-count")
+      .attr("x", d => x(d.parsedTime))
+      .attr("y", d => y(d.value) + 3)
+      .text(d => d.count > 99 ? "99+" : d.count);
+
+    clusterTexts.each(function(d) {
+        const circleColor = color(d.maxIntensity);
+        const isLight = isColorLight(circleColor);
+        const textFill = isLight ? '#1F2937' : '#FFFFFF';
+        const textStroke = isLight ? '#FFFFFF' : '#1F2937';
+        d3.select(this)
+          .attr('fill', textFill)
+          .attr('stroke', textStroke);
+      });
 
     applyGraphVisibility();
 
@@ -426,8 +612,8 @@ dataLayer.selectAll("circle")
 dataLayer.selectAll("circle")
       .on("mouseover", function (event, d) {
         // Calculate tooltip position with edge-awareness
-        const tooltipWidth = 180;
-        const tooltipHeight = 140;
+        const tooltipWidth = d.count > 1 ? 240 : 180;
+        const tooltipHeight = d.count > 1 ? 170 : 140;
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
 
@@ -455,13 +641,20 @@ dataLayer.selectAll("circle")
         .style("opacity", 1)
         .style("transform", "translateY(0px)");
     tooltip.html(
-            `<strong>Time:</strong> ${formatTime(d.parsedTime)}<br>
-            <strong>Value:</strong> ${d.value ?? "N/A"}<br>
-            <strong>Intensity:</strong> ${d.intensity}<br>
-            <strong>Pulses:</strong> ${d.pulses}<br>
-            <strong>Duration:</strong> ${d.duration || 0} ms<br>
-            <strong>Interval:</strong> ${d.interval || 0} ms<br>
-            <strong>Reason:</strong> ${d.reason || "N/A"}`
+            d.count > 1
+              ? `<strong>${d.count} aggregated alerts</strong><br>
+                <strong>Time:</strong> ${formatTime(d3.min(d.points, p => p.parsedTime))} - ${formatTime(d3.max(d.points, p => p.parsedTime))}<br>
+                <strong>Value range:</strong> ${d3.min(d.points, p => p.value)} - ${d3.max(d.points, p => p.value)}<br>
+                <strong>Max intensity:</strong> ${d.maxIntensity}<br>
+                <strong>Max pulses:</strong> ${d.maxPulses}<br>
+                <strong>Click:</strong> show aggregated dots`
+              : `<strong>Time:</strong> ${formatTime(d.parsedTime)}<br>
+                <strong>Value:</strong> ${d.value ?? "N/A"}<br>
+                <strong>Intensity:</strong> ${d.intensity}<br>
+                <strong>Pulses:</strong> ${d.pulses}<br>
+                <strong>Duration:</strong> ${d.duration || 0} ms<br>
+                <strong>Interval:</strong> ${d.interval || 0} ms<br>
+                <strong>Reason:</strong> ${d.reason || "N/A"}`
         )
           .style("left", leftPos + "px")
           .style("top", topPos + "px");
@@ -470,7 +663,7 @@ dataLayer.selectAll("circle")
         d3.select(this)
           .transition()
           .duration(150)
-          .attr("r", radius(d.pulses) * 1.3);
+          .attr("r", Math.max(radius(d.maxPulses || d.pulses), d.count > 1 ? 7 : 2) * 1.3);
       })
       .on("mouseout", function (event, d) {
         // Hide tooltip and restore circle radius
@@ -478,11 +671,36 @@ dataLayer.selectAll("circle")
         d3.select(this)
           .transition()
           .duration(200)
-        .attr("r", radius(d.pulses));
+        .attr("r", Math.max(radius(d.maxPulses || d.pulses), d.count > 1 ? 7 : 2));
+      })
+      .on("click", function(event, d) {
+        event.stopPropagation();
+        if (!d.points || d.points.length <= 1) {
+          closeDetailPanel();
+          return;
+        }
+
+        const rows = d.points
+          .slice()
+          .sort((a, b) => a.parsedTime - b.parsedTime)
+          .slice(0, 30)
+          .map(point => `<div>${formatTime(point.parsedTime)} | value ${point.value ?? "N/A"} | intensity ${point.intensity ?? "N/A"} | pulses ${point.pulses ?? "N/A"}</div>`)
+          .join("");
+        const more = d.points.length > 30 ? `<div style="margin-top:6px;color:#6b7280;">Showing 30 of ${d.points.length} dots.</div>` : "";
+
+        const panelWidth = Math.min(560, window.innerWidth - 48);
+
+        detailPanel
+          .html(`<div class="detail-panel-header"><strong>${d.points.length} aggregated dots</strong><button type="button" class="detail-panel-close" aria-label="Close aggregate details">&times;</button></div><div>${rows}${more}</div>`)
+          .style("left", Math.max(12, Math.min(event.pageX + 12, window.innerWidth - panelWidth - 24)) + "px")
+          .style("top", Math.max(10, Math.min(event.pageY + 12, window.innerHeight - 290)) + "px")
+          .style("display", "block");
+
+        detailPanel.select(".detail-panel-close").on("click", closeDetailPanel);
       });
 
     // Show message if data exists but no alerts to display
-    const alertsToShow = reducedData.filter(d => d.alert_type);
+    const alertsToShow = alertSourceData;
     if (data.length > 0 && alertsToShow.length === 0) {
       dataLayer.append("text")
         .attr("class", "no-alerts-message")
@@ -542,6 +760,36 @@ pulseValues.forEach((v) => {
   currentY += 2 * r + pulsePadding; // move down for next circle
 });
 
+    // Cluster numbers explanation
+    currentY += 15;
+    legend.append("text").text("Numbers").attr("y", currentY).attr("font-weight", "bold");
+
+    const legendCircleColor = "#f59e42";
+    legend.append("circle")
+      .attr("cx", 10)
+      .attr("cy", currentY + 18)
+      .attr("r", 8)
+      .attr("fill", legendCircleColor)
+      .attr("stroke", "#333");
+
+    const legendIsLight = isColorLight(legendCircleColor);
+    const legendTextFill = legendIsLight ? '#1F2937' : '#FFFFFF';
+    const legendTextStroke = legendIsLight ? '#FFFFFF' : '#1F2937';
+
+    legend.append("text")
+      .attr("class", "cluster-count")
+      .attr("x", 10)
+      .attr("y", currentY + 21)
+      .attr("fill", legendTextFill)
+      .attr("stroke", legendTextStroke)
+      .text("3");
+
+    legend.append("text")
+      .attr("x", 25)
+      .attr("y", currentY + 22)
+      .attr("font-size", "11px")
+      .text("Aggregated points");
+
     // Zoom behavior: allows pan + zoom on x-axis while keeping y fixed
 const zoom = d3.zoom()
   .scaleExtent([1, 100]) // min/max zoom scales
@@ -581,12 +829,15 @@ function zoomed(event) {
   linePath
     .attr("stroke-dasharray", null)
     .attr("stroke-dashoffset", null)
-    .datum(normalizedData)
+    .datum(visualLineData)
     .attr("d", lineWithZoom);
 
   // Move circles horizontally according to zoom/pan
   dataLayer.selectAll("circle")
     .attr("cx", d => zx(d.parsedTime));
+
+  dataLayer.selectAll("text.cluster-count")
+    .attr("x", d => zx(d.parsedTime));
 }
 
 // ==================== EXPORT TO PNG ====================
