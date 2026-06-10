@@ -506,12 +506,10 @@ public class MappingsTabController {
 
             Button selectButton = MappingUiFactory.createSelectMappingButton(rule, this::selectMappingForEdit);
             Button assignButton = createAssignUsersToMappingButton(rule);
-            Button deleteButton = MappingUiFactory.createDeleteMappingButton(rule, this::onDeleteMappingRequested);
-            if (inactiveInDatabase) {
-                deleteButton.setDisable(true);
-                deleteButton.setTooltip(new Tooltip("Inactive mapping is already deactivated"));
-            }
-            titleRow.getChildren().addAll(title, spacer, assignButton, selectButton, deleteButton);
+            Button activationButton = inactiveInDatabase
+                    ? MappingUiFactory.createActivateMappingButton(rule, this::onActivateMappingRequested)
+                    : MappingUiFactory.createDeleteMappingButton(rule, this::onDeleteMappingRequested);
+            titleRow.getChildren().addAll(title, spacer, assignButton, selectButton, activationButton);
 
             Label values = new Label("Values: " + formatMappingValues(rule));
             Label pulses = new Label("Pulse count: " + rule.pulseLabel);
@@ -574,6 +572,7 @@ public class MappingsTabController {
                     useCase,
                     this::selectMappingForEdit,
                     this::onDeleteMappingRequested,
+                    this::onActivateMappingRequested,
                     selected
             );
             mappingsFlowPane.getChildren().add(card);
@@ -668,12 +667,20 @@ public class MappingsTabController {
         button.setTooltip(new Tooltip("Assign users to this mapping"));
         button.setOnMouseClicked(event -> event.consume());
         button.setOnAction(ignored -> onAssignUsersToMappingRequested(rule));
+        if (rule != null && !rule.active) {
+            button.setDisable(true);
+            button.setTooltip(new Tooltip("Inactive mapping cannot be assigned"));
+        }
         return button;
     }
 
     private void onAssignUsersToMappingRequested(RuleCardData rule) {
         if (rule == null || rule.mappingId <= 0) {
             AlertUtils.showErrorAlert("Missing Mapping", "Could not resolve mapping id for the selected card.");
+            return;
+        }
+        if (!rule.active) {
+            AlertUtils.showErrorAlert("Inactive Mapping", "Reactivate this mapping before assigning users.");
             return;
         }
 
@@ -818,7 +825,11 @@ public class MappingsTabController {
             ? "selected mapping"
             : rule.rangeLabel;
 
-        ApiService.getInstance().deleteMapping(rule.mappingId)
+        if (!confirmMappingActivationChangeIfAssigned(rule, label, "deactivate")) {
+            return;
+        }
+
+        ApiService.getInstance().setMappingActive(rule.mappingId, false)
             .thenAccept(success -> Platform.runLater(() -> {
                 if (!success) {
                     AlertUtils.showErrorAlert("Delete Failed", "Could not delete mapping for " + label + ".");
@@ -828,9 +839,81 @@ public class MappingsTabController {
                 mappingRefreshCallback.get();
             }))
             .exceptionally(ex -> {
-                AlertUtils.showErrorAlert("Delete Failed", "Failed to delete mapping: " + ex.getMessage());
+                Platform.runLater(() ->
+                        AlertUtils.showErrorAlert("Delete Failed", "Failed to delete mapping: " + ex.getMessage()));
                 return null;
             });
+    }
+
+    private void onActivateMappingRequested(RuleCardData rule) {
+        if (rule == null || rule.mappingId <= 0) {
+            AlertUtils.showErrorAlert("Activation Failed", "Could not resolve mapping id for the selected card.");
+            return;
+        }
+
+        String label = (rule.rangeLabel == null || rule.rangeLabel.isBlank())
+            ? "selected mapping"
+            : rule.rangeLabel;
+
+        if (!confirmMappingActivationChangeIfAssigned(rule, label, "activate")) {
+            return;
+        }
+
+        ApiService.getInstance().setMappingActive(rule.mappingId, true)
+            .thenAccept(success -> Platform.runLater(() -> {
+                if (!success) {
+                    AlertUtils.showErrorAlert("Activation Failed", "Could not activate mapping for " + label + ".");
+                    return;
+                }
+                AlertUtils.showInfoAlert("Mapping Activated", "Activated mapping for " + label + ".");
+                mappingRefreshCallback.get();
+            }))
+            .exceptionally(ex -> {
+                Platform.runLater(() ->
+                        AlertUtils.showErrorAlert("Activation Failed", "Failed to activate mapping: " + ex.getMessage()));
+                return null;
+            });
+    }
+
+    private boolean confirmMappingActivationChangeIfAssigned(RuleCardData rule, String label, String action) {
+        List<User> assignedUsers = findUsersAssignedToRule(rule);
+        if (assignedUsers.isEmpty()) {
+            return true;
+        }
+
+        ButtonType confirmButton = new ButtonType(capitalizeAction(action), ButtonBar.ButtonData.OK_DONE);
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Confirm Mapping Change");
+        alert.setHeaderText("This mapping is assigned to " + assignedUsers.size()
+                + (assignedUsers.size() == 1 ? " user." : " users."));
+        alert.setContentText("Are you sure you want to " + action + " " + label + "?\n\n"
+                + "Affected users: " + formatAssignedUsersForConfirmation(assignedUsers));
+        alert.getButtonTypes().setAll(confirmButton, ButtonType.CANCEL);
+
+        return alert.showAndWait()
+                .filter(confirmButton::equals)
+                .isPresent();
+    }
+
+    private String formatAssignedUsersForConfirmation(List<User> assignedUsers) {
+        int visibleCount = Math.min(4, assignedUsers.size());
+        String names = assignedUsers.stream()
+                .limit(visibleCount)
+                .map(this::formatUser)
+                .collect(java.util.stream.Collectors.joining(", "));
+
+        int remaining = assignedUsers.size() - visibleCount;
+        if (remaining > 0) {
+            names += " and " + remaining + " more";
+        }
+        return names;
+    }
+
+    private String capitalizeAction(String action) {
+        if (action == null || action.isBlank()) {
+            return "Confirm";
+        }
+        return action.substring(0, 1).toUpperCase(Locale.ROOT) + action.substring(1);
     }
 
     @FXML

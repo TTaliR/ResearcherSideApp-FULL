@@ -41,6 +41,13 @@ public class MappingUiFactory {
         return button;
     }
 
+    public static Button createActivateMappingButton(RuleCardData rule, Consumer<RuleCardData> onActivate) {
+        Button button = SharedUiFactory.createActivateIconButton("Activate mapping");
+        button.setOnAction(ignored -> onActivate.accept(rule));
+        button.setOnMouseClicked(event -> event.consume());
+        return button;
+    }
+
     public static VBox createHistoryMappingCard(JsonNode mappingNode, String useCase) {
         return createHistoryMappingCard(mappingNode, useCase, null, null, false);
     }
@@ -48,6 +55,14 @@ public class MappingUiFactory {
     public static VBox createHistoryMappingCard(JsonNode mappingNode, String useCase,
                                                 Consumer<RuleCardData> onSelect,
                                                 Consumer<RuleCardData> onDelete,
+                                                boolean selected) {
+        return createHistoryMappingCard(mappingNode, useCase, onSelect, onDelete, null, selected);
+    }
+
+    public static VBox createHistoryMappingCard(JsonNode mappingNode, String useCase,
+                                                Consumer<RuleCardData> onSelect,
+                                                Consumer<RuleCardData> onDelete,
+                                                Consumer<RuleCardData> onActivate,
                                                 boolean selected) {
         RuleCardData rule = createRuleFromHistoryMapping(mappingNode, useCase);
 
@@ -74,13 +89,10 @@ public class MappingUiFactory {
         if (onSelect != null) {
             titleRow.getChildren().add(createSelectMappingButton(rule, onSelect));
         }
-        if (onDelete != null) {
-            Button deleteButton = createDeleteMappingButton(rule, onDelete);
-            if (!rule.active) {
-                deleteButton.setDisable(true);
-                deleteButton.setTooltip(new Tooltip("Inactive mapping is already deactivated"));
-            }
-            titleRow.getChildren().add(deleteButton);
+        if (rule.active && onDelete != null) {
+            titleRow.getChildren().add(createDeleteMappingButton(rule, onDelete));
+        } else if (!rule.active && onActivate != null) {
+            titleRow.getChildren().add(createActivateMappingButton(rule, onActivate));
         }
 
         Label values = new Label("Values: " + rule.minValue + "-" + rule.maxValue);

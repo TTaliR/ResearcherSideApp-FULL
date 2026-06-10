@@ -42,7 +42,7 @@ public class ApiService {
     public static final String EP_SET_MOON = "/set-moon-azimuth-threshold";
     public static final String EP_SET_HEART = "/set-heart-rate-threshold";
     public static final String EP_SET_RULES = "/set-rules";
-    public static final String EP_DELETE_MAPPING = "/deactivate-mapping";
+    public static final String EP_MAPPING_ACTIVATION = "/mapping-activation";
     public static final String EP_SET_LOGGING_INTERVAL = "/set-logging-interval";
     public static final String EP_CHAT_CONFIG = "/chat";
     public static final String EP_CHECK_CONNECTION = "/check-connection";
@@ -195,14 +195,19 @@ public class ApiService {
             .exceptionally(ex -> false);
     }
 
-    public CompletableFuture<Boolean> deleteMapping(int mappingId) {
+    public CompletableFuture<Boolean> setMappingActive(int mappingId, boolean active) {
         if (mappingId <= 0) {
             return CompletableFuture.completedFuture(false);
         }
 
         Map<String, Object> payload = new HashMap<>();
         payload.put("mappingId", mappingId);
-        return post(EP_DELETE_MAPPING, payload);
+        payload.put("active", active);
+        return post(EP_MAPPING_ACTIVATION, payload);
+    }
+
+    public CompletableFuture<Boolean> deleteMapping(int mappingId) {
+        return setMappingActive(mappingId, false);
     }
 
     public CompletableFuture<Boolean> changeMapping(int mappingId, SensorRuleConfig ruleConfig,
