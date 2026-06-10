@@ -441,6 +441,15 @@
     -fx-background-color: #f3f4f6;
 }
 
+.mapping-delete-button:disabled {
+    -fx-opacity: 0.35;
+    -fx-cursor: default;
+}
+
+.mapping-delete-button:disabled:hover {
+    -fx-background-color: transparent;
+}
+
 .schedule-card {
     -fx-pref-width: 280;
 }

@@ -1,27 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import javafx.geometry.Insets?>
-<?import javafx.scene.control.Button?>
-<?import javafx.scene.control.CheckBox?>
-<?import javafx.scene.control.DatePicker?>
-<?import javafx.scene.control.Label?>
-<?import javafx.scene.control.ScrollPane?>
-<?import javafx.scene.control.Separator?>
 <?import javafx.scene.control.Tab?>
 <?import javafx.scene.control.TabPane?>
-<?import javafx.scene.control.TextField?>
-<?import javafx.scene.control.ToggleButton?>
-<?import javafx.scene.control.ToggleGroup?>
 <?import javafx.scene.layout.BorderPane?>
-<?import javafx.scene.layout.FlowPane?>
 <?import javafx.scene.layout.HBox?>
-<?import javafx.scene.layout.StackPane?>
-<?import javafx.scene.layout.VBox?>
 
 <HBox prefHeight="800.0" prefWidth="1280.0" styleClass="dashboard-root" xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.example.demo.controller.DashboardController">
-    <fx:define>
-        <ToggleGroup fx:id="mappingToggleGroup" />
-    </fx:define>
     <fx:include source="LeftSidebar.fxml" fx:id="leftSidebar" />
 
 
@@ -47,84 +31,7 @@
 
                     <Tab fx:id="mappingsTab" text="Mappings">
                         <content>
-                            <VBox spacing="10.0" styleClass="tab-content-root">
-                                <HBox spacing="0" alignment="CENTER_LEFT" styleClass="segmented-button-bar">
-                                    <ToggleButton text="List Active" onAction="#onListActiveMappings" toggleGroup="$mappingToggleGroup" selected="true" />
-                                    <ToggleButton text="List All" onAction="#onListAllMappings" toggleGroup="$mappingToggleGroup" />
-                                </HBox>
-                                <VBox spacing="0">
-                                    <Label text="New Mapping Rule Builder" styleClass="drawer-title" alignment="CENTER_LEFT"/>
-                                </VBox>
-                                <HBox spacing="8.0" styleClass="chat-panel">
-                                    <VBox spacing="3.0" alignment="CENTER">
-                                        <HBox alignment="CENTER_LEFT">
-                                            <Label minWidth="100.0" text="Sensor Type:" styleClass="topbar-label" />
-                                            <Label fx:id="ruleSensorTypeLabel" text="-" styleClass="topbar-value" />
-                                        </HBox>
-                                        <Label fx:id="ruleSensorTypeDescriptionLabel" text="-" styleClass="topbar-muted-value" />
-                                    </VBox>
-                                    <Separator orientation="VERTICAL"></Separator>
-                                    <VBox spacing="10.0" alignment="CENTER_LEFT">
-                                        <Label minWidth="100.0" text="Min Value" styleClass="topbar-label" />
-                                        <TextField fx:id="ruleMinValueField" prefWidth="120.0" promptText="e.g. 60" />
-                                        <Label minWidth="100.0" text="Max Value" styleClass="topbar-label" />
-                                        <TextField fx:id="ruleMaxValueField" prefWidth="120.0" promptText="e.g. 100" />
-                                    </VBox>
-                                    <VBox spacing="10.0" alignment="CENTER_LEFT">
-                                        <Label minWidth="100.0" text="Min Pulses" styleClass="topbar-label" />
-                                        <TextField fx:id="ruleMinPulsesField" prefWidth="120.0" promptText="e.g. 2" />
-                                        <Label minWidth="100.0" text="Max Pulses" styleClass="topbar-label" />
-                                        <TextField fx:id="ruleMaxPulsesField" prefWidth="120.0" promptText="e.g. 4" />
-                                    </VBox>
-                                    <VBox spacing="10.0" alignment="CENTER_LEFT">
-                                        <Label minWidth="100.0" text="Min Intensity" styleClass="topbar-label" />
-                                        <TextField fx:id="ruleMinIntensityField" prefWidth="120.0" promptText="e.g. 2" />
-                                        <Label minWidth="100.0" text="Max Intensity" styleClass="topbar-label" />
-                                        <TextField fx:id="ruleMaxIntensityField" prefWidth="120.0" promptText="e.g. 5" />
-                                    </VBox>
-                                    <VBox spacing="10.0" alignment="CENTER_LEFT">
-                                        <Label minWidth="100.0" text="Min Duration (ms)" styleClass="topbar-label" />
-                                        <TextField fx:id="ruleMinDurationField" prefWidth="120.0" promptText="e.g. 80" />
-                                        <Label minWidth="100.0" text="Max Duration (ms)" styleClass="topbar-label" />
-                                        <TextField fx:id="ruleMaxDurationField" prefWidth="120.0" promptText="e.g. 120" />
-                                    </VBox>
-                                    <VBox spacing="10.0" alignment="CENTER_LEFT">
-                                        <Label minWidth="100.0" text="Min Interval (ms)" styleClass="topbar-label" />
-                                        <TextField fx:id="ruleMinIntervalField" prefWidth="120.0" promptText="e.g. 60" />
-                                        <Label minWidth="100.0" text="Max Interval (ms)" styleClass="topbar-label" />
-                                        <TextField fx:id="ruleMaxIntervalField" prefWidth="120.0" promptText="e.g. 100" />
-                                    </VBox>
-                                    <Separator orientation="VERTICAL" prefHeight="150.0" />
-                                    <VBox spacing="10.0" alignment="CENTER">
-                                        <Button fx:id="saveRuleButton" text="Save" styleClass="primary-button" onAction="#onSaveMappingConfig" />
-                                        <Button fx:id="clearRuleButton" text="Clear" styleClass="cancel-button" onAction="#clearRuleInputFields" />
-                                    </VBox>
-                                </HBox>
-                                <HBox alignment="CENTER_LEFT" spacing="10.0">
-                                    <Button fx:id="refreshRuleButton" text="Refresh Mappings" onAction="#refreshMappings" styleClass="secondary-button" />
-                                    <Label text="Selected Mapping:" styleClass="topbar-label" />
-                                    <Label fx:id="selectedMappingLabel" text="None selected" styleClass="topbar-value" />
-                                    <Separator orientation="VERTICAL" />
-                                    <Label text="Logging Interval:" styleClass="topbar-label" />
-                                    <Label fx:id="loggingIntervalValueLabel" text="Not set" styleClass="topbar-value" />
-                                    <Button fx:id="editLoggingIntervalButton" text="Edit Logging Interval" onAction="#onEditLoggingInterval" styleClass="secondary-button" />
-                                </HBox>
-
-                                <StackPane VBox.vgrow="ALWAYS">
-                                    <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="mappings-scroll" VBox.vgrow="ALWAYS">
-                                        <FlowPane fx:id="mappingsFlowPane" hgap="14.0" vgap="14.0" prefWrapLength="920.0">
-                                            <padding>
-                                                <Insets top="12.0" right="12.0" bottom="12.0" left="12.0" />
-                                            </padding>
-                                        </FlowPane>
-                                    </ScrollPane>
-                                    <Label fx:id="mappingsEmptyLabel" text="No mappings found." styleClass="mappings-empty-label" StackPane.alignment="CENTER">
-                                        <StackPane.margin>
-                                            <Insets top="8.0" />
-                                        </StackPane.margin>
-                                    </Label>
-                                </StackPane>
-                            </VBox>
+                            <fx:include source="MappingsTab.fxml" fx:id="mappingsTabContent" />
                         </content>
                     </Tab>
                     <Tab fx:id="schedulingTab" text="Schedules">
