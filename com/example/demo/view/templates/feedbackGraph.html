@@ -73,11 +73,13 @@
 }
 
 .cluster-count {
-  fill: #111827;
   font-size: 10px;
   font-weight: 700;
   text-anchor: middle;
   pointer-events: none;
+  stroke-width: 1.2px;
+  stroke-linejoin: round;
+  paint-order: stroke;
 }
 
     .legend {
@@ -336,6 +338,25 @@ function clusterPoints(points, xScale, yScale) {
   });
 }
 
+/**
+ * Determines if a hex color is light or dark for contrast purposes.
+ * @param {string} color - The hex color string (e.g., "#RRGGBB").
+ * @returns {boolean} - True if the color is light, false if dark.
+ */
+function isColorLight(color) {
+  if (!color.startsWith("#")) {
+    // Can't determine brightness for non-hex colors. Default to assuming a light background.
+    return true;
+  }
+  const hex = color.replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  // YIQ formula to determine perceived brightness
+  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+  return yiq >= 140; // Threshold of 140 provides good balance
+}
+
     // Basic meta values injected by runtime
     const userId = USER_ID_PLACEHOLDER; //
     const sensorType = SENSOR_TYPE_PLACEHOLDER;
@@ -558,7 +579,7 @@ dataLayer.selectAll("circle")
       .attr("cx", d => x(d.parsedTime))
       .attr("cy", d => y(d.value))
       .attr("r", 0)
-      .attr("fill", d => color(d.intensity))
+      .attr("fill", d => color(d.maxIntensity))
       .attr("stroke", "#333")
       .attr("opacity", 0)
       .transition()
@@ -567,13 +588,23 @@ dataLayer.selectAll("circle")
       .attr("r", d => Math.max(radius(d.maxPulses || d.pulses), d.count > 1 ? 7 : 2))
       .attr("opacity", 1);
 
-    dataLayer.selectAll("text.cluster-count")
+    const clusterTexts = dataLayer.selectAll("text.cluster-count")
       .data(renderedCircleData.filter(d => d.count > 1))
       .enter().append("text")
       .attr("class", "cluster-count")
       .attr("x", d => x(d.parsedTime))
       .attr("y", d => y(d.value) + 3)
       .text(d => d.count > 99 ? "99+" : d.count);
+
+    clusterTexts.each(function(d) {
+        const circleColor = color(d.maxIntensity);
+        const isLight = isColorLight(circleColor);
+        const textFill = isLight ? '#1F2937' : '#FFFFFF';
+        const textStroke = isLight ? '#FFFFFF' : '#1F2937';
+        d3.select(this)
+          .attr('fill', textFill)
+          .attr('stroke', textStroke);
+      });
 
     applyGraphVisibility();
 
@@ -728,6 +759,36 @@ pulseValues.forEach((v) => {
 
   currentY += 2 * r + pulsePadding; // move down for next circle
 });
+
+    // Cluster numbers explanation
+    currentY += 15;
+    legend.append("text").text("Numbers").attr("y", currentY).attr("font-weight", "bold");
+
+    const legendCircleColor = "#f59e42";
+    legend.append("circle")
+      .attr("cx", 10)
+      .attr("cy", currentY + 18)
+      .attr("r", 8)
+      .attr("fill", legendCircleColor)
+      .attr("stroke", "#333");
+
+    const legendIsLight = isColorLight(legendCircleColor);
+    const legendTextFill = legendIsLight ? '#1F2937' : '#FFFFFF';
+    const legendTextStroke = legendIsLight ? '#FFFFFF' : '#1F2937';
+
+    legend.append("text")
+      .attr("class", "cluster-count")
+      .attr("x", 10)
+      .attr("y", currentY + 21)
+      .attr("fill", legendTextFill)
+      .attr("stroke", legendTextStroke)
+      .text("3");
+
+    legend.append("text")
+      .attr("x", 25)
+      .attr("y", currentY + 22)
+      .attr("font-size", "11px")
+      .text("Aggregated points");
 
     // Zoom behavior: allows pan + zoom on x-axis while keeping y fixed
 const zoom = d3.zoom()
