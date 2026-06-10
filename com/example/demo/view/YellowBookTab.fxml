@@ -17,7 +17,7 @@
         <Separator orientation="VERTICAL" prefHeight="22.0" />
         <Label fx:id="yellowBookStatusLabel" text="Open or refresh to load the dictionary." styleClass="topbar-muted-value" />
         <StackPane HBox.hgrow="ALWAYS" />
-        <Button text="Refresh" styleClass="primary-button" onAction="#onRefreshYellowBook" />
+        <Button fx:id="yellowBookRefreshButton" text="Refresh" styleClass="primary-button" onAction="#onRefreshYellowBook" />
     </HBox>
     <VBox spacing="10.0" styleClass="yellow-book-editor">
         <HBox alignment="CENTER_LEFT" spacing="10.0">

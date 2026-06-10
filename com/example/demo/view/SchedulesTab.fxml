@@ -20,8 +20,8 @@
         <ToggleGroup fx:id="scheduleToggleGroup" />
     </fx:define>
     <HBox spacing="0" alignment="CENTER_LEFT" styleClass="segmented-button-bar">
-        <ToggleButton text="List Active" onAction="#onListActiveSchedules" toggleGroup="$scheduleToggleGroup" selected="true" />
-        <ToggleButton text="List All" onAction="#onListAllSchedules" toggleGroup="$scheduleToggleGroup" />
+        <ToggleButton fx:id="listActiveSchedulesButton" text="List Active" onAction="#onListActiveSchedules" toggleGroup="$scheduleToggleGroup" selected="true" />
+        <ToggleButton fx:id="listAllSchedulesButton" text="List All" onAction="#onListAllSchedules" toggleGroup="$scheduleToggleGroup" />
     </HBox>
     <HBox spacing="8.0" alignment="CENTER_LEFT">
         <Label text="Schedule ID:" styleClass="topbar-label" />

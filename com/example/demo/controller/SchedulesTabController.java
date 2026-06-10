@@ -6,6 +6,7 @@ import com.example.demo.model.ScheduleApiResponse;
 import com.example.demo.model.User;
 import com.example.demo.service.ApiService;
 import com.example.demo.util.AlertUtils;
+import com.example.demo.util.ButtonLoadingState;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -13,6 +14,7 @@ import javafx.fxml.FXML;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBase;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
@@ -95,6 +97,12 @@ public class SchedulesTabController {
     private Spinner<Integer> triggerPercentageSpinner;
     @FXML
     private Label scheduleStatusLabel;
+    @FXML
+    private Button saveScheduleButton;
+    @FXML
+    private ToggleButton listActiveSchedulesButton;
+    @FXML
+    private ToggleButton listAllSchedulesButton;
 
     private final ObservableList<Schedule> schedules = FXCollections.observableArrayList();
     private Supplier<ScheduleContext> contextSupplier = () -> new ScheduleContext("", null, false);
@@ -141,7 +149,24 @@ public class SchedulesTabController {
             ? ApiService.getInstance().listActiveSchedules(uc, userId)
             : ApiService.getInstance().listAllSchedules(uc, userId);
 
-        request.thenAccept(resp -> Platform.runLater(() -> updateSchedulesTable(resp)));
+        if (scheduleStatusLabel != null) {
+            scheduleStatusLabel.setText("Loading schedules...");
+        }
+        ButtonLoadingState loading = ButtonLoadingState.start(
+            activeOnly ? listActiveSchedulesButton : listAllSchedulesButton,
+            "Loading..."
+        );
+        request.whenComplete((resp, ex) -> Platform.runLater(() -> {
+            loading.close();
+            if (ex != null) {
+                if (scheduleStatusLabel != null) {
+                    scheduleStatusLabel.setText("Failed to load schedules.");
+                }
+                AlertUtils.showErrorAlert("Load Failed", "Could not load schedules: " + ex.getMessage());
+                return;
+            }
+            updateSchedulesTable(resp);
+        }));
     }
 
     public void refreshSchedulesForCurrentFilter() {
@@ -467,8 +492,19 @@ public class SchedulesTabController {
             String measure = getSelectedScheduleMeasure();
             int trigger = getTriggerPercentageValue();
             String uc = requireSelectedUsecaseName();
+            ButtonLoadingState loading = ButtonLoadingState.start(saveScheduleButton, "Saving...");
             ApiService.getInstance().addSchedule(userId, interval, measure, trigger, uc)
-                .thenAccept(resp -> Platform.runLater(() -> handleScheduleMutationResponse(resp)));
+                .thenAccept(resp -> Platform.runLater(() -> {
+                    loading.close();
+                    handleScheduleMutationResponse(resp);
+                }))
+                .exceptionally(ex -> {
+                    Platform.runLater(() -> {
+                        loading.close();
+                        AlertUtils.showErrorAlert("Save Failed", "Could not save schedule: " + ex.getMessage());
+                    });
+                    return null;
+                });
         } catch (Exception e) {
             showScheduleInputError(e);
         }
@@ -496,8 +532,19 @@ public class SchedulesTabController {
             String measure = getSelectedScheduleMeasure();
             int trigger = getTriggerPercentageValue();
             String uc = requireSelectedUsecaseName();
+            ButtonLoadingState loading = ButtonLoadingState.start(saveScheduleButton, "Saving...");
             ApiService.getInstance().changeSchedule(schedId, userId, interval, measure, trigger, uc)
-                .thenAccept(resp -> Platform.runLater(() -> handleScheduleMutationResponse(resp)));
+                .thenAccept(resp -> Platform.runLater(() -> {
+                    loading.close();
+                    handleScheduleMutationResponse(resp);
+                }))
+                .exceptionally(ex -> {
+                    Platform.runLater(() -> {
+                        loading.close();
+                        AlertUtils.showErrorAlert("Save Failed", "Could not update schedule: " + ex.getMessage());
+                    });
+                    return null;
+                });
         } catch (Exception e) {
             showScheduleInputError(e);
         }
@@ -552,10 +599,21 @@ public class SchedulesTabController {
         selectScheduleForEdit(schedule);
         try {
             String uc = requireSelectedUsecaseName();
+            ButtonLoadingState loading = ButtonLoadingState.start(toggle, requestedActive ? "Activating..." : "Deactivating...");
             CompletableFuture<ScheduleApiResponse> request = requestedActive
                 ? ApiService.getInstance().activateSchedule(schedule.getScheduleId(), uc)
                 : ApiService.getInstance().deactivateSchedule(schedule.getScheduleId(), uc);
-            request.thenAccept(resp -> Platform.runLater(() -> handleScheduleMutationResponse(resp)));
+            request.thenAccept(resp -> Platform.runLater(() -> {
+                loading.close();
+                handleScheduleMutationResponse(resp);
+            }))
+            .exceptionally(ex -> {
+                Platform.runLater(() -> {
+                    loading.close();
+                    AlertUtils.showErrorAlert("Update Failed", "Could not update schedule: " + ex.getMessage());
+                });
+                return null;
+            });
         } catch (Exception e) {
             showScheduleInputError(e);
         }

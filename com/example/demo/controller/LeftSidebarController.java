@@ -59,6 +59,8 @@ public class LeftSidebarController {
     @FXML
     private ComboBox<String> userUseCaseComboBox;
     @FXML
+    private Button addUseCaseButton;
+    @FXML
     private Button assignUserUseCaseButton;
 
     private final ObservableList<User> users = FXCollections.observableArrayList();
@@ -295,6 +297,10 @@ public class LeftSidebarController {
 
     public Button getAssignUserUseCaseButton() {
         return assignUserUseCaseButton;
+    }
+
+    public Button getAddUseCaseButton() {
+        return addUseCaseButton;
     }
 
     public void selectUser(User user) {

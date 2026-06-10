@@ -8,6 +8,7 @@ import com.example.demo.model.UseCase;
 import com.example.demo.model.User;
 import com.example.demo.service.ApiService;
 import com.example.demo.util.AlertUtils;
+import com.example.demo.util.ButtonLoadingState;
 import com.example.demo.util.FormatUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import javafx.application.Platform;
@@ -43,6 +44,8 @@ public class MappingsTabController {
     @FXML private TextField ruleMaxIntervalField;
     @FXML private Label selectedMappingLabel;
     @FXML private Label loggingIntervalValueLabel;
+    @FXML private Button saveRuleButton;
+    @FXML private Button refreshRuleButton;
     @FXML private Button editLoggingIntervalButton;
 
     private Supplier<String> selectedUseCaseSupplier = () -> "";
@@ -188,7 +191,14 @@ public class MappingsTabController {
             AlertUtils.showErrorAlert("Validation Error", ex.getMessage());
             return;
         }
-        mappingRefreshCallback.get();
+        ButtonLoadingState loading = ButtonLoadingState.start(refreshRuleButton, "Refreshing...");
+        mappingRefreshCallback.get()
+            .whenComplete((ignored, ex) -> Platform.runLater(() -> {
+                loading.close();
+                if (ex != null) {
+                    AlertUtils.showErrorAlert("Refresh Failed", "Could not refresh mappings: " + ex.getMessage());
+                }
+            }));
     }
 
     @FXML
@@ -223,8 +233,10 @@ public class MappingsTabController {
         try {
             SensorRuleConfig ruleConfig = buildRuleConfigFromForm();
 
+            ButtonLoadingState loading = ButtonLoadingState.start(saveRuleButton, "Saving...");
             ApiService.getInstance().saveSensorRuleConfig(ruleConfig)
                 .thenAccept(success -> Platform.runLater(() -> {
+                    loading.close();
                     if (!success) {
                         AlertUtils.showErrorAlert("Save Failed", "Could not save the rule. Please try again.");
                         return;
@@ -235,10 +247,12 @@ public class MappingsTabController {
                     mappingRefreshCallback.get();
                     String savedUseCase = useCaseLabelResolver.apply(FormatUtils.normalizeUseCaseName(ruleConfig.getType()));
                     AlertUtils.showInfoAlert("Save Successful", "Saved mapping for " + savedUseCase + ".");
-                    refreshMappings();
                 }))
                 .exceptionally(ex -> {
-                    AlertUtils.showErrorAlert("Save Failed", "Could not save rule: " + ex.getMessage());
+                    Platform.runLater(() -> {
+                        loading.close();
+                        AlertUtils.showErrorAlert("Save Failed", "Could not save rule: " + ex.getMessage());
+                    });
                     return null;
                 });
         } catch (IllegalArgumentException ex) {
@@ -354,6 +368,7 @@ public class MappingsTabController {
     }
 
     private void changeMappingForAllUsers(RuleCardData editingRule, SensorRuleConfig ruleConfig, int useCaseId) {
+        ButtonLoadingState loading = ButtonLoadingState.start(saveRuleButton, "Updating...");
         ApiService.getInstance().changeMapping(
                 editingRule.mappingId,
                 ruleConfig,
@@ -362,18 +377,23 @@ public class MappingsTabController {
                 chatSessionIdSupplier.get()
             )
             .thenAccept(success -> Platform.runLater(() -> handleMappingChangeResult(
+                    loading,
                     success,
                     "Could not change mapping ID " + editingRule.mappingId + ".",
                     "Updated mapping ID " + editingRule.mappingId + "."
             )))
             .exceptionally(ex -> {
-                Platform.runLater(() -> AlertUtils.showErrorAlert("Update Failed", "Failed to change mapping: " + ex.getMessage()));
+                Platform.runLater(() -> {
+                    loading.close();
+                    AlertUtils.showErrorAlert("Update Failed", "Failed to change mapping: " + ex.getMessage());
+                });
                 return null;
             });
     }
 
     private void changeMappingForCurrentUserOnly(RuleCardData editingRule, User currentUser,
                                                  SensorRuleConfig ruleConfig, int useCaseId) {
+        ButtonLoadingState loading = ButtonLoadingState.start(saveRuleButton, "Updating...");
         ApiService.getInstance().changeMappingForUserOnly(
                 editingRule.mappingId,
                 currentUser.getUserID(),
@@ -383,17 +403,22 @@ public class MappingsTabController {
                 chatSessionIdSupplier.get()
             )
             .thenAccept(success -> Platform.runLater(() -> handleMappingChangeResult(
+                    loading,
                     success,
                     "Could not duplicate mapping ID " + editingRule.mappingId + " for user " + currentUser.getUserID() + ".",
                     "Applied mapping changes only to user " + currentUser.getUserID() + "."
             )))
             .exceptionally(ex -> {
-                Platform.runLater(() -> AlertUtils.showErrorAlert("Update Failed", "Failed to change mapping for the selected user: " + ex.getMessage()));
+                Platform.runLater(() -> {
+                    loading.close();
+                    AlertUtils.showErrorAlert("Update Failed", "Failed to change mapping for the selected user: " + ex.getMessage());
+                });
                 return null;
             });
     }
 
-    private void handleMappingChangeResult(boolean success, String failureMessage, String successMessage) {
+    private void handleMappingChangeResult(ButtonLoadingState loading, boolean success, String failureMessage, String successMessage) {
+        loading.close();
         if (!success) {
             AlertUtils.showErrorAlert("Update Failed", failureMessage);
             return;
@@ -509,6 +534,11 @@ public class MappingsTabController {
             Button activationButton = inactiveInDatabase
                     ? MappingUiFactory.createActivateMappingButton(rule, this::onActivateMappingRequested)
                     : MappingUiFactory.createDeleteMappingButton(rule, this::onDeleteMappingRequested);
+            if (inactiveInDatabase) {
+                activationButton.setOnAction(ignored -> onActivateMappingRequested(rule, activationButton));
+            } else {
+                activationButton.setOnAction(ignored -> onDeleteMappingRequested(rule, activationButton));
+            }
             titleRow.getChildren().addAll(title, spacer, assignButton, selectButton, activationButton);
 
             Label values = new Label("Values: " + formatMappingValues(rule));
@@ -666,7 +696,7 @@ public class MappingsTabController {
         button.getStyleClass().add("mapping-assign-button");
         button.setTooltip(new Tooltip("Assign users to this mapping"));
         button.setOnMouseClicked(event -> event.consume());
-        button.setOnAction(ignored -> onAssignUsersToMappingRequested(rule));
+        button.setOnAction(ignored -> onAssignUsersToMappingRequested(rule, button));
         if (rule != null && !rule.active) {
             button.setDisable(true);
             button.setTooltip(new Tooltip("Inactive mapping cannot be assigned"));
@@ -674,7 +704,7 @@ public class MappingsTabController {
         return button;
     }
 
-    private void onAssignUsersToMappingRequested(RuleCardData rule) {
+    private void onAssignUsersToMappingRequested(RuleCardData rule, Button sourceButton) {
         if (rule == null || rule.mappingId <= 0) {
             AlertUtils.showErrorAlert("Missing Mapping", "Could not resolve mapping id for the selected card.");
             return;
@@ -711,7 +741,7 @@ public class MappingsTabController {
             return;
         }
 
-        assignUsersToMapping(rule, useCaseId, resolvedUseCaseName, selectedUsers);
+        assignUsersToMapping(rule, useCaseId, resolvedUseCaseName, selectedUsers, sourceButton);
     }
 
     private List<User> showAssignUsersToMappingDialog(RuleCardData rule, String useCaseName, List<User> candidateUsers) {
@@ -778,7 +808,8 @@ public class MappingsTabController {
         return result.orElse(List.of());
     }
 
-    private void assignUsersToMapping(RuleCardData rule, int useCaseId, String useCaseName, List<User> selectedUsers) {
+    private void assignUsersToMapping(RuleCardData rule, int useCaseId, String useCaseName, List<User> selectedUsers, Button sourceButton) {
+        ButtonLoadingState loading = ButtonLoadingState.start(sourceButton, "Assigning...");
         List<CompletableFuture<Boolean>> assignments = selectedUsers.stream()
                 .map(user -> ApiService.getInstance().assignMappingToUser(
                         user.getUserID(),
@@ -792,15 +823,19 @@ public class MappingsTabController {
         CompletableFuture.allOf(assignments.toArray(CompletableFuture[]::new))
                 .thenRun(() -> {
                     boolean allSuccessful = assignments.stream().allMatch(CompletableFuture::join);
-                    Platform.runLater(() -> handleMappingAssignmentResult(allSuccessful, rule, useCaseName, selectedUsers));
+                    Platform.runLater(() -> handleMappingAssignmentResult(loading, allSuccessful, rule, useCaseName, selectedUsers));
                 })
                 .exceptionally(ex -> {
-                    Platform.runLater(() -> AlertUtils.showErrorAlert("Assignment Failed", "Failed to assign users: " + ex.getMessage()));
+                    Platform.runLater(() -> {
+                        loading.close();
+                        AlertUtils.showErrorAlert("Assignment Failed", "Failed to assign users: " + ex.getMessage());
+                    });
                     return null;
                 });
     }
 
-    private void handleMappingAssignmentResult(boolean allSuccessful, RuleCardData rule, String useCaseName, List<User> selectedUsers) {
+    private void handleMappingAssignmentResult(ButtonLoadingState loading, boolean allSuccessful, RuleCardData rule, String useCaseName, List<User> selectedUsers) {
+        loading.close();
         if (!allSuccessful) {
             AlertUtils.showErrorAlert("Assignment Failed", "Could not assign every selected user to mapping " + rule.mappingId + ".");
             return;
@@ -816,6 +851,10 @@ public class MappingsTabController {
     }
 
     private void onDeleteMappingRequested(RuleCardData rule) {
+        onDeleteMappingRequested(rule, null);
+    }
+
+    private void onDeleteMappingRequested(RuleCardData rule, Button sourceButton) {
         if (rule == null || rule.mappingId <= 0) {
             AlertUtils.showErrorAlert("Delete Failed", "Could not resolve mapping id for the selected card.");
             return;
@@ -829,8 +868,10 @@ public class MappingsTabController {
             return;
         }
 
+        ButtonLoadingState loading = ButtonLoadingState.start(sourceButton, "Deleting...");
         ApiService.getInstance().setMappingActive(rule.mappingId, false)
             .thenAccept(success -> Platform.runLater(() -> {
+                loading.close();
                 if (!success) {
                     AlertUtils.showErrorAlert("Delete Failed", "Could not delete mapping for " + label + ".");
                     return;
@@ -839,13 +880,19 @@ public class MappingsTabController {
                 mappingRefreshCallback.get();
             }))
             .exceptionally(ex -> {
-                Platform.runLater(() ->
-                        AlertUtils.showErrorAlert("Delete Failed", "Failed to delete mapping: " + ex.getMessage()));
+                Platform.runLater(() -> {
+                        loading.close();
+                        AlertUtils.showErrorAlert("Delete Failed", "Failed to delete mapping: " + ex.getMessage());
+                });
                 return null;
             });
     }
 
     private void onActivateMappingRequested(RuleCardData rule) {
+        onActivateMappingRequested(rule, null);
+    }
+
+    private void onActivateMappingRequested(RuleCardData rule, Button sourceButton) {
         if (rule == null || rule.mappingId <= 0) {
             AlertUtils.showErrorAlert("Activation Failed", "Could not resolve mapping id for the selected card.");
             return;
@@ -859,8 +906,10 @@ public class MappingsTabController {
             return;
         }
 
+        ButtonLoadingState loading = ButtonLoadingState.start(sourceButton, "Activating...");
         ApiService.getInstance().setMappingActive(rule.mappingId, true)
             .thenAccept(success -> Platform.runLater(() -> {
+                loading.close();
                 if (!success) {
                     AlertUtils.showErrorAlert("Activation Failed", "Could not activate mapping for " + label + ".");
                     return;
@@ -869,8 +918,10 @@ public class MappingsTabController {
                 mappingRefreshCallback.get();
             }))
             .exceptionally(ex -> {
-                Platform.runLater(() ->
-                        AlertUtils.showErrorAlert("Activation Failed", "Failed to activate mapping: " + ex.getMessage()));
+                Platform.runLater(() -> {
+                        loading.close();
+                        AlertUtils.showErrorAlert("Activation Failed", "Failed to activate mapping: " + ex.getMessage());
+                });
                 return null;
             });
     }
@@ -967,8 +1018,10 @@ public class MappingsTabController {
             return;
         }
 
+        ButtonLoadingState loading = ButtonLoadingState.start(editLoggingIntervalButton, "Saving...");
         ApiService.getInstance().setLoggingInterval(useCase.getId(), interval)
             .thenAccept(success -> Platform.runLater(() -> {
+                loading.close();
                 if (!success) {
                     AlertUtils.showErrorAlert("Update Failed", "Could not update logging interval. Please try again.");
                     return;
@@ -980,7 +1033,10 @@ public class MappingsTabController {
                 useCasesRefreshCallback.run();
             }))
             .exceptionally(ex -> {
-                AlertUtils.showErrorAlert("Update Failed", "Failed to update logging interval: " + ex.getMessage());
+                Platform.runLater(() -> {
+                    loading.close();
+                    AlertUtils.showErrorAlert("Update Failed", "Failed to update logging interval: " + ex.getMessage());
+                });
                 return null;
             });
     }

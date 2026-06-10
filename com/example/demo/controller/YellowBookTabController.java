@@ -5,6 +5,7 @@ import com.example.demo.model.DictionaryParameterData;
 import com.example.demo.parser.YellowBookParser;
 import com.example.demo.service.ApiService;
 import com.example.demo.util.AlertUtils;
+import com.example.demo.util.ButtonLoadingState;
 import com.fasterxml.jackson.databind.JsonNode;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
@@ -40,6 +41,8 @@ public class YellowBookTabController {
     private TextField yellowBookParameterDescriptionField;
     @FXML
     private CheckBox yellowBookRequiredCheckBox;
+    @FXML
+    private Button yellowBookRefreshButton;
     @FXML
     private Button yellowBookSaveButton;
     @FXML
@@ -98,10 +101,12 @@ public class YellowBookTabController {
             yellowBookStatusLabel.setText("Loading dictionary...");
         }
 
+        ButtonLoadingState loading = ButtonLoadingState.start(yellowBookRefreshButton, "Loading...");
         String contextUsecaseName = context.useCaseName();
         ApiService.getInstance()
             .sendDictionaryRequest("Show me the full use case dictionary.", contextUsecaseId, contextUsecaseName, chatSessionId)
             .thenAccept(response -> Platform.runLater(() -> {
+                loading.close();
                 if (response == null || response.has("error")) {
                     String message = response == null ? "No response from n8n." : response.path("message").asText("Dictionary request failed.");
                     yellowBookStatusLabel.setText(message);
@@ -119,7 +124,10 @@ public class YellowBookTabController {
                 renderYellowBook();
             }))
             .exceptionally(ex -> {
-                Platform.runLater(() -> yellowBookStatusLabel.setText("Dictionary request failed: " + ex.getMessage()));
+                Platform.runLater(() -> {
+                    loading.close();
+                    yellowBookStatusLabel.setText("Dictionary request failed: " + ex.getMessage());
+                });
                 return null;
             });
     }
@@ -212,6 +220,7 @@ public class YellowBookTabController {
             yellowBookStatusLabel.setText("Renaming dictionary parameter...");
         }
 
+        ButtonLoadingState loading = ButtonLoadingState.start(yellowBookSaveButton, "Saving...");
         String addMessage = "Add dictionary parameter " + updated.parameterName
             + " to use case " + updated.useCaseName
             + " with usecase_parameter_name " + updated.parameterName
@@ -227,6 +236,7 @@ public class YellowBookTabController {
             .thenAccept(addResponse -> {
                 if (isDictionaryErrorResponse(addResponse)) {
                     Platform.runLater(() -> {
+                        loading.close();
                         String error = extractDictionaryError(addResponse, "Could not add the new parameter name.");
                         yellowBookStatusLabel.setText(error);
                         AlertUtils.showErrorAlert("Rename Failed", error);
@@ -237,6 +247,7 @@ public class YellowBookTabController {
                 ApiService.getInstance()
                     .sendDictionaryRequest(deleteMessage, contextUsecaseId, context.useCaseName(), chatSessionId)
                     .thenAccept(deleteResponse -> Platform.runLater(() -> {
+                        loading.close();
                         if (isDictionaryErrorResponse(deleteResponse)) {
                             String error = extractDictionaryError(deleteResponse, "Added the new name, but could not remove the old parameter.");
                             yellowBookStatusLabel.setText(error);
@@ -250,12 +261,18 @@ public class YellowBookTabController {
                         loadYellowBookDictionary();
                     }))
                     .exceptionally(ex -> {
-                        Platform.runLater(() -> AlertUtils.showErrorAlert("Rename Failed", ex.getMessage()));
+                        Platform.runLater(() -> {
+                            loading.close();
+                            AlertUtils.showErrorAlert("Rename Failed", ex.getMessage());
+                        });
                         return null;
                     });
             })
             .exceptionally(ex -> {
-                Platform.runLater(() -> AlertUtils.showErrorAlert("Rename Failed", ex.getMessage()));
+                Platform.runLater(() -> {
+                    loading.close();
+                    AlertUtils.showErrorAlert("Rename Failed", ex.getMessage());
+                });
                 return null;
             });
     }
@@ -354,9 +371,11 @@ public class YellowBookTabController {
             yellowBookStatusLabel.setText("Sending dictionary update...");
         }
 
+        ButtonLoadingState loading = ButtonLoadingState.start(yellowBookSaveButton, "Saving...");
         ApiService.getInstance()
             .sendDictionaryRequest(message, contextUsecaseId, context.useCaseName(), chatSessionId)
             .thenAccept(response -> Platform.runLater(() -> {
+                loading.close();
                 if (response == null || response.has("error")) {
                     String error = response == null ? "No response from n8n." : response.path("message").asText("Dictionary update failed.");
                     AlertUtils.showErrorAlert("Dictionary Update Failed", error);
@@ -370,7 +389,10 @@ public class YellowBookTabController {
                 loadYellowBookDictionary();
             }))
             .exceptionally(ex -> {
-                Platform.runLater(() -> AlertUtils.showErrorAlert("Dictionary Update Failed", ex.getMessage()));
+                Platform.runLater(() -> {
+                    loading.close();
+                    AlertUtils.showErrorAlert("Dictionary Update Failed", ex.getMessage());
+                });
                 return null;
             });
     }

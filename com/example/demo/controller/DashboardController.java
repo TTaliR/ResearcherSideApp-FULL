@@ -8,6 +8,7 @@ import com.example.demo.model.UseCase;
 import com.example.demo.parser.MappingConfigParser;
 import com.example.demo.service.ApiService;
 import com.example.demo.util.AlertUtils;
+import com.example.demo.util.ButtonLoadingState;
 import com.example.demo.util.FormatUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import javafx.application.Platform;
@@ -277,8 +278,10 @@ public class DashboardController {
             return;
         }
 
+        ButtonLoadingState loading = ButtonLoadingState.start(leftSidebarController.getAddUseCaseButton(), "Creating...");
         ApiService.getInstance().createUseCase(name, description)
                 .thenAccept(response -> Platform.runLater(() -> {
+                    loading.close();
                     if (response == null || response.has("error")) {
                         String errorMessage = response == null
                                 ? "Could not create the use case. Please try again."
@@ -363,9 +366,10 @@ public class DashboardController {
                     loadUseCases();
                 }))
                 .exceptionally(ex -> {
-                    Platform.runLater(() ->
-                            AlertUtils.showErrorAlert("Create Failed", "Failed to create use case: " + ex.getMessage())
-                    );
+                    Platform.runLater(() -> {
+                            loading.close();
+                            AlertUtils.showErrorAlert("Create Failed", "Failed to create use case: " + ex.getMessage());
+                    });
                     return null;
                 });
     }
@@ -876,8 +880,10 @@ public class DashboardController {
             return;
         }
 
+        ButtonLoadingState loading = ButtonLoadingState.start(leftSidebarController.getAssignUserUseCaseButton(), "Assigning...");
         ApiService.getInstance().assignUseCaseToUser(selectedUser.getUserID(), selectedUsecaseId)
                 .thenAccept(success -> Platform.runLater(() -> {
+                    loading.close();
                     if (!success) {
                         AlertUtils.showErrorAlert("Update Failed", "Could not assign use case to user. Please try again.");
                         updateAssignUserUseCaseButtonState();
@@ -901,6 +907,7 @@ public class DashboardController {
                 }))
                 .exceptionally(ex -> {
                     Platform.runLater(() -> {
+                        loading.close();
                         AlertUtils.showErrorAlert("Update Failed", "Failed to assign use case: " + ex.getMessage());
                         updateAssignUserUseCaseButtonState();
                     });
