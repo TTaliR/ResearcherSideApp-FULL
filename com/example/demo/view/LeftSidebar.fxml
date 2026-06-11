@@ -7,6 +7,10 @@
 <?import javafx.scene.control.ListView?>
 <?import javafx.scene.control.Separator?>
 <?import javafx.scene.control.ToggleButton?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
 <?import javafx.scene.layout.VBox?>
 
 <VBox prefWidth="250.0" styleClass="sidebar" xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.example.demo.controller.LeftSidebarController">
@@ -27,7 +31,19 @@
     </VBox>
 
     <VBox fx:id="UsersSidebarPane" spacing="8.0" visible="false" managed="false" VBox.vgrow="ALWAYS">
-        <Label styleClass="sidebar-section-title" text="Users List" />
+        <HBox alignment="CENTER_LEFT" spacing="8.0">
+            <Label styleClass="sidebar-section-title" text="Users List" />
+            <Region HBox.hgrow="ALWAYS" />
+            <Button fx:id="addUserButton" styleClass="sidebar-user-settings-button">
+                <graphic>
+                    <ImageView fitHeight="22.0" fitWidth="22.0" preserveRatio="true">
+                        <image>
+                            <Image url="@../images/add-user.png" />
+                        </image>
+                    </ImageView>
+                </graphic>
+            </Button>
+        </HBox>
         <Label text="Total Users:" styleClass="sidebar-muted-text" />
         <Label fx:id="UsersCountLabel" text="0" styleClass="sidebar-count" />
         <ListView fx:id="UsersSidebarList" VBox.vgrow="ALWAYS" />

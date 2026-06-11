@@ -1,21 +1,15 @@
 package com.example.demo.controller;
 
 import com.example.demo.model.User;
-import com.example.demo.service.ApiService;
-import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonBar;
-import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
-import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
-import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
@@ -24,12 +18,9 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
-import javafx.geometry.Insets;
-import javafx.scene.Node;
 
 import java.util.Arrays;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -64,6 +55,9 @@ public class LeftSidebarController {
     private Button addUseCaseButton;
     @FXML
     private Button assignUserUseCaseButton;
+    @FXML
+    private Button addUserButton;
+
 
     private final ObservableList<User> users = FXCollections.observableArrayList();
     private final ObservableList<String> useCases = FXCollections.observableArrayList();
@@ -73,6 +67,7 @@ public class LeftSidebarController {
     private Consumer<User> onUserSelected;
     private Consumer<User> onEditUserRequested;
     private Runnable onAddUseCaseRequested;
+    private Runnable onAddUserRequested;
     private Runnable onAssignUserUseCaseRequested;
 
     @FXML
@@ -83,6 +78,13 @@ public class LeftSidebarController {
     private void setupSidebar() {
         useCasesNavButton.setOnAction(ignored -> setSidebarMode(true));
         UsersNavButton.setOnAction(ignored -> setSidebarMode(false));
+        addUserButton.setOnAction(ignored -> {
+            if (onAddUserRequested != null) {
+                onAddUserRequested.run();
+            }
+        });
+        addUserButton.setTooltip(new Tooltip("Add user"));
+        addUserButton.setFocusTraversable(false);
         setSidebarMode(true);
 
         setupUsersSidebarListCellFactory();
@@ -311,6 +313,10 @@ public class LeftSidebarController {
 
     public void setOnAddUseCaseRequested(Runnable callback) {
         this.onAddUseCaseRequested = callback;
+    }
+
+    public void setOnAddUserRequested(Runnable callback) {
+        this.onAddUserRequested = callback;
     }
 
     public void setOnAssignUserUseCaseRequested(Runnable callback) {

@@ -47,6 +47,7 @@ public class ApiService {
     public static final String EP_CHAT_CONFIG = "/chat";
     public static final String EP_CHECK_CONNECTION = "/check-connection";
     public static final String EP_SET_USERS = "/edit-users";
+    public static final String EP_ADD_USER = "/add-user";
     public static final String EP_SCHEDULE = "/schedule";
     public static final String EP_CREATE_USECASE = "/create-usecase";
     public static final String EP_ASSIGN_USECASE = "/assign-usecase";
@@ -383,6 +384,29 @@ public class ApiService {
         payload.put("fName", trimmedFirstName);
         payload.put("lName", trimmedLastName);
         return post(EP_SET_USERS, payload);
+    }
+
+    public CompletableFuture<Boolean> addUser(int userId, String firstName, String lastName) {
+        String trimmedFirstName = firstName == null ? "" : firstName.trim();
+        String trimmedLastName = lastName == null ? "" : lastName.trim();
+        if (userId <= 0) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        Map<String, String> params = new HashMap<>();
+        params.put("userId", String.valueOf(userId));
+        params.put("firstName", trimmedFirstName);
+        params.put("lastName", trimmedLastName);
+
+        return get(EP_ADD_USER, params)
+            .thenApply(response -> {
+                if (response == null || response.has("error")) {
+                    return false;
+                }
+                int responseCode = response.path("code").asInt(response.path("statusCode").asInt(200));
+                return responseCode >= 200 && responseCode < 300;
+            })
+            .exceptionally(ex -> false);
     }
 
     public CompletableFuture<ScheduleApiResponse> listAllSchedules(String usecaseName) {

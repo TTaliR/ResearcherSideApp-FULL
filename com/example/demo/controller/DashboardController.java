@@ -5,6 +5,7 @@ import com.example.demo.model.User;
 import com.example.demo.model.UserUseCaseMapping;
 import com.example.demo.model.RuleCardData;
 import com.example.demo.model.UseCase;
+import com.example.demo.factory.UserDialogFactory;
 import com.example.demo.parser.MappingConfigParser;
 import com.example.demo.service.ApiService;
 import com.example.demo.util.AlertUtils;
@@ -103,6 +104,7 @@ public class DashboardController {
         });
 
         leftSidebarController.setOnAddUseCaseRequested(this::onAddUseCaseRequested);
+        leftSidebarController.setOnAddUserRequested(this::onAddUserRequested);
         leftSidebarController.setOnAssignUserUseCaseRequested(this::onAssignUserUseCase);
         leftSidebarController.setOnEditUserRequested(this::onEditUserRequested);
 
@@ -1277,66 +1279,54 @@ public class DashboardController {
         return users.stream().filter(user -> user.getUserID() == userId).findFirst().orElse(null);
     }
 
+    private void onAddUserRequested() {
+        Optional<UserDialogFactory.AddUserInput> result = UserDialogFactory.showAddUserDialog();
+        if (result.isEmpty()) {
+            return;
+        }
+
+        UserDialogFactory.AddUserInput input = result.get();
+        int userId = input.getUserId();
+        String firstName = input.getFirstName();
+        String lastName = input.getLastName();
+
+        if (findUserById(userId) != null) {
+            AlertUtils.showErrorAlert("User Already Exists", "User " + userId + " already exists. Use the edit button to update their name.");
+            return;
+        }
+
+        ApiService.getInstance().addUser(userId, firstName, lastName)
+            .thenAccept(success -> Platform.runLater(() -> {
+                if (!success) {
+                    AlertUtils.showErrorAlert("Add User Failed", "Could not add the user. Please try again.");
+                    return;
+                }
+
+                String displayName = (firstName + " " + lastName).trim();
+                String message = displayName.isEmpty()
+                    ? "Added user " + userId + "."
+                    : "Added user " + userId + " - " + displayName + ".";
+                AlertUtils.showInfoAlert("User Added", message);
+                loadUserss();
+            }))
+            .exceptionally(ex -> {
+                Platform.runLater(() -> AlertUtils.showErrorAlert("Add User Failed", "Failed to add user: " + ex.getMessage()));
+                return null;
+            });
+    }
+
     private void onEditUserRequested(User user) {
         if (user == null) {
             return;
         }
 
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle("Edit User Name");
-        dialog.setHeaderText("Update name for user " + user.getUserID() + ".");
-
-        ButtonType saveButtonType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
-
-        TextField firstNameField = new TextField(user.getFName());
-        firstNameField.setPromptText("First Name");
-        firstNameField.setPrefWidth(260);
-        TextField lastNameField = new TextField(user.getLName());
-        lastNameField.setPromptText("Last Name");
-        lastNameField.setPrefWidth(260);
-
-        VBox content = new VBox(10,
-            new Label("First Name"),
-            firstNameField,
-            new Label("Last Name"),
-            lastNameField
-        );
-        content.setPadding(new Insets(12, 12, 4, 12));
-        content.setPrefWidth(320);
-        dialog.getDialogPane().setContent(content);
-
-        Node saveButtonNode = dialog.getDialogPane().lookupButton(saveButtonType);
-        if (!(saveButtonNode instanceof Button saveButton)) {
-            return;
-        }
-        Runnable updateSaveState = () -> {
-            String fName = firstNameField.getText() == null ? "" : firstNameField.getText().trim();
-            String lName = lastNameField.getText() == null ? "" : lastNameField.getText().trim();
-            saveButton.setDisable(fName.isBlank() || lName.isBlank());
-        };
-        firstNameField.textProperty().addListener((obs, oldValue, newValue) -> updateSaveState.run());
-        lastNameField.textProperty().addListener((obs, oldValue, newValue) -> updateSaveState.run());
-        updateSaveState.run();
-
-        saveButton.setDefaultButton(true);
-        Runnable fireSaveIfValid = () -> {
-            if (!saveButton.isDisable()) {
-                saveButton.fire();
-            }
-        };
-        firstNameField.setOnAction(ignored -> fireSaveIfValid.run());
-        lastNameField.setOnAction(ignored -> fireSaveIfValid.run());
-
-        Platform.runLater(firstNameField::requestFocus);
-
-        Optional<ButtonType> result = dialog.showAndWait();
-        if (result.isEmpty() || result.get() != saveButtonType) {
+        Optional<UserDialogFactory.EditUserInput> result = UserDialogFactory.showEditUserDialog(user);
+        if (result.isEmpty()) {
             return;
         }
 
-        String newFirstName = firstNameField.getText() == null ? "" : firstNameField.getText().trim();
-        String newLastName = lastNameField.getText() == null ? "" : lastNameField.getText().trim();
+        String newFirstName = result.get().getFirstName();
+        String newLastName = result.get().getLastName();
         if (newFirstName.isBlank() || newLastName.isBlank()) {
             AlertUtils.showErrorAlert("Invalid Name", "First and last name cannot be empty.");
             return;
@@ -1353,7 +1343,7 @@ public class DashboardController {
                 loadUserss();
             }))
             .exceptionally(ex -> {
-                AlertUtils.showErrorAlert("Update Failed", "Failed to update user name: " + ex.getMessage());
+                Platform.runLater(() -> AlertUtils.showErrorAlert("Update Failed", "Failed to update user name: " + ex.getMessage()));
                 return null;
             });
     }
