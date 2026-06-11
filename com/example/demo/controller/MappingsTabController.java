@@ -12,6 +12,8 @@ import com.example.demo.util.ButtonLoadingState;
 import com.example.demo.util.FormatUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import javafx.application.Platform;
+import javafx.beans.value.ChangeListener;
+import javafx.beans.value.ObservableValue;
 import javafx.fxml.FXML;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -47,6 +49,7 @@ public class MappingsTabController {
     @FXML private Button saveRuleButton;
     @FXML private Button refreshRuleButton;
     @FXML private Button editLoggingIntervalButton;
+    @FXML private ToggleGroup mappingToggleGroup;
 
     private Supplier<String> selectedUseCaseSupplier = () -> "";
     private Supplier<Integer> selectedUseCaseIdSupplier = () -> null;
@@ -89,6 +92,18 @@ public class MappingsTabController {
         enforceIntegerInput(ruleMinIntervalField);
         enforceIntegerInput(ruleMaxIntervalField);
         updateSelectedMappingForEdit(null);
+        mappingToggleGroup.selectedToggleProperty().addListener(new ChangeListener<Toggle>() {
+            @Override
+            public void changed(ObservableValue<? extends Toggle> observable, Toggle oldValue, Toggle newValue) {
+                if (newValue == null) {
+                    showingActiveMappingsOnly = true;
+                    mappingToggleGroup.selectToggle(oldValue);
+                } else if (newValue.getUserData() != null) {
+                    showingActiveMappingsOnly = "active".equals(newValue.getUserData().toString());
+                }
+                renderMappingsWhenReady(selectedUseCaseSupplier.get());
+            }
+        });
     }
 
     public void setSelectedUseCaseSupplier(Supplier<String> selectedUseCaseSupplier) {

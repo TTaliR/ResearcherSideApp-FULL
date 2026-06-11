@@ -8,22 +8,14 @@ import com.example.demo.service.ApiService;
 import com.example.demo.util.AlertUtils;
 import com.example.demo.util.ButtonLoadingState;
 import javafx.application.Platform;
+import javafx.beans.value.ChangeListener;
+import javafx.beans.value.ObservableValue;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
-import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
-import javafx.scene.control.ButtonBase;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.ComboBox;
-import javafx.scene.control.Label;
-import javafx.scene.control.Spinner;
-import javafx.scene.control.SpinnerValueFactory;
-import javafx.scene.control.TextField;
-import javafx.scene.control.TextFormatter;
-import javafx.scene.control.ToggleButton;
+import javafx.scene.control.*;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -103,6 +95,8 @@ public class SchedulesTabController {
     private ToggleButton listActiveSchedulesButton;
     @FXML
     private ToggleButton listAllSchedulesButton;
+    @FXML
+    private ToggleGroup scheduleToggleGroup;
 
     private final ObservableList<Schedule> schedules = FXCollections.observableArrayList();
     private Supplier<ScheduleContext> contextSupplier = () -> new ScheduleContext("", null, false);
@@ -115,6 +109,17 @@ public class SchedulesTabController {
     @FXML
     private void initialize() {
         setupSchedulesTable();
+        scheduleToggleGroup.selectedToggleProperty().addListener(new ChangeListener<Toggle>() {
+            @Override
+            public void changed(ObservableValue<? extends Toggle> observable, Toggle oldValue, Toggle newValue) {
+                if (newValue == listActiveSchedulesButton) {
+                    refreshSchedulesForCurrentContext(true);
+                    scheduleToggleGroup.selectToggle(oldValue);
+                } else if (newValue == listAllSchedulesButton) {
+                    refreshSchedulesForCurrentContext(false);
+                }
+            }
+        });
     }
 
     public void setContextSupplier(Supplier<ScheduleContext> contextSupplier) {
