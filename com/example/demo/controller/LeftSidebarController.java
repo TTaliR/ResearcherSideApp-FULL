@@ -27,9 +27,11 @@ import javafx.scene.layout.VBox;
 import javafx.geometry.Insets;
 import javafx.scene.Node;
 
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 /**
  * Controller for the left sidebar component
@@ -86,6 +88,17 @@ public class LeftSidebarController {
         setupUsersSidebarListCellFactory();
 
         useCaseListView.setItems(useCases);
+        useCaseListView.setCellFactory(listView -> new ListCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                } else {
+                    setText(formatUseCaseName(item));
+                }
+            }
+        });
         useCaseListView.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
             if (newValue == null || newValue.isBlank()) {
                 return;
@@ -97,6 +110,28 @@ public class LeftSidebarController {
 
         if (userUseCaseComboBox != null) {
             userUseCaseComboBox.setItems(useCases);
+            userUseCaseComboBox.setCellFactory(listView -> new ListCell<>() {
+                @Override
+                protected void updateItem(String item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty || item == null) {
+                        setText(null);
+                    } else {
+                        setText(formatUseCaseName(item));
+                    }
+                }
+            });
+            userUseCaseComboBox.setButtonCell(new ListCell<>() {
+                @Override
+                protected void updateItem(String item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty || item == null) {
+                        setText(null);
+                    } else {
+                        setText(formatUseCaseName(item));
+                    }
+                }
+            });
             userUseCaseComboBox.valueProperty().addListener((obs, oldValue, newValue) -> updateAssignUserUseCaseButtonState());
         }
         updateAssignUserUseCaseButtonState();
@@ -185,7 +220,7 @@ public class LeftSidebarController {
         selectedUserForAssignmentLabel.setText(userDisplay);
 
         String displayUsecase = user.getUsecaseName();
-        currentUserUseCaseLabel.setText(displayUsecase == null || displayUsecase.isBlank() ? "-" : displayUsecase);
+        currentUserUseCaseLabel.setText(displayUsecase == null || displayUsecase.isBlank() ? "-" : formatUseCaseName(displayUsecase));
 
         if (displayUsecase != null && !displayUsecase.isBlank() && userUseCaseComboBox.getItems().contains(displayUsecase)) {
             userUseCaseComboBox.setValue(displayUsecase);
@@ -240,6 +275,17 @@ public class LeftSidebarController {
     private String formatUser(User user) {
         String name = (user.getFName() + " " + user.getLName()).trim();
         return name.isEmpty() ? String.valueOf(user.getUserID()) : user.getUserID() + " - " + name;
+    }
+
+    private String formatUseCaseName(String useCase) {
+        if (useCase == null || useCase.isBlank()) {
+            return useCase;
+        }
+        // Split by underscore OR positive lookahead for an uppercase letter
+        return Arrays.stream(useCase.split("(?=[A-Z])|_"))
+                .filter(word -> !word.isEmpty()) // filter out empty strings caused by leading uppercase letters
+                .map(word -> Character.toUpperCase(word.charAt(0)) + word.substring(1).toLowerCase())
+                .collect(Collectors.joining(" "));
     }
 
     // Public API for parent controller
@@ -319,4 +365,3 @@ public class LeftSidebarController {
         return useCaseListView.getSelectionModel().getSelectedItem();
     }
 }
-

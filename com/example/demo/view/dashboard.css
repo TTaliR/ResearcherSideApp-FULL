@@ -253,6 +253,51 @@
     -fx-padding: 2 0 2 0;
 }
 
+.prompt-suggestions-pane {
+    -fx-padding: 18 26 20 26;
+    -fx-alignment: center;
+}
+
+.prompt-suggestion-card {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d6dde8;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 12;
+    -fx-pref-width: 220;
+    -fx-min-width: 220;
+    -fx-max-width: 220;
+    -fx-min-height: 120;
+    -fx-effect: dropshadow(gaussian, rgba(15, 23, 42, 0.08), 10, 0.18, 0, 2);
+    -fx-cursor: hand;
+}
+
+.prompt-suggestion-card:hover,
+.prompt-suggestion-card:focused {
+    -fx-background-color: #f8fbff;
+    -fx-border-color: #92c5ff;
+}
+
+.prompt-suggestion-title {
+    -fx-text-fill: #1f2f43;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+
+.prompt-suggestion-command {
+    -fx-text-fill: #1d4ed8;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-background-color: #eef4ff;
+    -fx-background-radius: 6;
+    -fx-padding: 3 8 3 8;
+}
+
+.prompt-suggestion-description {
+    -fx-text-fill: #64748b;
+    -fx-font-size: 12px;
+}
+
 .chat-bubble-user {
     -fx-background-color: #dbeafe;
     -fx-border-color: #92c5ff;

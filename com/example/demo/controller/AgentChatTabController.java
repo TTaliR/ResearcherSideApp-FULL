@@ -14,6 +14,7 @@ import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
 import javafx.geometry.Bounds;
 import javafx.geometry.Pos;
+import javafx.scene.Cursor;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
@@ -22,6 +23,7 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.VBox;
@@ -53,6 +55,8 @@ public class AgentChatTabController {
     private ScrollPane chatScrollPane;
     @FXML
     private VBox chatHistoryBox;
+    @FXML
+    private FlowPane promptSuggestionsPane;
     @FXML
     private ListView<ChatCommandOption> chatCommandDropdownList;
     @FXML
@@ -217,10 +221,16 @@ public class AgentChatTabController {
         if (chatHistoryBox != null) {
             chatHistoryBox.getChildren().clear();
         }
+        if (promptSuggestionsPane != null) {
+            promptSuggestionsPane.getChildren().clear();
+            promptSuggestionsPane.setVisible(false);
+            promptSuggestionsPane.setManaged(false);
+        }
     }
 
     public void addSystemMessage(String message) {
-        addChatMessage(message, false);
+        addChatMessage("Hello,\n\nType a chat message or start with $ for commands\n\n" + message, false);
+        showPromptSuggestions();
     }
 
     public void refreshRuleSummary() {
@@ -574,6 +584,8 @@ public class AgentChatTabController {
             return;
         }
 
+        hidePromptSuggestions();
+
         String selectedUseCase = selectedUseCaseSupplier.get();
         Integer useCaseId = selectedUseCaseIdSupplier.get();
 
@@ -751,6 +763,72 @@ public class AgentChatTabController {
         chatHistoryBox.getChildren().add(row);
     }
 
+    private void showPromptSuggestions() {
+        if (chatHistoryBox == null || promptSuggestionsPane == null) {
+            return;
+        }
+
+        promptSuggestionsPane.getChildren().clear();
+        for (ChatCommandOption option : CHAT_COMMAND_OPTIONS) {
+            promptSuggestionsPane.getChildren().add(createPromptSuggestionCard(option));
+        }
+
+        if (!chatHistoryBox.getChildren().contains(promptSuggestionsPane)) {
+            chatHistoryBox.getChildren().add(promptSuggestionsPane);
+        }
+
+        promptSuggestionsPane.setVisible(true);
+        promptSuggestionsPane.setManaged(true);
+    }
+
+    private VBox createPromptSuggestionCard(ChatCommandOption option) {
+        Label titleLabel = new Label(option.title());
+        titleLabel.getStyleClass().add("prompt-suggestion-title");
+        titleLabel.setWrapText(true);
+
+        Label commandLabel = new Label(option.command());
+        commandLabel.getStyleClass().add("prompt-suggestion-command");
+
+        Label descriptionLabel = new Label(option.description());
+        descriptionLabel.getStyleClass().add("prompt-suggestion-description");
+        descriptionLabel.setWrapText(true);
+
+        VBox card = new VBox(6.0, titleLabel, commandLabel, descriptionLabel);
+        card.getStyleClass().add("prompt-suggestion-card");
+        card.setFocusTraversable(true);
+        card.setCursor(Cursor.HAND);
+        card.setOnMouseClicked(event -> submitPromptSuggestion(option));
+        card.setOnKeyPressed(event -> {
+            if (event.getCode() == KeyCode.ENTER || event.getCode() == KeyCode.SPACE) {
+                submitPromptSuggestion(option);
+                event.consume();
+            }
+        });
+        return card;
+    }
+
+    private void submitPromptSuggestion(ChatCommandOption option) {
+        if (option == null || chatInputField == null) {
+            return;
+        }
+
+        chatInputField.setText(option.command());
+        chatInputField.positionCaret(option.command().length());
+        onSendMessage();
+    }
+
+    private void hidePromptSuggestions() {
+        if (promptSuggestionsPane == null) {
+            return;
+        }
+
+        promptSuggestionsPane.setVisible(false);
+        promptSuggestionsPane.setManaged(false);
+        if (chatHistoryBox != null) {
+            chatHistoryBox.getChildren().remove(promptSuggestionsPane);
+        }
+    }
+
     private void setContextDrawerVisible(boolean visible) {
         if (contextDrawerContentController != null) {
             contextDrawerContentController.setVisible(visible);
@@ -764,7 +842,7 @@ public class AgentChatTabController {
         options.add(new ChatCommandOption("$knowledge", "Experiment Background", "What is the background of this experiment", "what is the background of this experiment"));
         options.add(new ChatCommandOption("$dictionary", "Show Use Cases", "Show the use cases in the dictionary", "show me the use cases in the dictionary"));
         options.add(new ChatCommandOption("$schedule", "Show Active Schedules", "Show the active schedules", "show me the active schedules"));
-        options.add(new ChatCommandOption("$usecase", "Show Use Case Configuration", "Show the use case configuration", "show me the use case configuration"));
+        //options.add(new ChatCommandOption("$usecase", "Show Use Case Configuration", "Show the use case configuration", "show me the use case configuration"));
         return List.copyOf(options);
     }
 

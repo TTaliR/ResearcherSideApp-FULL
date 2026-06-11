@@ -6,6 +6,7 @@
 <?import javafx.scene.control.ScrollPane?>
 <?import javafx.scene.control.TextField?>
 <?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.FlowPane?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.VBox?>
 
@@ -13,7 +14,9 @@
     <center>
         <VBox spacing="10.0" styleClass="chat-panel" BorderPane.alignment="CENTER">
             <ScrollPane fx:id="chatScrollPane" fitToWidth="true" fitToHeight="false" styleClass="chat-scroll" VBox.vgrow="ALWAYS">
-                <VBox fx:id="chatHistoryBox" spacing="6.0" styleClass="chat-history" />
+                <VBox fx:id="chatHistoryBox" spacing="6.0" styleClass="chat-history">
+                    <FlowPane fx:id="promptSuggestionsPane" alignment="BOTTOM_CENTER" hgap="12.0" vgap="12.0" visible="false" managed="false" styleClass="prompt-suggestions-pane" />
+                </VBox>
             </ScrollPane>
             <Label fx:id="agentTypingLabel" text="Agent is typing..." visible="false" managed="false" styleClass="sidebar-muted-text" />
             <VBox spacing="6.0">
