@@ -596,6 +596,10 @@ public class ApiService {
             return response.get("payload");
         }
 
+        if (response.has("schedules") && response.get("schedules").isArray()) {
+            return response.get("schedules");
+        }
+
         return null;
     }
 

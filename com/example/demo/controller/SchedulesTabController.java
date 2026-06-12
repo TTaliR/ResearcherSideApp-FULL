@@ -112,11 +112,8 @@ public class SchedulesTabController {
         scheduleToggleGroup.selectedToggleProperty().addListener(new ChangeListener<Toggle>() {
             @Override
             public void changed(ObservableValue<? extends Toggle> observable, Toggle oldValue, Toggle newValue) {
-                if (newValue == listActiveSchedulesButton) {
-                    refreshSchedulesForCurrentContext(true);
+                if (newValue == null && oldValue != null) {
                     scheduleToggleGroup.selectToggle(oldValue);
-                } else if (newValue == listAllSchedulesButton) {
-                    refreshSchedulesForCurrentContext(false);
                 }
             }
         });
