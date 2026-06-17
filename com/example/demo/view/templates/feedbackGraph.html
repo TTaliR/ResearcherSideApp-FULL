@@ -434,7 +434,7 @@ const dataLayer = g.append("g")
     const maxPulses = d3.max(data, d => d.pulses || 0) || 1;
     const radius = d3.scaleSqrt()
     .domain([0, maxPulses])
-    .range([2, 10]);
+    .range([1, 8]);
 
     const tooltip = d3.select(".tooltip");
     const detailPanel = d3.select("#detailPanel");
@@ -617,8 +617,8 @@ dataLayer.selectAll("circle")
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
 
-        let leftPos = event.pageX + 15;
-        let topPos = event.pageY - 30;
+        let leftPos = event.pageX + 10;
+        let topPos = event.pageY + 8;
 
         // Flip to left side if too close to right edge
         if (leftPos + tooltipWidth > viewportWidth - 20) {
@@ -626,7 +626,7 @@ dataLayer.selectAll("circle")
         }
         // Flip below if too close to top
         if (topPos < 10) {
-          topPos = event.pageY + 20;
+          topPos = event.pageY + 8;
         }
         // Adjust if too close to bottom
         if (topPos + tooltipHeight > viewportHeight - 10) {
