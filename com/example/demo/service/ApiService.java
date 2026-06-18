@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 // - Responses may be raw arrays, wrapped in {data: [...]}, {payload: [...]}, or single objects; use extractArray() to normalize.
 public class ApiService {
 
-    //should be replaced with ngrok link
+    // should be replaced with ngrok link
     private static final String BASE_URL = "http://localhost:5678/webhook"; //for local testing
     //private static final String BASE_URL = "https://marcella-unguerdoned-ayanna.ngrok-free.dev/webhook";  //server
     //private static final String BASE_URL = "https://vacantly-holmic-etta.ngrok-free.dev/webhook";  //liran
