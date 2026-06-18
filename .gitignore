@@ -1,2 +1,26 @@
-/out
-/.idea
+# Build output
+/out/
+/build/
+/target/
+/bin/
+*.class
+
+# Local IDE files
+/.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.classpath
+.project
+.settings/
+
+# Local logs and crash dumps
+*.log
+hs_err_pid*.log
+replay_pid*.log
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
