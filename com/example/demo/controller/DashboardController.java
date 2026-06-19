@@ -65,7 +65,8 @@ public class DashboardController {
     private final ObservableList<String> useCases = FXCollections.observableArrayList();
     private final Map<String, UseCase> useCaseRegistry = new HashMap<>();
     private final List<RuleCardData> allRules = new ArrayList<>();
-    private final String chatSessionId = UUID.randomUUID().toString();
+    private final Map<String, String> chatSessionIdsByUseCase = new HashMap<>();
+    private String fallbackChatSessionId = UUID.randomUUID().toString();
     private String activeMonitoringTypeKey = "";
 
     private JsonNode latestGraphData;
@@ -171,7 +172,7 @@ public class DashboardController {
             return;
         }
 
-        yellowBookTabContentController.setChatSessionId(chatSessionId);
+        yellowBookTabContentController.setChatSessionId(getCurrentChatSessionId());
         yellowBookTabContentController.setContextSupplier(() -> new YellowBookTabController.DictionaryContext(
             resolveDictionaryContextUseCaseId(),
             getSelectedUsecaseName()
@@ -188,6 +189,35 @@ public class DashboardController {
          return uc == null ? "" : uc.trim();
       }
 
+    private String getCurrentChatSessionId() {
+        String selectedUseCase = state.getSelectedUseCase();
+        String key = FormatUtils.normalizeUseCaseName(selectedUseCase);
+        if (key == null || key.isBlank()) {
+            return fallbackChatSessionId;
+        }
+        return chatSessionIdsByUseCase.computeIfAbsent(key, ignored -> UUID.randomUUID().toString());
+    }
+
+    private void startNewChatSessionForSelectedUseCase() {
+        String selectedUseCase = state.getSelectedUseCase();
+        String key = FormatUtils.normalizeUseCaseName(selectedUseCase);
+        if (key == null || key.isBlank()) {
+            fallbackChatSessionId = UUID.randomUUID().toString();
+        } else {
+            chatSessionIdsByUseCase.put(key, UUID.randomUUID().toString());
+        }
+
+        if (yellowBookTabContentController != null) {
+            yellowBookTabContentController.setChatSessionId(getCurrentChatSessionId());
+        }
+        if (agentChatTabContentController != null) {
+            agentChatTabContentController.clearMessages();
+            agentChatTabContentController.addSystemMessage("Started a new session for "
+                    + (selectedUseCase == null || selectedUseCase.isBlank() ? "the current context" : selectedUseCase)
+                    + ".");
+        }
+    }
+
     private String requireSelectedUsecaseName() {
         String usecaseName = getSelectedUsecaseName();
         if (usecaseName.isBlank()) {
@@ -195,7 +225,6 @@ public class DashboardController {
         }
         return usecaseName;
     }
-
     @FXML
     private void onAddUseCaseRequested() {
         Dialog<ButtonType> dialog = new Dialog<>();
@@ -420,7 +449,7 @@ public class DashboardController {
         mappingsTabContentController.setUsersAssignedToRuleResolver(this::findUsersAssignedToRule);
         mappingsTabContentController.setMappingRefreshCallback(this::refreshMappingData);
         mappingsTabContentController.setUseCasesRefreshCallback(this::loadUseCases);
-        mappingsTabContentController.setChatSessionIdSupplier(() -> chatSessionId);
+        mappingsTabContentController.setChatSessionIdSupplier(this::getCurrentChatSessionId);
         mappingsTabContentController.onSelectedUseCaseChanged(state.getSelectedUseCase());
     }
 
@@ -449,7 +478,8 @@ public class DashboardController {
                 mappingsTabContentController.refreshMappings();
             }
         });
-        agentChatTabContentController.setChatSessionIdSupplier(() -> chatSessionId);
+        agentChatTabContentController.setChatSessionIdSupplier(this::getCurrentChatSessionId);
+        agentChatTabContentController.setNewSessionCallback(this::startNewChatSessionForSelectedUseCase);
         agentChatTabContentController.initializeChat();
     }
 
@@ -947,6 +977,9 @@ public class DashboardController {
         }
 
         updateAgentChatUseCaseLabel(selectedUseCase);
+        if (yellowBookTabContentController != null) {
+            yellowBookTabContentController.setChatSessionId(getCurrentChatSessionId());
+        }
 
         if (leftSidebarController.getUseCaseListView() != null && selectedUseCase != null && !selectedUseCase.isBlank()) {
             String current = leftSidebarController.getUseCaseListView().getSelectionModel().getSelectedItem();

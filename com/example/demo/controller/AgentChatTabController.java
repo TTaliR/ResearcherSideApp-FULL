@@ -48,6 +48,7 @@ import java.util.stream.Collectors;
 
 public class AgentChatTabController {
     private static final String DEFAULT_CHAT_COMMAND_PREFIX = "$";
+    private static final int MAX_RECENT_SESSION_MESSAGES = 12;
     private static final List<ChatCommandOption> CHAT_COMMAND_OPTIONS = createChatCommandOptions();
     private static final Map<String, ChatCommandOption> CHAT_COMMAND_OPTIONS_BY_COMMAND = createChatCommandOptionMap();
 
@@ -63,6 +64,8 @@ public class AgentChatTabController {
     private TextField chatInputField;
     @FXML
     private Button chatSendButton;
+    @FXML
+    private Button newSessionButton;
     @FXML
     private Label chatCommandHintLabel;
     @FXML
@@ -87,6 +90,9 @@ public class AgentChatTabController {
     private Function<RuleCardData, List<User>> usersAssignedToRuleResolver = rule -> List.of();
     private Supplier<CompletableFuture<Void>> mappingRefreshCallback = () -> CompletableFuture.completedFuture(null);
     private Supplier<String> chatSessionIdSupplier = () -> "";
+    private Runnable newSessionCallback = () -> {};
+    private BooleanSupplier allUsersSelectedSupplier = () -> false;
+    private final List<Map<String, String>> recentSessionMessages = new ArrayList<>();
 
     public void setSelectedUseCaseSupplier(Supplier<String> selectedUseCaseSupplier) {
         this.selectedUseCaseSupplier = selectedUseCaseSupplier == null ? () -> null : selectedUseCaseSupplier;
@@ -111,9 +117,13 @@ public class AgentChatTabController {
     }
 
     public void setAllUsersSelectedSupplier(BooleanSupplier allUsersSelectedSupplier) {
-        BooleanSupplier supplier = allUsersSelectedSupplier == null ? () -> false : allUsersSelectedSupplier;
+        this.allUsersSelectedSupplier =
+                allUsersSelectedSupplier == null ? () -> false : allUsersSelectedSupplier;
+
         if (contextDrawerContentController != null) {
-            contextDrawerContentController.setAllUsersSelectedSupplier(supplier);
+            contextDrawerContentController.setAllUsersSelectedSupplier(
+                    this.allUsersSelectedSupplier
+            );
         }
     }
 
@@ -174,10 +184,17 @@ public class AgentChatTabController {
         this.chatSessionIdSupplier = supplier == null ? () -> "" : supplier;
     }
 
+    public void setNewSessionCallback(Runnable callback) {
+        this.newSessionCallback = callback == null ? () -> {} : callback;
+    }
+
     public void initializeChat() {
         setupChatShortcuts();
         setupChatAutocomplete();
         chatSendButton.setOnAction(ignored -> onSendMessage());
+        if (newSessionButton != null) {
+            newSessionButton.setOnAction(ignored -> newSessionCallback.run());
+        }
         chatInputField.setOnAction(ignored -> onSendMessage());
 
         chatHistoryBox.heightProperty().addListener((observable, oldValue, newValue) -> chatScrollPane.setVvalue(1.0));
@@ -226,6 +243,7 @@ public class AgentChatTabController {
             promptSuggestionsPane.setVisible(false);
             promptSuggestionsPane.setManaged(false);
         }
+        recentSessionMessages.clear();
     }
 
     public void addSystemMessage(String message) {
@@ -612,6 +630,7 @@ public class AgentChatTabController {
         String expandedMessage = expandChatCommand(message);
         boolean mappingListRequest = isMappingListRequest(message, expandedMessage);
         User selectedUser = selectedUserSupplier.get();
+        boolean allUsersSelected = allUsersSelectedSupplier.getAsBoolean();
         if (selectedUser != null && !userUseCaseAssignmentValidator.test(selectedUser, selectedUseCase)) {
             AlertUtils.showErrorAlert("Invalid User", "Please select a user assigned to " + selectedUseCase + " before chatting.");
             refreshUsersForSelectedUseCaseCallback.accept(null);
@@ -619,14 +638,23 @@ public class AgentChatTabController {
         }
         userUseCaseContextApplier.accept(selectedUser, selectedUseCase);
 
-        addChatMessage(message, true);
-        chatInputField.clear();
-
         Map<String, Object> payload = new HashMap<>();
         payload.put("message", expandedMessage);
         payload.put("session_id", chatSessionIdSupplier.get());
         payload.put("usecase_id", useCaseId);
         payload.put("usecase_name", selectedUseCase);
+        payload.put("all_users_selected", allUsersSelected);
+        payload.put(
+                "analysis_scope",
+                allUsersSelected ? "usecase" : "participant"
+        );
+        payload.put("context", buildSessionContext(
+                selectedUseCase,
+                useCaseId,
+                selectedUser,
+                allUsersSelected,
+                expandedMessage
+        ));
         if (selectedUser != null) {
             payload.put("user_id", selectedUser.getUserID());
             payload.put("user_name", userFormatter.apply(selectedUser));
@@ -634,6 +662,9 @@ public class AgentChatTabController {
             payload.put("user_usecase_name", selectedUser.getUsecaseName());
             payload.put("user_mapping_id", selectedUser.getMappingId());
         }
+
+        addChatMessage(message, true);
+        chatInputField.clear();
 
         setAgentTyping(true);
 
@@ -664,30 +695,132 @@ public class AgentChatTabController {
         setAgentTyping(false);
         if (response != null && response.has("reply")) {
             String reply = response.get("reply").asText();
-            addChatMessage(mappingListRequest ? appendMappingAssignmentSummary(reply, selectedUseCase) : reply, false);
+            addChatMessage(reply, false);
         } else {
             addChatMessage("AI response did not include reply field.", false);
         }
     }
 
-    private boolean isMappingListRequest(String originalMessage, String expandedMessage) {
-        String original = originalMessage == null ? "" : originalMessage.trim().toLowerCase(Locale.ROOT);
-        String expanded = expandedMessage == null ? "" : expandedMessage.trim().toLowerCase(Locale.ROOT);
+    private Map<String, Object> buildSessionContext(String selectedUseCase, Integer useCaseId, User selectedUser,
+                                                    boolean allUsersSelected, String currentRequest) {
+        List<Map<String, String>> recentConversation = buildRecentConversationSnapshot();
 
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("selected_usecase_id", useCaseId);
+        context.put("selected_usecase_name", selectedUseCase);
+        context.put("all_users_selected", allUsersSelected);
+        context.put("analysis_scope", allUsersSelected ? "usecase" : "participant");
+        context.put("recent_conversation", recentConversation);
+        context.put("session_memory", buildSessionMemory(currentRequest, recentConversation));
+
+        if (selectedUser != null) {
+            context.put("selected_user_id", selectedUser.getUserID());
+            context.put("selected_user_name", userFormatter.apply(selectedUser));
+            context.put("selected_user_usecase_id", selectedUser.getUsecaseId());
+            context.put("selected_user_usecase_name", selectedUser.getUsecaseName());
+            context.put("selected_user_mapping_id", selectedUser.getMappingId());
+        }
+
+        return context;
+    }
+
+    private Map<String, Object> buildSessionMemory(String currentRequest, List<Map<String, String>> recentConversation) {
+        Map<String, Object> memory = new LinkedHashMap<>();
+        memory.put("current_request", currentRequest == null ? "" : currentRequest.trim());
+        memory.put("recent_conversation", recentConversation == null ? List.of() : recentConversation);
+        memory.put("previous_user_request", findLastConversationContent(recentConversation, "user"));
+        memory.put("previous_assistant_reply", findLastConversationContent(recentConversation, "assistant"));
+        return memory;
+    }
+
+    private String findLastConversationContent(List<Map<String, String>> conversation, String role) {
+        if (conversation == null || role == null || role.isBlank()) {
+            return "";
+        }
+
+        for (int i = conversation.size() - 1; i >= 0; i--) {
+            Map<String, String> item = conversation.get(i);
+            if (item == null) {
+                continue;
+            }
+
+            String itemRole = item.getOrDefault("role", "");
+            if (role.equalsIgnoreCase(itemRole)) {
+                return item.getOrDefault("content", "");
+            }
+        }
+
+        return "";
+    }
+
+    private List<Map<String, String>> buildRecentConversationSnapshot() {
+        List<Map<String, String>> snapshot = new ArrayList<>(recentSessionMessages);
+        int fromIndex = Math.max(0, snapshot.size() - MAX_RECENT_SESSION_MESSAGES);
+        return List.copyOf(snapshot.subList(fromIndex, snapshot.size()));
+    }
+
+    private void rememberConversationMessage(String role, String content) {
+        String normalizedRole = role == null ? "" : role.trim();
+        String normalizedContent = content == null ? "" : content.trim();
+        if (normalizedRole.isEmpty() || normalizedContent.isEmpty()) {
+            return;
+        }
+
+        recentSessionMessages.add(createConversationMessage(normalizedRole, normalizedContent));
+        while (recentSessionMessages.size() > MAX_RECENT_SESSION_MESSAGES) {
+            recentSessionMessages.remove(0);
+        }
+    }
+
+    private Map<String, String> createConversationMessage(String role, String content) {
+        Map<String, String> message = new LinkedHashMap<>();
+        message.put("role", role);
+        message.put("content", content == null ? "" : content);
+        return message;
+    }
+
+    private boolean isMappingListRequest(String originalMessage, String expandedMessage) {
+        String original = originalMessage == null
+                ? ""
+                : originalMessage.trim().toLowerCase(Locale.ROOT);
+
+        String expanded = expandedMessage == null
+                ? ""
+                : expandedMessage.trim().toLowerCase(Locale.ROOT);
+
+        // The dedicated command explicitly requests the full mapping list
+        // with its assignment summary.
         if (original.startsWith("$mapping")) {
             return true;
         }
 
-        return isMappingListText(expanded) || isMappingListText(original);
+        return isExplicitMappingListText(original)
+                || isExplicitMappingListText(expanded);
     }
 
-    private boolean isMappingListText(String text) {
+    private boolean isExplicitMappingListText(String text) {
         if (text == null || text.isBlank()) {
             return false;
         }
 
-        return text.contains("mapping")
-                && (text.contains("show") || text.contains("list") || text.contains("current") || text.contains("active"));
+        // These are analysis or summary requests, not raw mapping-list requests.
+        if (text.contains("summarize")
+                || text.contains("summary")
+                || text.contains("explain")
+                || text.contains("review")
+                || text.contains("compare")
+                || text.contains("analyze")) {
+            return false;
+        }
+
+        boolean explicitListVerb =
+                text.startsWith("show ")
+                        || text.startsWith("list ")
+                        || text.startsWith("display ")
+                        || text.startsWith("give me ");
+
+        return explicitListVerb
+                && text.contains("mapping");
     }
 
     private String appendMappingAssignmentSummary(String reply, String useCase) {
@@ -761,6 +894,7 @@ public class AgentChatTabController {
         row.setAlignment(userMessage ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
 
         chatHistoryBox.getChildren().add(row);
+        rememberConversationMessage(userMessage ? "user" : "assistant", text);
     }
 
     private void showPromptSuggestions() {
