@@ -27,23 +27,12 @@ public class MappingUiFactory {
         button.setTooltip(new Tooltip("Edit mapping"));
         button.setOnMouseClicked(event -> event.consume());
         button.setOnAction(ignored -> onSelect.accept(rule));
-        if (rule != null && !rule.active) {
-            button.setDisable(true);
-            button.setTooltip(new Tooltip("Inactive mapping cannot be edited"));
-        }
         return button;
     }
 
     public static Button createDeleteMappingButton(RuleCardData rule, Consumer<RuleCardData> onDelete) {
         Button button = SharedUiFactory.createDeleteIconButton("Delete mapping");
         button.setOnAction(ignored -> onDelete.accept(rule));
-        button.setOnMouseClicked(event -> event.consume());
-        return button;
-    }
-
-    public static Button createActivateMappingButton(RuleCardData rule, Consumer<RuleCardData> onActivate) {
-        Button button = SharedUiFactory.createActivateIconButton("Activate mapping");
-        button.setOnAction(ignored -> onActivate.accept(rule));
         button.setOnMouseClicked(event -> event.consume());
         return button;
     }
@@ -56,21 +45,13 @@ public class MappingUiFactory {
                                                 Consumer<RuleCardData> onSelect,
                                                 Consumer<RuleCardData> onDelete,
                                                 boolean selected) {
-        return createHistoryMappingCard(mappingNode, useCase, onSelect, onDelete, null, selected);
-    }
-
-    public static VBox createHistoryMappingCard(JsonNode mappingNode, String useCase,
-                                                Consumer<RuleCardData> onSelect,
-                                                Consumer<RuleCardData> onDelete,
-                                                Consumer<RuleCardData> onActivate,
-                                                boolean selected) {
         RuleCardData rule = createRuleFromHistoryMapping(mappingNode, useCase);
 
         VBox card = new VBox(8);
         card.setUserData(rule.mappingId);
         card.getStyleClass().add("mapping-card");
         if (!rule.active) {
-            card.getStyleClass().add("mapping-card-inactive");
+            card.getStyleClass().add("mapping-card-unassigned");
         }
         if (selected) {
             card.getStyleClass().add("mapping-card-selected");
@@ -89,10 +70,8 @@ public class MappingUiFactory {
         if (onSelect != null) {
             titleRow.getChildren().add(createSelectMappingButton(rule, onSelect));
         }
-        if (rule.active && onDelete != null) {
+        if (onDelete != null) {
             titleRow.getChildren().add(createDeleteMappingButton(rule, onDelete));
-        } else if (!rule.active && onActivate != null) {
-            titleRow.getChildren().add(createActivateMappingButton(rule, onActivate));
         }
 
         Label values = new Label("Values: " + rule.minValue + "-" + rule.maxValue);
@@ -112,12 +91,12 @@ public class MappingUiFactory {
 
         card.getChildren().addAll(titleRow, values, pulses, intensity, duration, interval, dateInfo);
         if (!rule.active) {
-            Label inactiveHint = new Label("Historical mapping (Inactive)");
-            inactiveHint.getStyleClass().add("mapping-assigned-muted");
-            card.getChildren().add(inactiveHint);
+            Label unassignedHint = new Label("Not currently assigned");
+            unassignedHint.getStyleClass().add("mapping-assigned-muted");
+            card.getChildren().add(unassignedHint);
         }
 
-        if (onSelect != null && rule.active) {
+        if (onSelect != null) {
             card.setOnMouseClicked(event -> {
                 if (event.getTarget() instanceof ButtonBase) {
                     return;

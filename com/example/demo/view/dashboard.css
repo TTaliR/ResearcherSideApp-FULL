@@ -460,23 +460,6 @@
     -fx-border-color: #2563eb;
 }
 
-.mapping-card-inactive {
-    -fx-background-color: #f3f5f8;
-    -fx-border-color: #a8b3c2;
-    -fx-border-style: dashed;
-    -fx-opacity: 0.78;
-}
-
-.mapping-card-inactive .label {
-    -fx-text-fill: #64748b;
-}
-
-.mapping-card-inactive.mapping-card-selected {
-    -fx-background-color: #f8fbff;
-    -fx-border-color: #2563eb;
-    -fx-border-style: dashed;
-}
-
 .mapping-card-title {
     -fx-font-size: 13px;
     -fx-font-weight: bold;
@@ -584,29 +567,6 @@
 
 .mapping-delete-button:disabled:hover {
     -fx-background-color: transparent;
-}
-
-.mapping-activate-button {
-    -fx-background-color: #ffffff;
-    -fx-border-color: #22c55e;
-    -fx-border-width: 1.5;
-    -fx-padding: 6;
-    -fx-min-width: 32;
-    -fx-min-height: 32;
-    -fx-pref-width: 32;
-    -fx-pref-height: 32;
-    -fx-background-radius: 8;
-    -fx-border-radius: 8;
-    -fx-effect: dropshadow(gaussian, rgba(22, 163, 74, 0.24), 8, 0.25, 0, 2);
-}
-
-.mapping-activate-button:hover {
-    -fx-background-color: #ecfdf5;
-    -fx-border-color: #16a34a;
-}
-
-.mapping-card-inactive .mapping-activate-button {
-    -fx-opacity: 1;
 }
 
 .schedule-card {

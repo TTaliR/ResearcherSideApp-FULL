@@ -522,13 +522,10 @@ public class MappingsTabController {
             boolean assignedToSelectedUser = selectedUser == null
                     ? isRuleAssignedToAnyUser(rule)
                     : isUserAssignedToRule(selectedUser, rule);
-            boolean inactiveInDatabase = !rule.active;
             VBox card = new VBox(8);
             card.setUserData(rule.mappingId);
             card.getStyleClass().add("mapping-card");
-            if (inactiveInDatabase) {
-                card.getStyleClass().add("mapping-card-inactive");
-            } else if (!assignedToSelectedUser) {
+            if (!assignedToSelectedUser) {
                 card.getStyleClass().add("mapping-card-unassigned");
             }
             if (selectedMappingForEdit != null && selectedMappingForEdit.mappingId == rule.mappingId) {
@@ -546,14 +543,8 @@ public class MappingsTabController {
 
             Button selectButton = MappingUiFactory.createSelectMappingButton(rule, this::selectMappingForEdit);
             Button assignButton = createAssignUsersToMappingButton(rule);
-            Button activationButton = inactiveInDatabase
-                    ? MappingUiFactory.createActivateMappingButton(rule, this::onActivateMappingRequested)
-                    : MappingUiFactory.createDeleteMappingButton(rule, this::onDeleteMappingRequested);
-            if (inactiveInDatabase) {
-                activationButton.setOnAction(ignored -> onActivateMappingRequested(rule, activationButton));
-            } else {
-                activationButton.setOnAction(ignored -> onDeleteMappingRequested(rule, activationButton));
-            }
+            Button activationButton = MappingUiFactory.createDeleteMappingButton(rule, this::onDeleteMappingRequested);
+            activationButton.setOnAction(ignored -> onDeleteMappingRequested(rule, activationButton));
             titleRow.getChildren().addAll(title, spacer, assignButton, selectButton, activationButton);
 
             Label values = new Label("Values: " + formatMappingValues(rule));
@@ -562,16 +553,16 @@ public class MappingsTabController {
             Label duration = new Label("Duration: " + rule.durationLabel);
             Label interval = new Label("Interval: " + rule.intervalLabel);
             Node assignedUsers = createMappingAssignedUsersNode(rule);
-            if (inactiveInDatabase || !assignedToSelectedUser) {
-                Label inactiveHint = new Label(inactiveInDatabase ? "Inactive mapping" : "Not assigned to selected user");
-                inactiveHint.getStyleClass().add("mapping-assigned-muted");
-                card.getChildren().addAll(titleRow, values, pulses, intensity, duration, interval, inactiveHint, assignedUsers);
+            if (!assignedToSelectedUser) {
+                Label unassignedHint = new Label(selectedUser == null ? "Not assigned to any user" : "Not assigned to selected user");
+                unassignedHint.getStyleClass().add("mapping-assigned-muted");
+                card.getChildren().addAll(titleRow, values, pulses, intensity, duration, interval, unassignedHint);
             } else {
                 card.getChildren().addAll(titleRow, values, pulses, intensity, duration, interval, assignedUsers);
             }
 
             card.setOnMouseClicked(event -> {
-                if (event.getTarget() instanceof ButtonBase || inactiveInDatabase) {
+                if (event.getTarget() instanceof ButtonBase) {
                     return;
                 }
                 selectMappingForEdit(rule);
@@ -617,7 +608,6 @@ public class MappingsTabController {
                     useCase,
                     this::selectMappingForEdit,
                     this::onDeleteMappingRequested,
-                    this::onActivateMappingRequested,
                     selected
             );
             mappingsFlowPane.getChildren().add(card);
@@ -672,7 +662,7 @@ public class MappingsTabController {
     }
 
     private boolean isRuleActiveForMappingsView(User selectedUser, RuleCardData rule) {
-        if (rule == null || !rule.active) {
+        if (rule == null) {
             return false;
         }
         return selectedUser == null
@@ -681,7 +671,7 @@ public class MappingsTabController {
     }
 
     private void selectMappingForEdit(RuleCardData rule) {
-        if (rule == null || rule.mappingId <= 0 || !rule.active) {
+        if (rule == null || rule.mappingId <= 0) {
             return;
         }
 
@@ -712,10 +702,6 @@ public class MappingsTabController {
         button.setTooltip(new Tooltip("Assign users to this mapping"));
         button.setOnMouseClicked(event -> event.consume());
         button.setOnAction(ignored -> onAssignUsersToMappingRequested(rule, button));
-        if (rule != null && !rule.active) {
-            button.setDisable(true);
-            button.setTooltip(new Tooltip("Inactive mapping cannot be assigned"));
-        }
         return button;
     }
 
@@ -724,11 +710,6 @@ public class MappingsTabController {
             AlertUtils.showErrorAlert("Missing Mapping", "Could not resolve mapping id for the selected card.");
             return;
         }
-        if (!rule.active) {
-            AlertUtils.showErrorAlert("Inactive Mapping", "Reactivate this mapping before assigning users.");
-            return;
-        }
-
         String useCaseName = useCaseDisplayNameResolver.apply(rule.useCaseLabel);
         if (useCaseName == null || useCaseName.isBlank() || "-".equals(useCaseName)) {
             useCaseName = selectedUseCaseSupplier.get();
@@ -898,44 +879,6 @@ public class MappingsTabController {
                 Platform.runLater(() -> {
                         loading.close();
                         AlertUtils.showErrorAlert("Delete Failed", "Failed to delete mapping: " + ex.getMessage());
-                });
-                return null;
-            });
-    }
-
-    private void onActivateMappingRequested(RuleCardData rule) {
-        onActivateMappingRequested(rule, null);
-    }
-
-    private void onActivateMappingRequested(RuleCardData rule, Button sourceButton) {
-        if (rule == null || rule.mappingId <= 0) {
-            AlertUtils.showErrorAlert("Activation Failed", "Could not resolve mapping id for the selected card.");
-            return;
-        }
-
-        String label = (rule.rangeLabel == null || rule.rangeLabel.isBlank())
-            ? "selected mapping"
-            : rule.rangeLabel;
-
-        if (!confirmMappingActivationChangeIfAssigned(rule, label, "activate")) {
-            return;
-        }
-
-        ButtonLoadingState loading = ButtonLoadingState.start(sourceButton, "Activating...");
-        ApiService.getInstance().setMappingActive(rule.mappingId, true)
-            .thenAccept(success -> Platform.runLater(() -> {
-                loading.close();
-                if (!success) {
-                    AlertUtils.showErrorAlert("Activation Failed", "Could not activate mapping for " + label + ".");
-                    return;
-                }
-                AlertUtils.showInfoAlert("Mapping Activated", "Activated mapping for " + label + ".");
-                mappingRefreshCallback.get();
-            }))
-            .exceptionally(ex -> {
-                Platform.runLater(() -> {
-                        loading.close();
-                        AlertUtils.showErrorAlert("Activation Failed", "Failed to activate mapping: " + ex.getMessage());
                 });
                 return null;
             });
