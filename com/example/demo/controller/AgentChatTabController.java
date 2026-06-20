@@ -1,6 +1,7 @@
 package com.example.demo.controller;
 
 import com.example.demo.factory.ChatBubbleFactory;
+import com.example.demo.model.AgentChatSession;
 import com.example.demo.model.ChatCommandOption;
 import com.example.demo.model.RuleCardData;
 import com.example.demo.model.UseCase;
@@ -23,10 +24,7 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
-import javafx.scene.layout.FlowPane;
-import javafx.scene.layout.HBox;
-import javafx.scene.layout.Pane;
-import javafx.scene.layout.VBox;
+import javafx.scene.layout.*;
 import javafx.scene.web.WebView;
 import javafx.stage.Popup;
 
@@ -64,9 +62,6 @@ public class AgentChatTabController {
     private TextField chatInputField;
     @FXML
     private Button chatSendButton;
-    @FXML
-    private Button newSessionButton;
-    @FXML
     private Label chatCommandHintLabel;
     @FXML
     private Button contextDrawerToggleButton;
@@ -90,9 +85,11 @@ public class AgentChatTabController {
     private Function<RuleCardData, List<User>> usersAssignedToRuleResolver = rule -> List.of();
     private Supplier<CompletableFuture<Void>> mappingRefreshCallback = () -> CompletableFuture.completedFuture(null);
     private Supplier<String> chatSessionIdSupplier = () -> "";
-    private Runnable newSessionCallback = () -> {};
     private BooleanSupplier allUsersSelectedSupplier = () -> false;
     private final List<Map<String, String>> recentSessionMessages = new ArrayList<>();
+    private final Map<String, List<Map<String, String>>> messagesBySessionId = new LinkedHashMap<>();
+    private String activeSessionId = "";
+    private AgentChatSession activeSession;
 
     public void setSelectedUseCaseSupplier(Supplier<String> selectedUseCaseSupplier) {
         this.selectedUseCaseSupplier = selectedUseCaseSupplier == null ? () -> null : selectedUseCaseSupplier;
@@ -184,17 +181,17 @@ public class AgentChatTabController {
         this.chatSessionIdSupplier = supplier == null ? () -> "" : supplier;
     }
 
-    public void setNewSessionCallback(Runnable callback) {
-        this.newSessionCallback = callback == null ? () -> {} : callback;
+    public void selectChatSession(AgentChatSession session) {
+        if (session == null) {
+            return;
+        }
+        showChatSession(session, null);
     }
 
     public void initializeChat() {
         setupChatShortcuts();
         setupChatAutocomplete();
         chatSendButton.setOnAction(ignored -> onSendMessage());
-        if (newSessionButton != null) {
-            newSessionButton.setOnAction(ignored -> newSessionCallback.run());
-        }
         chatInputField.setOnAction(ignored -> onSendMessage());
 
         chatHistoryBox.heightProperty().addListener((observable, oldValue, newValue) -> chatScrollPane.setVvalue(1.0));
@@ -246,8 +243,67 @@ public class AgentChatTabController {
         recentSessionMessages.clear();
     }
 
+    public void showChatSession(AgentChatSession session, String emptySessionMessage) {
+        if (session == null) {
+            return;
+        }
+
+        activeSessionId = session.getSessionId();
+        activeSession = session;
+        setConversationControlsEnabled(true);
+
+        List<Map<String, String>> stored = messagesBySessionId.computeIfAbsent(activeSessionId, ignored -> new ArrayList<>());
+        renderStoredMessages(stored);
+        if (!hasUserMessage(stored)) {
+            if (stored.isEmpty()) {
+                addChatMessage(buildDefaultConversationMessage(emptySessionMessage), false);
+            }
+            showPromptSuggestions();
+        }
+    }
+
+    public void showSessionHistoryList(String useCaseName, List<AgentChatSession> sessions,
+                                       Consumer<AgentChatSession> onSessionSelected) {
+        if (chatHistoryBox == null) {
+            return;
+        }
+
+        activeSession = null;
+        activeSessionId = "";
+        setConversationControlsEnabled(false);
+        chatHistoryBox.getChildren().clear();
+        if (promptSuggestionsPane != null) {
+            promptSuggestionsPane.getChildren().clear();
+            promptSuggestionsPane.setVisible(false);
+            promptSuggestionsPane.setManaged(false);
+        }
+        recentSessionMessages.clear();
+
+        Label title = new Label("Sessions for " + (useCaseName == null || useCaseName.isBlank() ? "this use case" : useCaseName));
+        title.getStyleClass().add("session-history-title");
+
+        Label subtitle = new Label("Select a previous session to reopen its conversation in this chat view.");
+        subtitle.getStyleClass().add("session-history-subtitle");
+        subtitle.setWrapText(true);
+
+        chatHistoryBox.getChildren().addAll(title, subtitle);
+
+        List<AgentChatSession> sortedSessions = new ArrayList<>(sessions == null ? List.of() : sessions);
+        sortedSessions.sort(Comparator.comparing(AgentChatSession::getCreatedAt).reversed());
+        if (sortedSessions.isEmpty()) {
+            Label empty = new Label("No sessions have been started for this use case yet.");
+            empty.getStyleClass().add("session-history-subtitle");
+            chatHistoryBox.getChildren().add(empty);
+            return;
+        }
+
+        for (AgentChatSession session : sortedSessions) {
+            chatHistoryBox.getChildren().add(createSessionHistoryRow(session, onSessionSelected));
+        }
+    }
+
     public void addSystemMessage(String message) {
-        addChatMessage("Hello,\n\nType a chat message or start with $ for commands\n\n" + message, false);
+        addChatMessage(buildDefaultConversationMessage(message), false);
         showPromptSuggestions();
     }
 
@@ -886,6 +942,7 @@ public class AgentChatTabController {
     }
 
     private void addChatMessage(String text, boolean userMessage) {
+        storeConversationMessage(userMessage ? "user" : "assistant", text);
         WebView bubble = ChatBubbleFactory.createChatBubbleView(text, userMessage);
 
         HBox row = new HBox(bubble);
@@ -895,6 +952,147 @@ public class AgentChatTabController {
 
         chatHistoryBox.getChildren().add(row);
         rememberConversationMessage(userMessage ? "user" : "assistant", text);
+    }
+
+    private void renderStoredMessages(List<Map<String, String>> messages) {
+        if (chatHistoryBox != null) {
+            chatHistoryBox.getChildren().clear();
+        }
+        if (promptSuggestionsPane != null) {
+            promptSuggestionsPane.getChildren().clear();
+            promptSuggestionsPane.setVisible(false);
+            promptSuggestionsPane.setManaged(false);
+        }
+        recentSessionMessages.clear();
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        for (Map<String, String> message : messages) {
+            String role = message == null ? "" : message.getOrDefault("role", "");
+            String content = message == null ? "" : message.getOrDefault("content", "");
+            renderChatMessage(content, "user".equalsIgnoreCase(role));
+            rememberConversationMessage(role, content);
+        }
+    }
+
+    private void renderChatMessage(String text, boolean userMessage) {
+        WebView bubble = ChatBubbleFactory.createChatBubbleView(text, userMessage);
+
+        HBox row = new HBox(bubble);
+        row.getStyleClass().add("chat-message-row");
+        row.setFillHeight(false);
+        row.setAlignment(userMessage ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
+
+        chatHistoryBox.getChildren().add(row);
+    }
+
+    private void setConversationControlsEnabled(boolean enabled) {
+        if (chatInputField != null) {
+            chatInputField.setDisable(!enabled);
+        }
+        if (chatSendButton != null) {
+            chatSendButton.setDisable(!enabled);
+        }
+        if (contextDrawerToggleButton != null) {
+            contextDrawerToggleButton.setDisable(!enabled);
+        }
+        if (!enabled) {
+            setContextDrawerVisible(false);
+            hideChatCommandDropdown();
+            hidePromptSuggestions();
+        }
+    }
+
+    private boolean hasUserMessage(List<Map<String, String>> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return false;
+        }
+        return messages.stream()
+                .anyMatch(message -> "user".equalsIgnoreCase(message == null ? "" : message.getOrDefault("role", "")));
+    }
+
+    private String buildDefaultConversationMessage(String detail) {
+        String base = "Hello,\n\nType a chat message or start with $ for commands";
+        String normalizedDetail = detail == null ? "" : detail.trim();
+        if (normalizedDetail.isEmpty()) {
+            return base;
+        }
+        if (normalizedDetail.toLowerCase(Locale.ROOT).startsWith("hello,")) {
+            return normalizedDetail;
+        }
+        return base + "\n\n" + normalizedDetail;
+    }
+
+    private void storeConversationMessage(String role, String content) {
+        if (activeSessionId == null || activeSessionId.isBlank()) {
+            activeSessionId = chatSessionIdSupplier.get();
+        }
+        if (activeSessionId == null || activeSessionId.isBlank()) {
+            return;
+        }
+        String normalizedRole = role == null ? "" : role.trim();
+        String normalizedContent = content == null ? "" : content.trim();
+        if (normalizedRole.isEmpty() || normalizedContent.isEmpty()) {
+            return;
+        }
+        updateActiveSessionMetadata(normalizedRole, normalizedContent);
+        messagesBySessionId
+                .computeIfAbsent(activeSessionId, ignored -> new ArrayList<>())
+                .add(createConversationMessage(normalizedRole, normalizedContent));
+    }
+
+    private HBox createSessionHistoryRow(AgentChatSession session, Consumer<AgentChatSession> onSessionSelected) {
+        Label title = new Label(session.getTitle());
+        title.getStyleClass().add("session-history-row-title");
+        title.setWrapText(true);
+
+        int messageCount = messagesBySessionId.getOrDefault(session.getSessionId(), List.of()).size();
+        Label description = new Label(session.getDescription());
+        description.getStyleClass().add("session-history-row-description");
+        description.setWrapText(true);
+
+        Label meta = new Label(session.getLabel() + " - " + messageCount + (messageCount == 1 ? " message" : " messages"));
+        meta.getStyleClass().add("session-history-row-meta");
+
+        VBox text = new VBox(3, title, description, meta);
+        Region spacer = new Region();
+        Button openButton = new Button("Open");
+        openButton.getStyleClass().add("secondary-button");
+        openButton.setOnAction(ignored -> {
+            if (onSessionSelected != null) {
+                onSessionSelected.accept(session);
+            }
+        });
+
+        HBox row = new HBox(10, text, spacer, openButton);
+        row.getStyleClass().add("session-history-row");
+        row.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
+        return row;
+    }
+
+    private void updateActiveSessionMetadata(String role, String content) {
+        if (activeSession == null || !"user".equalsIgnoreCase(role)) {
+            return;
+        }
+        List<Map<String, String>> storedMessages = messagesBySessionId.getOrDefault(activeSession.getSessionId(), List.of());
+        if (hasUserMessage(storedMessages)) {
+            return;
+        }
+        String normalized = content == null ? "" : content.replaceAll("\\s+", " ").trim();
+        if (normalized.isEmpty()) {
+            return;
+        }
+        activeSession.setTitle(truncateText(normalized, 42));
+        activeSession.setDescription("First request: " + truncateText(normalized, 120));
+    }
+
+    private String truncateText(String text, int maxLength) {
+        String normalized = text == null ? "" : text.trim();
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+        return normalized.substring(0, Math.max(0, maxLength - 3)).trim() + "...";
     }
 
     private void showPromptSuggestions() {

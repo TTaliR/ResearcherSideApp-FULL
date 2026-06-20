@@ -1,15 +1,19 @@
 package com.example.demo.controller;
 
+import com.example.demo.model.AgentChatSession;
 import com.example.demo.model.User;
+import com.example.demo.util.FormatUtils;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
@@ -19,7 +23,10 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -30,6 +37,7 @@ import java.util.stream.Collectors;
  */
 public class LeftSidebarController {
     private static final String SETTINGS_ICON_PATH = "/com/example/demo/images/settings.png";
+    private static final int SIDEBAR_SESSION_MENU_LIMIT = 5;
 
     @FXML
     private ToggleButton useCasesNavButton;
@@ -61,11 +69,15 @@ public class LeftSidebarController {
 
     private final ObservableList<User> users = FXCollections.observableArrayList();
     private final ObservableList<String> useCases = FXCollections.observableArrayList();
+    private final ObservableList<AgentChatSession> chatSessions = FXCollections.observableArrayList();
 
     // Callbacks to parent controller
     private Consumer<String> onUseCaseSelected;
     private Consumer<User> onUserSelected;
     private Consumer<User> onEditUserRequested;
+    private Consumer<AgentChatSession> onChatSessionSelected;
+    private Consumer<String> onNewChatSessionRequested;
+    private Consumer<String> onViewAllChatSessionsRequested;
     private Runnable onAddUseCaseRequested;
     private Runnable onAddUserRequested;
     private Runnable onAssignUserUseCaseRequested;
@@ -91,14 +103,52 @@ public class LeftSidebarController {
 
         useCaseListView.setItems(useCases);
         useCaseListView.setCellFactory(listView -> new ListCell<>() {
+            private final Label useCaseLabel = new Label();
+            private final Region spacer = new Region();
+            private final Button sessionsButton = new Button("Sessions");
+            private final Button newSessionButton = new Button("New");
+            private final HBox content = new HBox(6, useCaseLabel, spacer, sessionsButton, newSessionButton);
+
+            {
+                content.setAlignment(Pos.CENTER_LEFT);
+                HBox.setHgrow(spacer, Priority.ALWAYS);
+                useCaseLabel.getStyleClass().add("sidebar-usecase-row-label");
+                sessionsButton.getStyleClass().add("sidebar-session-button");
+                newSessionButton.getStyleClass().add("sidebar-session-button");
+                sessionsButton.setFocusTraversable(false);
+                newSessionButton.setFocusTraversable(false);
+                sessionsButton.setTooltip(new Tooltip("Show recent sessions"));
+                newSessionButton.setTooltip(new Tooltip("Start a new session"));
+            }
+
             @Override
             protected void updateItem(String item, boolean empty) {
                 super.updateItem(item, empty);
                 if (empty || item == null) {
+                    setGraphic(null);
                     setText(null);
-                } else {
-                    setText(formatUseCaseName(item));
+                    return;
                 }
+
+                useCaseLabel.setText(formatUseCaseName(item));
+                sessionsButton.setOnAction(event -> {
+                    event.consume();
+                    showSessionMenu(item, sessionsButton);
+                });
+                newSessionButton.setOnAction(event -> {
+                    event.consume();
+                    if (onNewChatSessionRequested != null) {
+                        onNewChatSessionRequested.accept(item);
+                    }
+                });
+                content.setOnMouseClicked(event -> {
+                    if (event.getTarget() == sessionsButton || event.getTarget() == newSessionButton) {
+                        return;
+                    }
+                    getListView().getSelectionModel().select(item);
+                });
+                setText(null);
+                setGraphic(content);
             }
         });
         useCaseListView.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, newValue) -> {
@@ -147,6 +197,46 @@ public class LeftSidebarController {
                 onUserSelected.accept(newValue);
             }
         });
+    }
+
+    private void showSessionMenu(String useCase, Button owner) {
+        ContextMenu menu = new ContextMenu();
+        menu.getStyleClass().add("sidebar-session-menu");
+        List<AgentChatSession> sessions = getSessionsForUseCase(useCase);
+        int sessionItemLimit = SIDEBAR_SESSION_MENU_LIMIT - 1;
+        for (AgentChatSession session : sessions.stream().limit(sessionItemLimit).toList()) {
+            MenuItem item = new MenuItem(session.getTitle());
+            item.setOnAction(ignored -> {
+                if (onChatSessionSelected != null) {
+                    onChatSessionSelected.accept(session);
+                }
+            });
+            menu.getItems().add(item);
+        }
+
+        MenuItem viewAll = new MenuItem("View all sessions");
+        viewAll.setOnAction(ignored -> {
+            if (onViewAllChatSessionsRequested != null) {
+                onViewAllChatSessionsRequested.accept(useCase);
+            }
+        });
+        menu.getItems().add(viewAll);
+        menu.show(owner, javafx.geometry.Side.BOTTOM, 0, 0);
+    }
+
+    private List<AgentChatSession> getSessionsForUseCase(String useCase) {
+        String key = normalizeSessionUseCaseKey(useCase);
+        return chatSessions.stream()
+                .filter(session -> key.equals(session.getUseCaseKey()))
+                .sorted(Comparator.comparing(AgentChatSession::getCreatedAt).reversed())
+                .collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    private String normalizeSessionUseCaseKey(String useCase) {
+        if (useCase == null || useCase.isBlank() || "-".equals(useCase.trim())) {
+            return "";
+        }
+        return FormatUtils.normalizeUseCaseName(useCase);
     }
 
     private void setupUsersSidebarListCellFactory() {
@@ -309,6 +399,25 @@ public class LeftSidebarController {
 
     public void setOnEditUserRequested(Consumer<User> callback) {
         this.onEditUserRequested = callback;
+    }
+
+    public void setOnChatSessionSelected(Consumer<AgentChatSession> callback) {
+        this.onChatSessionSelected = callback;
+    }
+
+    public void setOnNewChatSessionRequested(Consumer<String> callback) {
+        this.onNewChatSessionRequested = callback;
+    }
+
+    public void setOnViewAllChatSessionsRequested(Consumer<String> callback) {
+        this.onViewAllChatSessionsRequested = callback;
+    }
+
+    public void setChatSessions(List<AgentChatSession> sessions) {
+        chatSessions.setAll(sessions == null ? List.of() : sessions);
+        if (useCaseListView != null) {
+            useCaseListView.refresh();
+        }
     }
 
     public void setOnAddUseCaseRequested(Runnable callback) {

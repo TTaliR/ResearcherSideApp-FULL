@@ -23,7 +23,6 @@
                 <HBox spacing="10.0" alignment="CENTER_LEFT">
                     <TextField fx:id="chatInputField" promptText="Type your instruction or query..." HBox.hgrow="ALWAYS" />
                     <Button fx:id="chatSendButton" text="Send" styleClass="primary-button" />
-                    <Button fx:id="newSessionButton" text="New Session" styleClass="secondary-button" />
                     <Button fx:id="contextDrawerToggleButton" text="Hide Context" styleClass="secondary-button" />
                 </HBox>
                 <VBox spacing="4.0">

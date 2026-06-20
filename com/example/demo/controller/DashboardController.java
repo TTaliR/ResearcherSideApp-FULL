@@ -1,6 +1,7 @@
 package com.example.demo.controller;
 
 import com.example.demo.controller.state.DashboardState;
+import com.example.demo.model.AgentChatSession;
 import com.example.demo.model.User;
 import com.example.demo.model.UserUseCaseMapping;
 import com.example.demo.model.RuleCardData;
@@ -63,10 +64,11 @@ public class DashboardController {
     private final DashboardState state = DashboardState.getInstance();
     private final ObservableList<User> users = FXCollections.observableArrayList();
     private final ObservableList<String> useCases = FXCollections.observableArrayList();
+    private final ObservableList<AgentChatSession> chatSessions = FXCollections.observableArrayList();
     private final Map<String, UseCase> useCaseRegistry = new HashMap<>();
     private final List<RuleCardData> allRules = new ArrayList<>();
-    private final Map<String, String> chatSessionIdsByUseCase = new HashMap<>();
-    private String fallbackChatSessionId = UUID.randomUUID().toString();
+    private final Map<String, AgentChatSession> activeChatSessionsByUseCase = new HashMap<>();
+    private AgentChatSession fallbackChatSession;
     private String activeMonitoringTypeKey = "";
 
     private JsonNode latestGraphData;
@@ -108,6 +110,9 @@ public class DashboardController {
         leftSidebarController.setOnAddUserRequested(this::onAddUserRequested);
         leftSidebarController.setOnAssignUserUseCaseRequested(this::onAssignUserUseCase);
         leftSidebarController.setOnEditUserRequested(this::onEditUserRequested);
+        leftSidebarController.setOnChatSessionSelected(this::selectChatSession);
+        leftSidebarController.setOnNewChatSessionRequested(this::startNewChatSessionForUseCase);
+        leftSidebarController.setOnViewAllChatSessionsRequested(this::showAllChatSessionsForUseCase);
 
         // Setup topbar callbacks
         topBarController.setOnUserSelected(newValue -> {
@@ -190,31 +195,128 @@ public class DashboardController {
       }
 
     private String getCurrentChatSessionId() {
-        String selectedUseCase = state.getSelectedUseCase();
-        String key = FormatUtils.normalizeUseCaseName(selectedUseCase);
-        if (key == null || key.isBlank()) {
-            return fallbackChatSessionId;
-        }
-        return chatSessionIdsByUseCase.computeIfAbsent(key, ignored -> UUID.randomUUID().toString());
+        return getOrCreateCurrentChatSession().getSessionId();
     }
 
-    private void startNewChatSessionForSelectedUseCase() {
+    private AgentChatSession getOrCreateCurrentChatSession() {
         String selectedUseCase = state.getSelectedUseCase();
-        String key = FormatUtils.normalizeUseCaseName(selectedUseCase);
+        String key = normalizeChatSessionUseCaseKey(selectedUseCase);
         if (key == null || key.isBlank()) {
-            fallbackChatSessionId = UUID.randomUUID().toString();
+            if (fallbackChatSession == null) {
+                fallbackChatSession = createChatSession("Current Context", "currentcontext");
+            }
+            return fallbackChatSession;
+        }
+        return activeChatSessionsByUseCase.computeIfAbsent(key, ignored -> createChatSession(selectedUseCase, key));
+    }
+
+    private void startNewChatSessionForUseCase(String useCaseName) {
+        String selectedUseCase = useCaseName == null || useCaseName.isBlank()
+                ? state.getSelectedUseCase()
+                : useCaseName;
+        String key = normalizeChatSessionUseCaseKey(selectedUseCase);
+        AgentChatSession session;
+        if (key == null || key.isBlank()) {
+            session = createChatSession("Current Context", "currentcontext");
+            fallbackChatSession = session;
         } else {
-            chatSessionIdsByUseCase.put(key, UUID.randomUUID().toString());
+            session = createChatSession(selectedUseCase, key);
+            activeChatSessionsByUseCase.put(key, session);
+        }
+        refreshSidebarChatSessions();
+
+        String currentKey = normalizeChatSessionUseCaseKey(state.getSelectedUseCase());
+        if (!key.isBlank() && !key.equals(currentKey)) {
+            state.setSelectedUseCase(session.getUseCaseName());
         }
 
         if (yellowBookTabContentController != null) {
-            yellowBookTabContentController.setChatSessionId(getCurrentChatSessionId());
+            yellowBookTabContentController.setChatSessionId(session.getSessionId());
         }
         if (agentChatTabContentController != null) {
-            agentChatTabContentController.clearMessages();
-            agentChatTabContentController.addSystemMessage("Started a new session for "
+            agentChatTabContentController.showChatSession(session, "Started a new session for "
                     + (selectedUseCase == null || selectedUseCase.isBlank() ? "the current context" : selectedUseCase)
                     + ".");
+        }
+    }
+
+    private AgentChatSession createChatSession(String useCaseName, String useCaseKey) {
+        String displayUseCase = useCaseName == null || useCaseName.isBlank() ? "Current Context" : useCaseName;
+        String key = useCaseKey == null || useCaseKey.isBlank()
+                ? FormatUtils.normalizeUseCaseName(displayUseCase)
+                : useCaseKey;
+        long sessionNumber = chatSessions.stream()
+                .filter(session -> key.equals(session.getUseCaseKey()))
+                .count() + 1;
+        AgentChatSession session = new AgentChatSession(
+                UUID.randomUUID().toString(),
+                displayUseCase,
+                key,
+                "Session " + sessionNumber,
+                LocalDateTime.now()
+        );
+        chatSessions.add(session);
+        refreshSidebarChatSessions();
+        return session;
+    }
+
+    private String normalizeChatSessionUseCaseKey(String useCaseName) {
+        if (useCaseName == null || useCaseName.isBlank() || "-".equals(useCaseName.trim())) {
+            return "";
+        }
+        return FormatUtils.normalizeUseCaseName(useCaseName);
+    }
+
+    private void selectChatSession(AgentChatSession session) {
+        if (session == null) {
+            return;
+        }
+
+        activeChatSessionsByUseCase.put(session.getUseCaseKey(), session);
+        if (yellowBookTabContentController != null) {
+            yellowBookTabContentController.setChatSessionId(session.getSessionId());
+        }
+
+        String selectedKey = normalizeChatSessionUseCaseKey(state.getSelectedUseCase());
+        if (!session.getUseCaseKey().equals(selectedKey)) {
+            state.setSelectedUseCase(session.getUseCaseName());
+            return;
+        }
+
+        if (agentChatTabContentController != null) {
+            agentChatTabContentController.selectChatSession(session);
+        }
+    }
+
+    private void showAllChatSessionsForUseCase(String useCaseName) {
+        String key = normalizeChatSessionUseCaseKey(useCaseName);
+        if (!key.isBlank() && !key.equals(normalizeChatSessionUseCaseKey(state.getSelectedUseCase()))) {
+            state.setSelectedUseCase(useCaseName);
+        }
+
+        if (workspaceTabPane != null && agentChatTab != null) {
+            workspaceTabPane.getSelectionModel().select(agentChatTab);
+        }
+
+        if (agentChatTabContentController != null) {
+            agentChatTabContentController.showSessionHistoryList(
+                    useCaseName,
+                    chatSessionsForUseCase(useCaseName),
+                    this::selectChatSession
+            );
+        }
+    }
+
+    private List<AgentChatSession> chatSessionsForUseCase(String useCaseName) {
+        String key = normalizeChatSessionUseCaseKey(useCaseName);
+        return chatSessions.stream()
+                .filter(session -> key.equals(session.getUseCaseKey()))
+                .toList();
+    }
+
+    private void refreshSidebarChatSessions() {
+        if (leftSidebarController != null) {
+            leftSidebarController.setChatSessions(List.copyOf(chatSessions));
         }
     }
 
@@ -479,7 +581,6 @@ public class DashboardController {
             }
         });
         agentChatTabContentController.setChatSessionIdSupplier(this::getCurrentChatSessionId);
-        agentChatTabContentController.setNewSessionCallback(this::startNewChatSessionForSelectedUseCase);
         agentChatTabContentController.initializeChat();
     }
 
@@ -977,8 +1078,9 @@ public class DashboardController {
         }
 
         updateAgentChatUseCaseLabel(selectedUseCase);
+        AgentChatSession session = getOrCreateCurrentChatSession();
         if (yellowBookTabContentController != null) {
-            yellowBookTabContentController.setChatSessionId(getCurrentChatSessionId());
+            yellowBookTabContentController.setChatSessionId(session.getSessionId());
         }
 
         if (leftSidebarController.getUseCaseListView() != null && selectedUseCase != null && !selectedUseCase.isBlank()) {
@@ -994,8 +1096,7 @@ public class DashboardController {
             mappingsTabContentController.onSelectedUseCaseChanged(selectedUseCase);
         }
         if (agentChatTabContentController != null) {
-            agentChatTabContentController.clearMessages();
-            agentChatTabContentController.addSystemMessage("Selected use case: " + selectedUseCase);
+            agentChatTabContentController.showChatSession(session, "Selected use case: " + selectedUseCase);
         }
     }
 
