@@ -1174,6 +1174,7 @@ public class AgentChatTabController {
         options.add(new ChatCommandOption("$knowledge", "Experiment Background", "What is the background of this experiment", "what is the background of this experiment"));
         options.add(new ChatCommandOption("$dictionary", "Show Use Cases", "Show the use cases in the dictionary", "show me the use cases in the dictionary"));
         options.add(new ChatCommandOption("$schedule", "Show Active Schedules", "Show the active schedules", "show me the active schedules"));
+        options.add(new ChatCommandOption("$summarize", "Summarize This Experiment", "Show a summary of the experiment's user data", "summarize this experiment")); 
         //options.add(new ChatCommandOption("$usecase", "Show Use Case Configuration", "Show the use case configuration", "show me the use case configuration"));
         return List.copyOf(options);
     }
