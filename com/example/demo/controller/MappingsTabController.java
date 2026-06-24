@@ -1333,10 +1333,29 @@ public class MappingsTabController {
             return;
         }
 
+        List<Label> labels = ruleBuilderPane.lookupAll(".topbar-label").stream()
+                .filter(Label.class::isInstance)
+                .map(Label.class::cast)
+                .filter(label -> !"Sensor Type:".equals(label.getText()))
+                .toList();
+        if (labels.isEmpty()) {
+            return;
+        }
+
         Timeline timeline = new Timeline(
-                new KeyFrame(Duration.seconds(0), event -> ruleBuilderPane.getStyleClass().add("rule-builder-flash")),
-                new KeyFrame(Duration.seconds(0.8), event -> ruleBuilderPane.getStyleClass().remove("rule-builder-flash"))
+                new KeyFrame(Duration.seconds(0), event -> setRuleBuilderLabelsOpacity(labels, 0.35)),
+                new KeyFrame(Duration.seconds(0.18), event -> setRuleBuilderLabelsOpacity(labels, 1.0)),
+                new KeyFrame(Duration.seconds(0.36), event -> setRuleBuilderLabelsOpacity(labels, 0.35)),
+                new KeyFrame(Duration.seconds(0.54), event -> setRuleBuilderLabelsOpacity(labels, 1.0)),
+                new KeyFrame(Duration.seconds(0.72), event -> setRuleBuilderLabelsOpacity(labels, 0.35)),
+                new KeyFrame(Duration.seconds(1.05), event -> setRuleBuilderLabelsOpacity(labels, 1.0))
         );
         timeline.play();
+    }
+
+    private void setRuleBuilderLabelsOpacity(List<Label> labels, double opacity) {
+        for (Label label : labels) {
+            label.setOpacity(opacity);
+        }
     }
 }
