@@ -290,6 +290,43 @@
     -fx-padding: 2 0 2 0;
 }
 
+.agent-response-cards {
+    -fx-max-width: 640;
+}
+
+.agent-proposal-card,
+.agent-info-card {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #d6dde8;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 10;
+}
+
+.agent-proposal-title,
+.agent-info-title {
+    -fx-text-fill: #1f2f43;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+
+.agent-proposal-text,
+.agent-proposal-params {
+    -fx-text-fill: #334155;
+    -fx-font-size: 12px;
+}
+
+.agent-proposal-params {
+    -fx-background-color: #f3f5f8;
+    -fx-background-radius: 6;
+    -fx-padding: 6;
+}
+
+.agent-proposal-warning {
+    -fx-text-fill: #9a3412;
+    -fx-font-size: 12px;
+}
+
 .prompt-suggestions-pane {
     -fx-padding: 18 26 20 26;
     -fx-alignment: center;
@@ -368,6 +405,16 @@
 .session-history-row-description {
     -fx-text-fill: #334155;
     -fx-font-size: 12px;
+}
+
+.session-history-pagination {
+    -fx-padding: 8 0 2 0;
+}
+
+.session-history-page-label {
+    -fx-text-fill: #334155;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
 }
 
 .chat-bubble-user {

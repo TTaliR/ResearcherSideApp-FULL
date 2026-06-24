@@ -9,6 +9,7 @@ import com.example.demo.model.UseCase;
 import com.example.demo.factory.UserDialogFactory;
 import com.example.demo.parser.MappingConfigParser;
 import com.example.demo.service.ApiService;
+import com.example.demo.service.AgentChatSessionStore;
 import com.example.demo.util.AlertUtils;
 import com.example.demo.util.ButtonLoadingState;
 import com.example.demo.util.FormatUtils;
@@ -68,6 +69,7 @@ public class DashboardController {
     private final Map<String, UseCase> useCaseRegistry = new HashMap<>();
     private final List<RuleCardData> allRules = new ArrayList<>();
     private final Map<String, AgentChatSession> activeChatSessionsByUseCase = new HashMap<>();
+    private final AgentChatSessionStore chatSessionStore = new AgentChatSessionStore();
     private AgentChatSession fallbackChatSession;
     private String activeMonitoringTypeKey = "";
 
@@ -81,6 +83,7 @@ public class DashboardController {
         setupGraphTab();
         setupMappingsTab();
         setupSchedulesTab();
+        loadStoredChatSessions();
         setupYellowBookTab();
         setupStateListeners();
 
@@ -207,7 +210,8 @@ public class DashboardController {
             }
             return fallbackChatSession;
         }
-        return activeChatSessionsByUseCase.computeIfAbsent(key, ignored -> createChatSession(selectedUseCase, key));
+        return activeChatSessionsByUseCase.computeIfAbsent(key, ignored -> findLatestChatSessionForUseCase(key)
+                .orElseGet(() -> createChatSession(selectedUseCase, key)));
     }
 
     private void startNewChatSessionForUseCase(String useCaseName) {
@@ -224,6 +228,11 @@ public class DashboardController {
             activeChatSessionsByUseCase.put(key, session);
         }
         refreshSidebarChatSessions();
+        persistChatSessions();
+
+        if (workspaceTabPane != null && agentChatTab != null) {
+            workspaceTabPane.getSelectionModel().select(agentChatTab);
+        }
 
         String currentKey = normalizeChatSessionUseCaseKey(state.getSelectedUseCase());
         if (!key.isBlank() && !key.equals(currentKey)) {
@@ -257,6 +266,7 @@ public class DashboardController {
         );
         chatSessions.add(session);
         refreshSidebarChatSessions();
+        persistChatSessions();
         return session;
     }
 
@@ -318,6 +328,47 @@ public class DashboardController {
         if (leftSidebarController != null) {
             leftSidebarController.setChatSessions(List.copyOf(chatSessions));
         }
+    }
+
+    private void loadStoredChatSessions() {
+        AgentChatSessionStore.StoredChatSessions stored = chatSessionStore.load();
+        chatSessions.setAll(stored.sessions());
+        if (agentChatTabContentController != null) {
+            agentChatTabContentController.setStoredMessages(stored.messagesBySessionId());
+        }
+        rebuildActiveChatSessionsFromHistory();
+        refreshSidebarChatSessions();
+    }
+
+    private void rebuildActiveChatSessionsFromHistory() {
+        activeChatSessionsByUseCase.clear();
+        fallbackChatSession = null;
+        chatSessions.stream()
+                .sorted(Comparator.comparing(AgentChatSession::getCreatedAt))
+                .forEach(session -> {
+                    if ("currentcontext".equals(session.getUseCaseKey())) {
+                        fallbackChatSession = session;
+                    } else if (!session.getUseCaseKey().isBlank()) {
+                        activeChatSessionsByUseCase.put(session.getUseCaseKey(), session);
+                    }
+                });
+    }
+
+    private Optional<AgentChatSession> findLatestChatSessionForUseCase(String useCaseKey) {
+        if (useCaseKey == null || useCaseKey.isBlank()) {
+            return Optional.empty();
+        }
+        return chatSessions.stream()
+                .filter(session -> useCaseKey.equals(session.getUseCaseKey()))
+                .max(Comparator.comparing(AgentChatSession::getCreatedAt));
+    }
+
+    private void persistChatSessions() {
+        refreshSidebarChatSessions();
+        Map<String, List<Map<String, String>>> messages = agentChatTabContentController == null
+                ? Map.of()
+                : agentChatTabContentController.getStoredMessagesSnapshot();
+        chatSessionStore.save(List.copyOf(chatSessions), messages);
     }
 
     private String requireSelectedUsecaseName() {
@@ -581,6 +632,7 @@ public class DashboardController {
             }
         });
         agentChatTabContentController.setChatSessionIdSupplier(this::getCurrentChatSessionId);
+        agentChatTabContentController.setChatSessionChangedCallback(this::persistChatSessions);
         agentChatTabContentController.initializeChat();
     }
 

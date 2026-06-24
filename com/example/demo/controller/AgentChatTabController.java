@@ -47,6 +47,7 @@ import java.util.stream.Collectors;
 public class AgentChatTabController {
     private static final String DEFAULT_CHAT_COMMAND_PREFIX = "$";
     private static final int MAX_RECENT_SESSION_MESSAGES = 12;
+    private static final int SESSION_HISTORY_PAGE_SIZE = 8;
     private static final List<ChatCommandOption> CHAT_COMMAND_OPTIONS = createChatCommandOptions();
     private static final Map<String, ChatCommandOption> CHAT_COMMAND_OPTIONS_BY_COMMAND = createChatCommandOptionMap();
 
@@ -86,8 +87,11 @@ public class AgentChatTabController {
     private Supplier<CompletableFuture<Void>> mappingRefreshCallback = () -> CompletableFuture.completedFuture(null);
     private Supplier<String> chatSessionIdSupplier = () -> "";
     private BooleanSupplier allUsersSelectedSupplier = () -> false;
+    private Runnable chatSessionChangedCallback = () -> {};
     private final List<Map<String, String>> recentSessionMessages = new ArrayList<>();
     private final Map<String, List<Map<String, String>>> messagesBySessionId = new LinkedHashMap<>();
+    private final Map<String, JsonNode> latestStructuredResponseBySessionId = new LinkedHashMap<>();
+    private JsonNode latestStructuredAssistantResponse;
     private String activeSessionId = "";
     private AgentChatSession activeSession;
 
@@ -181,6 +185,49 @@ public class AgentChatTabController {
         this.chatSessionIdSupplier = supplier == null ? () -> "" : supplier;
     }
 
+    public void setChatSessionChangedCallback(Runnable callback) {
+        this.chatSessionChangedCallback = callback == null ? () -> {} : callback;
+    }
+
+    public void setStoredMessages(Map<String, List<Map<String, String>>> storedMessages) {
+        messagesBySessionId.clear();
+        if (storedMessages == null) {
+            return;
+        }
+
+        storedMessages.forEach((sessionId, messages) -> {
+            if (sessionId == null || sessionId.isBlank()) {
+                return;
+            }
+            List<Map<String, String>> copiedMessages = new ArrayList<>();
+            for (Map<String, String> message : messages == null ? List.<Map<String, String>>of() : messages) {
+                if (message == null) {
+                    continue;
+                }
+                copiedMessages.add(createConversationMessage(
+                        message.getOrDefault("role", ""),
+                        message.getOrDefault("content", "")
+                ));
+            }
+            messagesBySessionId.put(sessionId, copiedMessages);
+        });
+    }
+
+    public Map<String, List<Map<String, String>>> getStoredMessagesSnapshot() {
+        Map<String, List<Map<String, String>>> snapshot = new LinkedHashMap<>();
+        messagesBySessionId.forEach((sessionId, messages) -> {
+            List<Map<String, String>> copiedMessages = new ArrayList<>();
+            for (Map<String, String> message : messages == null ? List.<Map<String, String>>of() : messages) {
+                copiedMessages.add(createConversationMessage(
+                        message == null ? "" : message.getOrDefault("role", ""),
+                        message == null ? "" : message.getOrDefault("content", "")
+                ));
+            }
+            snapshot.put(sessionId, copiedMessages);
+        });
+        return snapshot;
+    }
+
     public void selectChatSession(AgentChatSession session) {
         if (session == null) {
             return;
@@ -250,6 +297,7 @@ public class AgentChatTabController {
 
         activeSessionId = session.getSessionId();
         activeSession = session;
+        latestStructuredAssistantResponse = latestStructuredResponseBySessionId.get(activeSessionId);
         setConversationControlsEnabled(true);
 
         List<Map<String, String>> stored = messagesBySessionId.computeIfAbsent(activeSessionId, ignored -> new ArrayList<>());
@@ -270,6 +318,7 @@ public class AgentChatTabController {
 
         activeSession = null;
         activeSessionId = "";
+        latestStructuredAssistantResponse = null;
         setConversationControlsEnabled(false);
         chatHistoryBox.getChildren().clear();
         if (promptSuggestionsPane != null) {
@@ -297,9 +346,7 @@ public class AgentChatTabController {
             return;
         }
 
-        for (AgentChatSession session : sortedSessions) {
-            chatHistoryBox.getChildren().add(createSessionHistoryRow(session, onSessionSelected));
-        }
+        renderSessionHistoryPage(useCaseName, sortedSessions, onSessionSelected, 0);
     }
 
     public void addSystemMessage(String message) {
@@ -726,7 +773,7 @@ public class AgentChatTabController {
 
         ApiService.getInstance().postWithResponse(ApiService.EP_CHAT_CONFIG, payload)
                 .thenAccept(response -> {
-                    CompletableFuture<Void> refresh = mappingListRequest
+                    CompletableFuture<Void> refresh = (mappingListRequest || shouldRefreshMappings(response))
                             ? mappingRefreshCallback.get()
                             : CompletableFuture.completedFuture(null);
                     refresh.thenRun(() -> Platform.runLater(() -> handleChatResponse(response, mappingListRequest, selectedUseCase)))
@@ -752,9 +799,166 @@ public class AgentChatTabController {
         if (response != null && response.has("reply")) {
             String reply = response.get("reply").asText();
             addChatMessage(reply, false);
+            rememberStructuredResponse(response);
+            renderStructuredResponseCards(response);
         } else {
             addChatMessage("AI response did not include reply field.", false);
         }
+    }
+
+    private boolean shouldRefreshMappings(JsonNode response) {
+        if (response == null || response.isMissingNode() || response.isNull()) {
+            return false;
+        }
+        if (response.path("success").asBoolean(false) && !response.path("read_only").asBoolean(true)) {
+            return true;
+        }
+        String targetWorkflow = response.path("target_workflow").asText("");
+        return "mapping_manager".equalsIgnoreCase(targetWorkflow) && !response.path("read_only").asBoolean(true);
+    }
+
+    private void rememberStructuredResponse(JsonNode response) {
+        if (response == null || response.isMissingNode() || response.isNull()) {
+            return;
+        }
+        latestStructuredAssistantResponse = response.deepCopy();
+        if (activeSessionId != null && !activeSessionId.isBlank()) {
+            latestStructuredResponseBySessionId.put(activeSessionId, latestStructuredAssistantResponse);
+        }
+    }
+
+    private void renderStructuredResponseCards(JsonNode response) {
+        VBox cards = new VBox(8);
+        cards.getStyleClass().add("agent-response-cards");
+
+        appendProposalCards(cards, response.path("proposals"));
+        appendListCard(cards, "Warnings", response.path("warnings"));
+        appendCitationCard(cards, response.path("citations"));
+
+        if (cards.getChildren().isEmpty()) {
+            return;
+        }
+
+        HBox row = new HBox(cards);
+        row.getStyleClass().add("chat-message-row");
+        row.setAlignment(Pos.CENTER_LEFT);
+        chatHistoryBox.getChildren().add(row);
+    }
+
+    private void appendProposalCards(VBox cards, JsonNode proposals) {
+        if (proposals == null || !proposals.isArray() || proposals.isEmpty()) {
+            return;
+        }
+
+        for (JsonNode proposal : proposals) {
+            VBox card = new VBox(6);
+            card.getStyleClass().add("agent-proposal-card");
+
+            Label title = new Label(readText(proposal, "label", "Mapping proposal"));
+            title.getStyleClass().add("agent-proposal-title");
+            title.setWrapText(true);
+            card.getChildren().add(title);
+
+            addWrappedLabel(card, readText(proposal, "rationale", ""), "agent-proposal-text");
+            appendListLines(card, proposal.path("tradeoffs"), "Tradeoffs", "agent-proposal-text");
+            appendListLines(card, proposal.path("warnings"), "Warnings", "agent-proposal-warning");
+
+            String parameterSummary = buildParameterSummary(proposal.path("params"));
+            addWrappedLabel(card, parameterSummary, "agent-proposal-params");
+
+            cards.getChildren().add(card);
+        }
+    }
+
+    private void appendListCard(VBox cards, String title, JsonNode values) {
+        if (values == null || !values.isArray() || values.isEmpty()) {
+            return;
+        }
+
+        VBox card = new VBox(5);
+        card.getStyleClass().add("agent-info-card");
+        Label heading = new Label(title);
+        heading.getStyleClass().add("agent-info-title");
+        card.getChildren().add(heading);
+        appendListLines(card, values, "", "agent-proposal-text");
+        cards.getChildren().add(card);
+    }
+
+    private void appendCitationCard(VBox cards, JsonNode citations) {
+        if (citations == null || !citations.isArray() || citations.isEmpty()) {
+            return;
+        }
+
+        VBox card = new VBox(5);
+        card.getStyleClass().add("agent-info-card");
+        Label heading = new Label("Sources");
+        heading.getStyleClass().add("agent-info-title");
+        card.getChildren().add(heading);
+
+        int index = 1;
+        for (JsonNode citation : citations) {
+            String source = readText(citation, "filename", "");
+            if (source.isBlank()) {
+                source = readText(citation, "source", readText(citation, "type", "Source"));
+            }
+            String expert = readText(citation, "expert", "");
+            String text = index + ". " + source + (expert.isBlank() ? "" : " (" + expert + ")");
+            addWrappedLabel(card, text, "agent-proposal-text");
+            index++;
+        }
+
+        cards.getChildren().add(card);
+    }
+
+    private void appendListLines(VBox card, JsonNode values, String prefix, String styleClass) {
+        if (values == null || !values.isArray() || values.isEmpty()) {
+            return;
+        }
+
+        for (JsonNode value : values) {
+            String text = value.isTextual() ? value.asText("") : value.toString();
+            if (!prefix.isBlank()) {
+                text = prefix + ": " + text;
+            }
+            addWrappedLabel(card, text, styleClass);
+        }
+    }
+
+    private void addWrappedLabel(VBox card, String text, String styleClass) {
+        String normalized = text == null ? "" : text.trim();
+        if (normalized.isEmpty()) {
+            return;
+        }
+        Label label = new Label(normalized);
+        label.getStyleClass().add(styleClass);
+        label.setWrapText(true);
+        card.getChildren().add(label);
+    }
+
+    private String buildParameterSummary(JsonNode params) {
+        if (params == null || !params.isObject()) {
+            return "";
+        }
+
+        String[] names = {
+                "minvalue", "maxvalue", "minpulses", "maxpulses", "minintensity", "maxintensity",
+                "minduration", "maxduration", "mininterval", "maxinterval"
+        };
+
+        List<String> parts = new ArrayList<>();
+        for (String name : names) {
+            if (params.hasNonNull(name)) {
+                parts.add(name + "=" + params.get(name).asText());
+            }
+        }
+        return parts.isEmpty() ? "" : String.join(", ", parts);
+    }
+
+    private String readText(JsonNode node, String field, String fallback) {
+        if (node == null || field == null || field.isBlank() || !node.hasNonNull(field)) {
+            return fallback == null ? "" : fallback;
+        }
+        return node.get(field).asText(fallback == null ? "" : fallback).trim();
     }
 
     private Map<String, Object> buildSessionContext(String selectedUseCase, Integer useCaseId, User selectedUser,
@@ -768,6 +972,9 @@ public class AgentChatTabController {
         context.put("analysis_scope", allUsersSelected ? "usecase" : "participant");
         context.put("recent_conversation", recentConversation);
         context.put("session_memory", buildSessionMemory(currentRequest, recentConversation));
+        if (latestStructuredAssistantResponse != null) {
+            context.put("latest_agent_response", latestStructuredAssistantResponse);
+        }
 
         if (selectedUser != null) {
             context.put("selected_user_id", selectedUser.getUserID());
@@ -1039,6 +1246,7 @@ public class AgentChatTabController {
         messagesBySessionId
                 .computeIfAbsent(activeSessionId, ignored -> new ArrayList<>())
                 .add(createConversationMessage(normalizedRole, normalizedContent));
+        chatSessionChangedCallback.run();
     }
 
     private HBox createSessionHistoryRow(AgentChatSession session, Consumer<AgentChatSession> onSessionSelected) {
@@ -1069,6 +1277,65 @@ public class AgentChatTabController {
         row.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
         return row;
+    }
+
+    private void renderSessionHistoryPage(String useCaseName, List<AgentChatSession> sortedSessions,
+                                          Consumer<AgentChatSession> onSessionSelected, int pageIndex) {
+        int totalPages = Math.max(1, (int) Math.ceil(sortedSessions.size() / (double) SESSION_HISTORY_PAGE_SIZE));
+        int safePageIndex = Math.max(0, Math.min(pageIndex, totalPages - 1));
+        int firstIndex = safePageIndex * SESSION_HISTORY_PAGE_SIZE;
+        int lastIndex = Math.min(sortedSessions.size(), firstIndex + SESSION_HISTORY_PAGE_SIZE);
+
+        while (chatHistoryBox.getChildren().size() > 2) {
+            chatHistoryBox.getChildren().remove(2);
+        }
+
+        for (AgentChatSession session : sortedSessions.subList(firstIndex, lastIndex)) {
+            chatHistoryBox.getChildren().add(createSessionHistoryRow(session, onSessionSelected));
+        }
+
+        chatHistoryBox.getChildren().add(createSessionHistoryPagination(
+                useCaseName,
+                sortedSessions,
+                onSessionSelected,
+                safePageIndex,
+                totalPages
+        ));
+        Platform.runLater(() -> chatScrollPane.setVvalue(0.0));
+    }
+
+    private HBox createSessionHistoryPagination(String useCaseName, List<AgentChatSession> sortedSessions,
+                                                Consumer<AgentChatSession> onSessionSelected, int pageIndex,
+                                                int totalPages) {
+        Button previousButton = new Button("Previous");
+        previousButton.getStyleClass().add("secondary-button");
+        previousButton.setDisable(pageIndex <= 0);
+        previousButton.setOnAction(ignored -> renderSessionHistoryPage(
+                useCaseName,
+                sortedSessions,
+                onSessionSelected,
+                pageIndex - 1
+        ));
+
+        Label pageLabel = new Label("Page " + (pageIndex + 1) + " of " + totalPages);
+        pageLabel.getStyleClass().add("session-history-page-label");
+
+        Button nextButton = new Button("Next");
+        nextButton.getStyleClass().add("secondary-button");
+        nextButton.setDisable(pageIndex >= totalPages - 1);
+        nextButton.setOnAction(ignored -> renderSessionHistoryPage(
+                useCaseName,
+                sortedSessions,
+                onSessionSelected,
+                pageIndex + 1
+        ));
+
+        Region spacer = new Region();
+        HBox pagination = new HBox(8, pageLabel, spacer, previousButton, nextButton);
+        pagination.getStyleClass().add("session-history-pagination");
+        pagination.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        return pagination;
     }
 
     private void updateActiveSessionMetadata(String role, String content) {
