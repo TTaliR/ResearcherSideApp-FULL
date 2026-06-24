@@ -252,6 +252,12 @@ public class MappingsTabController {
         try {
             SensorRuleConfig ruleConfig = buildRuleConfigFromForm();
 
+            RuleCardData identicalRule = findIdenticalMapping(ruleConfig);
+            if (identicalRule != null) {
+                handleDuplicateMapping(identicalRule, ruleConfig);
+                return;
+            }
+
             ButtonLoadingState loading = ButtonLoadingState.start(saveRuleButton, "Saving...");
             ApiService.getInstance().saveSensorRuleConfig(ruleConfig)
                 .thenAccept(success -> Platform.runLater(() -> {
@@ -328,6 +334,12 @@ public class MappingsTabController {
         try {
             SensorRuleConfig ruleConfig = buildRuleConfigFromForm();
             ruleConfig.setId(selectedMappingForEdit.mappingId);
+
+            RuleCardData identicalRule = findIdenticalMapping(ruleConfig);
+            if (identicalRule != null) {
+                handleDuplicateMapping(identicalRule, ruleConfig);
+                return;
+            }
 
             Integer useCaseId = selectedUseCaseIdSupplier.get();
             if (useCaseId == null || useCaseId <= 0) {
@@ -447,6 +459,91 @@ public class MappingsTabController {
         updateSelectedMappingForEdit(null);
         mappingRefreshCallback.get();
         AlertUtils.showInfoAlert("Mapping Updated", successMessage);
+    }
+
+    private RuleCardData findIdenticalMapping(SensorRuleConfig ruleConfig) {
+        String normalizedUseCase = FormatUtils.normalizeUseCaseName(ruleConfig.getType());
+        for (RuleCardData rule : rulesSupplier.get()) {
+            if (ruleConfig.getId() > 0 && rule.mappingId == ruleConfig.getId()) {
+                continue;
+            }
+            if (normalizedUseCase.equalsIgnoreCase(rule.useCaseKey)
+                && rule.minValue == ruleConfig.getMinvalue()
+                && rule.maxValue == ruleConfig.getMaxvalue()
+                && rule.minPulses == ruleConfig.getMinpulses()
+                && rule.maxPulses == ruleConfig.getMaxpulses()
+                && rule.minIntensity == ruleConfig.getMinintensity()
+                && rule.maxIntensity == ruleConfig.getMaxintensity()
+                && rule.minDuration == ruleConfig.getMinduration()
+                && rule.maxDuration == ruleConfig.getMaxduration()
+                && rule.minInterval == ruleConfig.getMininterval()
+                && rule.maxInterval == ruleConfig.getMaxinterval()) {
+                return rule;
+            }
+        }
+        return null;
+    }
+
+    private void handleDuplicateMapping(RuleCardData identicalRule, SensorRuleConfig ruleConfig) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Duplicate Mapping");
+        alert.setHeaderText(null);
+        alert.setContentText("this mapping already exists: Mapping ID: " + identicalRule.mappingId + ". assign user to this mapping?");
+
+        ButtonType yesButton = new ButtonType("Yes", ButtonBar.ButtonData.YES);
+        ButtonType noButton = new ButtonType("No", ButtonBar.ButtonData.NO);
+        alert.getButtonTypes().setAll(yesButton, noButton);
+
+        Optional<ButtonType> result = alert.showAndWait();
+        if (result.isPresent() && result.get() == yesButton) {
+            User currentUser = selectedUserSupplier.get();
+            if (currentUser == null) {
+                AlertUtils.showErrorAlert("No User Selected", "Please select a user to assign to this mapping.");
+                return;
+            }
+
+            String useCaseName = selectedUseCaseSupplier.get();
+            int useCaseId = useCaseIdResolver.apply(useCaseName);
+            if (useCaseId <= 0) {
+                useCaseId = selectedUseCaseIdSupplier.get() != null ? selectedUseCaseIdSupplier.get() : 0;
+            }
+            if (useCaseId <= 0) {
+                AlertUtils.showErrorAlert("Error", "Could not resolve use case ID.");
+                return;
+            }
+
+            assignUserToExistingMapping(currentUser, identicalRule, useCaseId, useCaseName);
+        }
+    }
+
+    private void assignUserToExistingMapping(User user, RuleCardData identicalRule, int useCaseId, String useCaseName) {
+        ButtonLoadingState loading = ButtonLoadingState.start(saveRuleButton, "Assigning...");
+        ApiService.getInstance().assignMappingToUser(
+                user.getUserID(),
+                identicalRule.mappingId,
+                useCaseId,
+                useCaseName,
+                chatSessionIdSupplier.get()
+        )
+        .thenAccept(success -> Platform.runLater(() -> {
+            loading.close();
+            if (!success) {
+                AlertUtils.showErrorAlert("Assignment Failed", "Could not assign user " + user.getUserID() + " to mapping ID " + identicalRule.mappingId + ".");
+                return;
+            }
+            AlertUtils.showInfoAlert("Assignment Successful", "Assigned user " + user + " to existing mapping ID " + identicalRule.mappingId + ".");
+            clearRuleBuilderForm();
+            updateSelectedMappingForEdit(null);
+            selectedUseCaseConsumer.accept(useCaseName);
+            mappingRefreshCallback.get();
+        }))
+        .exceptionally(ex -> {
+            Platform.runLater(() -> {
+                loading.close();
+                AlertUtils.showErrorAlert("Assignment Failed", "Failed to assign user: " + ex.getMessage());
+            });
+            return null;
+        });
     }
 
     private void updateRuleBuilderUseCaseDisplay(String selectedUseCase) {
