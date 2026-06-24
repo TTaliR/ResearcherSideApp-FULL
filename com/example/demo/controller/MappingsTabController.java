@@ -11,6 +11,8 @@ import com.example.demo.util.AlertUtils;
 import com.example.demo.util.ButtonLoadingState;
 import com.example.demo.util.FormatUtils;
 import com.fasterxml.jackson.databind.JsonNode;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
 import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
@@ -20,6 +22,7 @@ import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
+import javafx.util.Duration;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -50,6 +53,7 @@ public class MappingsTabController {
     @FXML private Button refreshRuleButton;
     @FXML private Button editLoggingIntervalButton;
     @FXML private ToggleGroup mappingToggleGroup;
+    @FXML private Pane ruleBuilderPane;
 
     private Supplier<String> selectedUseCaseSupplier = () -> "";
     private Supplier<Integer> selectedUseCaseIdSupplier = () -> null;
@@ -672,6 +676,7 @@ public class MappingsTabController {
         updateSelectedMappingForEdit(rule);
         populateRuleBuilderFromMapping(rule);
         updateRenderedMappingSelection(rule);
+        flashRuleBuilder();
     }
 
     private void updateRenderedMappingSelection(RuleCardData selectedRule) {
@@ -1163,5 +1168,17 @@ public class MappingsTabController {
 
     private String formatUser(User user) {
         return userFormatter.apply(user);
+    }
+
+    private void flashRuleBuilder() {
+        if (ruleBuilderPane == null) {
+            return;
+        }
+
+        Timeline timeline = new Timeline(
+                new KeyFrame(Duration.seconds(0), event -> ruleBuilderPane.getStyleClass().add("rule-builder-flash")),
+                new KeyFrame(Duration.seconds(0.8), event -> ruleBuilderPane.getStyleClass().remove("rule-builder-flash"))
+        );
+        timeline.play();
     }
 }

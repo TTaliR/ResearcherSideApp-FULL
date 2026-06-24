@@ -670,3 +670,8 @@
     -fx-text-fill: white;
     -fx-font-weight: bold;
 }
+
+.rule-builder-flash {
+    -fx-border-color: -fx-focus-color;
+    -fx-border-width: 2px;
+}

@@ -22,9 +22,9 @@
         <ToggleButton text="List All" onAction="#onListAllMappings" toggleGroup="$mappingToggleGroup" />
     </HBox>
     <VBox spacing="0">
-        <Label text="New Mapping Rule Builder" styleClass="drawer-title" alignment="CENTER_LEFT"/>
+        <Label text="Mapping Rule Builder" styleClass="drawer-title" alignment="CENTER_LEFT"/>
     </VBox>
-    <HBox spacing="8.0" styleClass="chat-panel">
+    <HBox spacing="8.0" styleClass="chat-panel" fx:id="ruleBuilderPane">
         <VBox spacing="3.0" alignment="CENTER">
             <HBox alignment="CENTER_LEFT">
                 <Label minWidth="100.0" text="Sensor Type:" styleClass="topbar-label" />

@@ -44,6 +44,7 @@ public class ApiService {
     public static final String EP_SET_RULES = "/set-rules";
     public static final String EP_MAPPING_ACTIVATION = "/mapping-activation";
     public static final String EP_SET_LOGGING_INTERVAL = "/set-logging-interval";
+    public static final String EP_MAPPING_COMMANDS = "/mapping-commands";
     public static final String EP_CHAT_CONFIG = "/chat";
     public static final String EP_CHECK_CONNECTION = "/check-connection";
     public static final String EP_SET_USERS = "/edit-users";
@@ -163,36 +164,20 @@ public class ApiService {
                                                           int usecaseId, String usecaseName,
                                                           String sessionId) {
         String trimmedUsecaseName = usecaseName == null ? "" : usecaseName.trim();
-        String trimmedSessionId = sessionId == null ? "" : sessionId.trim();
-        if (userId <= 0 || mappingId <= 0 || usecaseId <= 0
-                || trimmedUsecaseName.isEmpty() || trimmedSessionId.isEmpty()) {
+        if (userId <= 0 || mappingId <= 0 || usecaseId <= 0 || trimmedUsecaseName.isEmpty()) {
             return CompletableFuture.completedFuture(false);
         }
 
         Map<String, Object> payload = new HashMap<>();
-        payload.put("session_id", trimmedSessionId);
-        payload.put("usecase_id", usecaseId);
-        payload.put("usecase_name", trimmedUsecaseName);
         payload.put("action", "assign_mapping_to_user");
         payload.put("user_id", userId);
         payload.put("mapping_id", mappingId);
         payload.put("feedback_config_rule_id", mappingId);
-        payload.put("message", "Assign mapping ID " + mappingId + " for " + trimmedUsecaseName
-            + " to user " + userId + ".");
+        payload.put("usecase_id", usecaseId);
+        payload.put("usecase_name", trimmedUsecaseName);
 
-        return postWithResponse(EP_CHAT_CONFIG, payload)
-            .thenApply(response -> {
-                if (response == null || response.has("error")) {
-                    return false;
-                }
-                String reply = extractTextField(response, "reply").toLowerCase();
-                String message = extractTextField(response, "message").toLowerCase();
-                String combined = reply + " " + message;
-                return combined.contains("assigned")
-                    || combined.contains("updated")
-                    || combined.contains("now active")
-                    || combined.contains("success");
-            })
+        return postWithResponse(EP_MAPPING_COMMANDS, payload)
+            .thenApply(this::isSuccessResponse)
             .exceptionally(ex -> false);
     }
 
@@ -215,32 +200,22 @@ public class ApiService {
                                                     int usecaseId, String usecaseName,
                                                     String sessionId) {
         String trimmedUsecaseName = usecaseName == null ? "" : usecaseName.trim();
-        String trimmedSessionId = sessionId == null ? "" : sessionId.trim();
-        if (mappingId <= 0 || ruleConfig == null || usecaseId <= 0 || trimmedUsecaseName.isEmpty() || trimmedSessionId.isEmpty()) {
+        if (mappingId <= 0 || ruleConfig == null || usecaseId <= 0 || trimmedUsecaseName.isEmpty()) {
             return CompletableFuture.completedFuture(false);
         }
 
         Map<String, Object> params = buildMappingChangeParams(mappingId, ruleConfig);
 
         Map<String, Object> payload = new HashMap<>();
-        payload.put("session_id", trimmedSessionId);
-        payload.put("usecase_id", usecaseId);
-        payload.put("usecase_name", trimmedUsecaseName);
         payload.put("action", "change");
         payload.put("apply_scope", "all_users");
         payload.put("original_mapping_id", mappingId);
+        payload.put("usecase_id", usecaseId);
+        payload.put("usecase_name", trimmedUsecaseName);
         payload.put("params", params);
-        payload.put("message", buildMappingChangeForAllUsersMessage(trimmedUsecaseName, params));
 
-        return postWithResponse(EP_CHAT_CONFIG, payload)
-            .thenApply(response -> {
-                if (response == null || response.has("error")) {
-                    return false;
-                }
-                String reply = extractTextField(response, "reply").toLowerCase();
-                return !reply.isBlank()
-                    && (reply.contains("updated") || reply.contains("mapping id " + mappingId) || reply.contains("has been"));
-            })
+        return postWithResponse(EP_MAPPING_COMMANDS, payload)
+            .thenApply(this::isSuccessResponse)
             .exceptionally(ex -> false);
     }
 
@@ -248,37 +223,24 @@ public class ApiService {
                                                                int usecaseId, String usecaseName,
                                                                String sessionId) {
         String trimmedUsecaseName = usecaseName == null ? "" : usecaseName.trim();
-        String trimmedSessionId = sessionId == null ? "" : sessionId.trim();
         if (mappingId <= 0 || userId <= 0 || ruleConfig == null || usecaseId <= 0
-                || trimmedUsecaseName.isEmpty() || trimmedSessionId.isEmpty()) {
+                || trimmedUsecaseName.isEmpty()) {
             return CompletableFuture.completedFuture(false);
         }
 
         Map<String, Object> params = buildMappingChangeParams(mappingId, ruleConfig);
 
         Map<String, Object> payload = new HashMap<>();
-        payload.put("session_id", trimmedSessionId);
-        payload.put("usecase_id", usecaseId);
-        payload.put("usecase_name", trimmedUsecaseName);
         payload.put("action", "duplicate_mapping_for_user");
         payload.put("apply_scope", "current_user");
         payload.put("user_id", userId);
         payload.put("original_mapping_id", mappingId);
+        payload.put("usecase_id", usecaseId);
+        payload.put("usecase_name", trimmedUsecaseName);
         payload.put("params", params);
-        payload.put("message", buildMappingChangeForUserOnlyMessage(trimmedUsecaseName, userId, params));
 
-        return postWithResponse(EP_CHAT_CONFIG, payload)
-            .thenApply(response -> {
-                if (response == null || response.has("error")) {
-                    return false;
-                }
-                String reply = extractTextField(response, "reply").toLowerCase();
-                return !reply.isBlank()
-                    && (reply.contains("duplicated")
-                        || reply.contains("created")
-                        || reply.contains("assigned")
-                        || reply.contains("updated"));
-            })
+        return postWithResponse(EP_MAPPING_COMMANDS, payload)
+            .thenApply(this::isSuccessResponse)
             .exceptionally(ex -> false);
     }
 
@@ -296,36 +258,6 @@ public class ApiService {
         params.put("mininterval", ruleConfig.getMininterval());
         params.put("maxinterval", ruleConfig.getMaxinterval());
         return params;
-    }
-
-    private String buildMappingChangeForAllUsersMessage(String usecaseName, Map<String, Object> params) {
-        return "Apply to all users: change mapping ID " + params.get("id") + " for " + usecaseName
-            + " with minvalue " + params.get("minvalue")
-            + ", maxvalue " + params.get("maxvalue")
-            + ", minpulses " + params.get("minpulses")
-            + ", maxpulses " + params.get("maxpulses")
-            + ", minintensity " + params.get("minintensity")
-            + ", maxintensity " + params.get("maxintensity")
-            + ", minduration " + params.get("minduration")
-            + ", maxduration " + params.get("maxduration")
-            + ", mininterval " + params.get("mininterval")
-            + ", and maxinterval " + params.get("maxinterval") + ".";
-    }
-
-    private String buildMappingChangeForUserOnlyMessage(String usecaseName, int userId, Map<String, Object> params) {
-        return "Duplicate mapping ID " + params.get("id") + " for user " + userId
-            + " only, assign the duplicate to that user, and change the duplicate for " + usecaseName
-            + " with minvalue " + params.get("minvalue")
-            + ", maxvalue " + params.get("maxvalue")
-            + ", minpulses " + params.get("minpulses")
-            + ", maxpulses " + params.get("maxpulses")
-            + ", minintensity " + params.get("minintensity")
-            + ", maxintensity " + params.get("maxintensity")
-            + ", minduration " + params.get("minduration")
-            + ", maxduration " + params.get("maxduration")
-            + ", mininterval " + params.get("mininterval")
-            + ", and maxinterval " + params.get("maxinterval")
-            + ". Leave the original mapping unchanged for all other users.";
     }
 
     public CompletableFuture<Boolean> setLoggingInterval(int usecaseId, String interval) {
@@ -649,6 +581,12 @@ public class ApiService {
         return node.asText("").trim();
     }
 
+    private boolean isSuccessResponse(JsonNode response) {
+        return response != null
+            && !response.has("error")
+            && (!response.has("success") || response.path("success").asBoolean(false));
+    }
+
     private String firstNonBlank(String... values) {
         if (values == null) {
             return "";
@@ -935,7 +873,7 @@ public class ApiService {
                 int code = conn.getResponseCode();
                 System.out.println("POST Response Code: " + code + " - " + conn.getResponseMessage());
 
-                if (code == 200) {
+                if (code >= 200 && code < 300) {
                     BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
                     StringBuilder response = new StringBuilder();
                     String line;
@@ -943,7 +881,11 @@ public class ApiService {
                         response.append(line);
                     }
                     reader.close();
-                    return mapper.readTree(response.toString());
+                    String body = response.toString().trim();
+                    if (body.isEmpty()) {
+                        return mapper.createObjectNode().put("success", true);
+                    }
+                    return mapper.readTree(body);
                 } else {
                     System.err.println("POST Failed - HTTP " + code + " for endpoint: " + endpoint);
                     return mapper.createObjectNode().put("error", code).put("message", conn.getResponseMessage());
