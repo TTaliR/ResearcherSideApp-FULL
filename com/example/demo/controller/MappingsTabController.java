@@ -9,6 +9,7 @@ import com.example.demo.model.User;
 import com.example.demo.service.ApiService;
 import com.example.demo.util.AlertUtils;
 import com.example.demo.util.ButtonLoadingState;
+import com.example.demo.util.DateUtils;
 import com.example.demo.util.FormatUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import javafx.animation.KeyFrame;
@@ -589,7 +590,15 @@ public class MappingsTabController {
 
         if (selectedUser != null && !showingActiveMappingsOnly) {
             ApiService.getInstance().getUserMappingHistory(selectedUser.getUserID(), useCase)
-                    .thenAccept(response -> Platform.runLater(() -> renderUserMappingHistory(response, useCase, selectedUser)));
+                    .thenAccept(response -> Platform.runLater(() -> {
+                        User currentUser = selectedUserSupplier.get();
+                        if (!showingActiveMappingsOnly
+                                && Objects.equals(FormatUtils.normalizeUseCaseName(selectedUseCaseSupplier.get()), selectedUseCaseKey)
+                                && currentUser != null
+                                && currentUser.getUserID() == selectedUser.getUserID()) {
+                            renderUserMappingHistory(response, useCase, selectedUser);
+                        }
+                    }));
             return;
         }
 
@@ -701,7 +710,13 @@ public class MappingsTabController {
         mappingsEmptyLabel.setVisible(false);
         mappingsEmptyLabel.setManaged(false);
 
+        Map<Integer, List<JsonNode>> mappingsById = new LinkedHashMap<>();
         for (JsonNode mappingNode : mappingsArray) {
+            mappingsById.computeIfAbsent(mappingNode.path("mappingId").asInt(), ignored -> new ArrayList<>()).add(mappingNode);
+        }
+
+        for (List<JsonNode> history : mappingsById.values()) {
+            JsonNode mappingNode = chooseHistoryCardMapping(history);
             RuleCardData rule = MappingUiFactory.createRuleFromHistoryMapping(mappingNode, useCase);
             boolean selected = selectedMappingForEdit != null && selectedMappingForEdit.mappingId == rule.mappingId;
             VBox card = MappingUiFactory.createHistoryMappingCard(
@@ -711,8 +726,48 @@ public class MappingsTabController {
                     this::onDeleteMappingRequested,
                     selected
             );
+            if (!card.getChildren().isEmpty() && card.getChildren().get(0) instanceof HBox titleRow) {
+                titleRow.getChildren().add(2, createAssignUsersToMappingButton(rule));
+            }
+            if (history.size() > 1) {
+                card.getChildren().add(createMappingHistoryNode(history));
+            }
             mappingsFlowPane.getChildren().add(card);
         }
+    }
+
+    private JsonNode chooseHistoryCardMapping(List<JsonNode> history) {
+        return history.stream()
+                .filter(MappingUiFactory::isHistoryMappingActive)
+                .findFirst()
+                .orElse(history.get(0));
+    }
+
+    private Node createMappingHistoryNode(List<JsonNode> history) {
+        VBox historyBox = new VBox(4);
+        historyBox.getStyleClass().add("mapping-assigned-list");
+        for (JsonNode mappingNode : history) {
+            Label row = new Label(formatMappingHistoryRow(mappingNode));
+            row.getStyleClass().add("mapping-assigned-user");
+            row.setWrapText(true);
+            historyBox.getChildren().add(row);
+        }
+
+        TitledPane historyPane = new TitledPane("Assignment history (" + history.size() + ")", historyBox);
+        historyPane.getStyleClass().add("mapping-assigned-pane");
+        historyPane.setExpanded(false);
+        historyPane.setAnimated(false);
+        historyPane.setOnMouseClicked(event -> event.consume());
+        return historyPane;
+    }
+
+    private String formatMappingHistoryRow(JsonNode mappingNode) {
+        String assignedAt = DateUtils.formatReadable(mappingNode.path("assignedAt").asText("Unknown"));
+        String deactivatedAt = DateUtils.formatReadable(mappingNode.path("deactivatedAt").asText());
+        if (MappingUiFactory.isHistoryMappingActive(mappingNode) || "N/A".equals(deactivatedAt)) {
+            return "Assigned: " + assignedAt + " - current";
+        }
+        return "Assigned: " + assignedAt + " - Deactivated: " + deactivatedAt;
     }
 
     private Node createMappingAssignedUsersNode(RuleCardData rule) {

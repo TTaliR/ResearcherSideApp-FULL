@@ -503,7 +503,7 @@
 }
 
 .mapping-card-unassigned.mapping-card-selected {
-    -fx-background-color: #fffbeb;
+    -fx-background-color: #eef6ff;
     -fx-border-color: #2563eb;
 }
 
@@ -718,7 +718,7 @@
     -fx-font-weight: bold;
 }
 
-.rule-builder-flash {
-    -fx-border-color: -fx-focus-color;
-    -fx-border-width: 2px;
-}
+/*.rule-builder-flash {*/
+/*    -fx-border-color: -fx-focus-color;*/
+/*    -fx-border-width: 2px;*/
+/*}*/
