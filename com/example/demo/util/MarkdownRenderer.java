@@ -152,6 +152,22 @@ public class MarkdownRenderer {
                 html.append("<h3>").append(renderInlineMarkdown(trimmed.substring(4))).append("</h3>");
                 continue;
             }
+            if (trimmed.startsWith("#### ")) {
+                if (paragraph.length() > 0) {
+                    html.append("<p>").append(renderInlineMarkdown(paragraph.toString())).append("</p>");
+                    paragraph.setLength(0);
+                }
+                if (inUl) {
+                    html.append("</ul>");
+                    inUl = false;
+                }
+                if (inOl) {
+                    html.append("</ol>");
+                    inOl = false;
+                }
+                html.append("<h4>").append(renderInlineMarkdown(trimmed.substring(5))).append("</h4>");
+                continue;
+            }
 
             if (trimmed.startsWith("> ")) {
                 if (paragraph.length() > 0) {
