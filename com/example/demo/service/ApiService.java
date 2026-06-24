@@ -826,7 +826,7 @@ public class ApiService {
                 conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("GET");
                 conn.setConnectTimeout(10000);  // 10 seconds for initial connection
-                conn.setReadTimeout(30000);     // 30 seconds for reading response (large payloads may take time)
+                conn.setReadTimeout(45000);     // 30 seconds for reading response (large payloads may take time)
 
                 int status = conn.getResponseCode();
                 if (status != 200) {
@@ -883,7 +883,7 @@ public class ApiService {
                 conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
                 conn.setDoOutput(true);
                 conn.setConnectTimeout(10000);  // 10 seconds for connection
-                conn.setReadTimeout(30000);     // 30 seconds for response
+                conn.setReadTimeout(45000);     // 30 seconds for response
 
                 try (OutputStream os = conn.getOutputStream()) {
                     byte[] input = jsonInputString.getBytes(StandardCharsets.UTF_8);
