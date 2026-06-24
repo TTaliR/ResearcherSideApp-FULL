@@ -256,7 +256,7 @@ public class AgentChatTabController {
         renderStoredMessages(stored);
         if (!hasUserMessage(stored)) {
             if (stored.isEmpty()) {
-                addChatMessage(buildDefaultConversationMessage(emptySessionMessage), false);
+                renderChatMessage(buildDefaultConversationMessage(emptySessionMessage), false);
             }
             showPromptSuggestions();
         }
@@ -303,7 +303,7 @@ public class AgentChatTabController {
     }
 
     public void addSystemMessage(String message) {
-        addChatMessage(buildDefaultConversationMessage(message), false);
+        addChatMessage(message, false);
         showPromptSuggestions();
     }
 

@@ -486,12 +486,6 @@ public class MappingsTabController {
         String selectedUseCaseKey = FormatUtils.normalizeUseCaseName(useCase);
         User selectedUser = selectedUserSupplier.get();
 
-        if (selectedUser != null && !showingActiveMappingsOnly) {
-             ApiService.getInstance().getUserMappingHistory(selectedUser.getUserID(), useCase)
-                     .thenAccept(response -> Platform.runLater(() -> renderUserMappingHistory(response, useCase, selectedUser)));
-             return;
-        }
-
         List<RuleCardData> filtered = rulesSupplier.get().stream()
             .filter(rule -> selectedUseCaseKey.equals(rule.useCaseKey))
             .filter(rule -> {
