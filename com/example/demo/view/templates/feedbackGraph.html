@@ -139,6 +139,15 @@
       margin-top: 5px;
     }
 
+    /* Zoom dots warning styling */
+    .zoom-dots-warning {
+      text-align: center;
+      font-size: 13px;
+      font-weight: bold;
+      margin: 5px 0;
+      transition: color 0.3s ease;
+    }
+
     /* Export button styling */
     .export-btn {
       display: block;
@@ -198,6 +207,11 @@
   <!-- zoom hint for users -->
   <p class="zoom-hint">Tip: Use mouse scroll to zoom in/out on the timeline, drag to pan</p>
 
+  <!-- zoom dots warning -->
+  <p id="zoom-dots-warning" class="zoom-dots-warning" style="color: #b45309;">
+    Zoom in to see the detailed pulse dots on the graph.
+  </p>
+
   <!-- graph visibility filters -->
   <div class="graph-filters" aria-label="Graph display filters">
     <label><input type="checkbox" id="toggleLine" checked> Show line graph</label>
@@ -249,6 +263,7 @@ if (normalizedData.length === 0) {
 const MAX_LINE_POINTS = 2400;
 const MAX_VISIBLE_DOTS = 900;
 const CLUSTER_CELL_PX = 22;
+const ZOOM_THRESHOLD = 2.0;
 
 function downsampleTimeSeries(points, maxPoints) {
   if (!Array.isArray(points) || points.length <= maxPoints) {
@@ -457,6 +472,30 @@ const dataLayer = g.append("g")
           circles: toggleCircles ? toggleCircles.checked : true
         };
 
+function updateDotsVisibility(currentZoomK) {
+  const isZoomedIn = currentZoomK >= ZOOM_THRESHOLD;
+  const showCircles = graphVisibility.circles && isZoomedIn;
+  
+  dataLayer.selectAll("circle")
+    .attr("opacity", showCircles ? 1 : 0)
+    .style("pointer-events", showCircles ? "auto" : "none");
+
+  dataLayer.selectAll("text.cluster-count")
+    .attr("opacity", showCircles ? 1 : 0)
+    .style("pointer-events", showCircles ? "auto" : "none");
+
+  const warningEl = document.getElementById("zoom-dots-warning");
+  if (warningEl) {
+    if (isZoomedIn) {
+      warningEl.innerHTML = "Zoomed in: detailed pulse dots are now visible.";
+      warningEl.style.color = "#15803d";
+    } else {
+      warningEl.innerHTML = "Zoom in to see the detailed pulse dots on the graph.";
+      warningEl.style.color = "#b45309";
+    }
+  }
+}
+
         function applyGraphVisibility() {
           if (linePath) {
             linePath
@@ -464,9 +503,8 @@ const dataLayer = g.append("g")
               .style("pointer-events", graphVisibility.line ? "auto" : "none");
           }
 
-          dataLayer.selectAll("circle")
-            .attr("opacity", graphVisibility.circles ? 1 : 0)
-            .style("pointer-events", graphVisibility.circles ? "auto" : "none");
+          const currentK = (svg && svg.node()) ? d3.zoomTransform(svg.node()).k : 1.0;
+          updateDotsVisibility(currentK);
         }
 
         if (toggleLine) {
@@ -573,7 +611,10 @@ const linePath = dataLayer.append("path")
 
     // Draw feedback circles only for points marked as alerts
     // Animated grow-in and staggered delays for clarity
-dataLayer.selectAll("circle")
+    const initialK = (svg && svg.node()) ? d3.zoomTransform(svg.node()).k : 1.0;
+    const initialShowCircles = graphVisibility.circles && (initialK >= ZOOM_THRESHOLD);
+
+    dataLayer.selectAll("circle")
       .data(renderedCircleData)
       .enter().append("circle")
       .attr("cx", d => x(d.parsedTime))
@@ -586,7 +627,7 @@ dataLayer.selectAll("circle")
       .duration(180)
       .delay((d, i) => Math.min(i * 3, 350))
       .attr("r", d => Math.max(radius(d.maxPulses || d.pulses), d.count > 1 ? 7 : 2))
-      .attr("opacity", 1);
+      .attr("opacity", initialShowCircles ? 1 : 0);
 
     const clusterTexts = dataLayer.selectAll("text.cluster-count")
       .data(renderedCircleData.filter(d => d.count > 1))
@@ -594,6 +635,7 @@ dataLayer.selectAll("circle")
       .attr("class", "cluster-count")
       .attr("x", d => x(d.parsedTime))
       .attr("y", d => y(d.value) + 3)
+      .attr("opacity", initialShowCircles ? 1 : 0)
       .text(d => d.count > 99 ? "99+" : d.count);
 
     clusterTexts.each(function(d) {
@@ -838,6 +880,9 @@ function zoomed(event) {
 
   dataLayer.selectAll("text.cluster-count")
     .attr("x", d => zx(d.parsedTime));
+
+  // Update dots visibility based on current zoom level
+  updateDotsVisibility(transform.k);
 }
 
 // ==================== EXPORT TO PNG ====================
