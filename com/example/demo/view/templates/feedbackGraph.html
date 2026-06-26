@@ -284,6 +284,47 @@ function downsampleTimeSeries(points, maxPoints) {
     .sort((a, b) => a.parsedTime - b.parsedTime);
 }
 
+function insertGaps(points) {
+  if (!Array.isArray(points) || points.length < 2) {
+    return points;
+  }
+
+  // Calculate median time difference to detect anomalous gaps
+  const diffs = [];
+  for (let i = 1; i < points.length; i++) {
+    const diff = points[i].parsedTime - points[i - 1].parsedTime;
+    if (diff > 0) {
+      diffs.push(diff);
+    }
+  }
+  diffs.sort((a, b) => a - b);
+  const medianDiff = diffs[Math.floor(diffs.length / 2)] || 0;
+  
+  // Set threshold: 5x median difference, with a minimum of 2 minutes
+  const gapThreshold = Math.max(5 * medianDiff, 2 * 60 * 1000);
+
+  const result = [];
+  result.push(points[0]);
+
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const diff = curr.parsedTime - prev.parsedTime;
+
+    if (diff > gapThreshold) {
+      // Insert a gap node in the middle
+      const gapTime = new Date(prev.parsedTime.getTime() + diff / 2);
+      result.push({
+        parsedTime: gapTime,
+        value: null
+      });
+    }
+    result.push(curr);
+  }
+
+  return result;
+}
+
 function clusterPoints(points, xScale, yScale) {
   if (!Array.isArray(points) || points.length <= MAX_VISIBLE_DOTS) {
     return points.map(point => ({
@@ -547,12 +588,13 @@ document.getElementById("data-stats").textContent = statsText;
       .curve(d3.curveMonotoneX);
 
     const visualLineData = downsampleTimeSeries(normalizedData, MAX_LINE_POINTS);
+    const linePointsWithGaps = insertGaps(visualLineData);
     const alertSourceData = normalizedData.filter(d => d.pulses > 0 && d.alert_type);
     let renderedCircleData = clusterPoints(alertSourceData, x, y);
 
     // Draw a downsampled visual path; the original data array stays intact for export.
-const linePath = dataLayer.append("path")
-      .datum(visualLineData)
+    const linePath = dataLayer.append("path")
+      .datum(linePointsWithGaps)
       .attr("fill", "none")
       .attr("stroke", "#4682B4")
       .attr("stroke-width", 2)
@@ -829,7 +871,7 @@ function zoomed(event) {
   linePath
     .attr("stroke-dasharray", null)
     .attr("stroke-dashoffset", null)
-    .datum(visualLineData)
+    .datum(linePointsWithGaps)
     .attr("d", lineWithZoom);
 
   // Move circles horizontally according to zoom/pan
