@@ -312,9 +312,38 @@ public class DashboardController {
             agentChatTabContentController.showSessionHistoryList(
                     useCaseName,
                     chatSessionsForUseCase(useCaseName),
-                    this::selectChatSession
+                    this::selectChatSession,
+                    this::deleteChatSession
             );
         }
+    }
+
+    private void deleteChatSession(AgentChatSession session) {
+        if (session == null || session.getSessionId().isBlank()) {
+            return;
+        }
+
+        ButtonType deleteButtonType = new ButtonType("Delete", ButtonBar.ButtonData.OK_DONE);
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.setTitle("Delete Chat Session");
+        alert.setHeaderText("Delete " + session.getTitle() + "?");
+        alert.setContentText("This removes the saved conversation for this session.");
+        alert.getButtonTypes().setAll(deleteButtonType, ButtonType.CANCEL);
+
+        Optional<ButtonType> result = alert.showAndWait();
+        if (result.isEmpty() || result.get() != deleteButtonType) {
+            return;
+        }
+
+        String sessionId = session.getSessionId();
+        chatSessions.removeIf(candidate -> sessionId.equals(candidate.getSessionId()));
+        if (agentChatTabContentController != null) {
+            agentChatTabContentController.deleteStoredSessionMessages(sessionId);
+        }
+
+        rebuildActiveChatSessionsFromHistory();
+        persistChatSessions();
+        showAllChatSessionsForUseCase(session.getUseCaseName());
     }
 
     private List<AgentChatSession> chatSessionsForUseCase(String useCaseName) {

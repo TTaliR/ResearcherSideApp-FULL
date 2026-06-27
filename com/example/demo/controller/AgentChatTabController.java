@@ -228,6 +228,21 @@ public class AgentChatTabController {
         return snapshot;
     }
 
+    public void deleteStoredSessionMessages(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return;
+        }
+        messagesBySessionId.remove(sessionId);
+        latestStructuredResponseBySessionId.remove(sessionId);
+        if (sessionId.equals(activeSessionId)) {
+            activeSessionId = "";
+            activeSession = null;
+            latestStructuredAssistantResponse = null;
+            clearMessages();
+            setConversationControlsEnabled(false);
+        }
+    }
+
     public void selectChatSession(AgentChatSession session) {
         if (session == null) {
             return;
@@ -311,7 +326,8 @@ public class AgentChatTabController {
     }
 
     public void showSessionHistoryList(String useCaseName, List<AgentChatSession> sessions,
-                                       Consumer<AgentChatSession> onSessionSelected) {
+                                       Consumer<AgentChatSession> onSessionSelected,
+                                       Consumer<AgentChatSession> onSessionDeleted) {
         if (chatHistoryBox == null) {
             return;
         }
@@ -346,7 +362,7 @@ public class AgentChatTabController {
             return;
         }
 
-        renderSessionHistoryPage(useCaseName, sortedSessions, onSessionSelected, 0);
+        renderSessionHistoryPage(useCaseName, sortedSessions, onSessionSelected, onSessionDeleted, 0);
     }
 
     public void addSystemMessage(String message) {
@@ -1249,7 +1265,8 @@ public class AgentChatTabController {
         chatSessionChangedCallback.run();
     }
 
-    private HBox createSessionHistoryRow(AgentChatSession session, Consumer<AgentChatSession> onSessionSelected) {
+    private HBox createSessionHistoryRow(AgentChatSession session, Consumer<AgentChatSession> onSessionSelected,
+                                         Consumer<AgentChatSession> onSessionDeleted) {
         Label title = new Label(session.getTitle());
         title.getStyleClass().add("session-history-row-title");
         title.setWrapText(true);
@@ -1272,7 +1289,15 @@ public class AgentChatTabController {
             }
         });
 
-        HBox row = new HBox(10, text, spacer, openButton);
+        Button deleteButton = new Button("Delete");
+        deleteButton.getStyleClass().add("danger-button");
+        deleteButton.setOnAction(ignored -> {
+            if (onSessionDeleted != null) {
+                onSessionDeleted.accept(session);
+            }
+        });
+
+        HBox row = new HBox(10, text, spacer, openButton, deleteButton);
         row.getStyleClass().add("session-history-row");
         row.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
@@ -1280,7 +1305,8 @@ public class AgentChatTabController {
     }
 
     private void renderSessionHistoryPage(String useCaseName, List<AgentChatSession> sortedSessions,
-                                          Consumer<AgentChatSession> onSessionSelected, int pageIndex) {
+                                          Consumer<AgentChatSession> onSessionSelected,
+                                          Consumer<AgentChatSession> onSessionDeleted, int pageIndex) {
         int totalPages = Math.max(1, (int) Math.ceil(sortedSessions.size() / (double) SESSION_HISTORY_PAGE_SIZE));
         int safePageIndex = Math.max(0, Math.min(pageIndex, totalPages - 1));
         int firstIndex = safePageIndex * SESSION_HISTORY_PAGE_SIZE;
@@ -1291,13 +1317,14 @@ public class AgentChatTabController {
         }
 
         for (AgentChatSession session : sortedSessions.subList(firstIndex, lastIndex)) {
-            chatHistoryBox.getChildren().add(createSessionHistoryRow(session, onSessionSelected));
+            chatHistoryBox.getChildren().add(createSessionHistoryRow(session, onSessionSelected, onSessionDeleted));
         }
 
         chatHistoryBox.getChildren().add(createSessionHistoryPagination(
                 useCaseName,
                 sortedSessions,
                 onSessionSelected,
+                onSessionDeleted,
                 safePageIndex,
                 totalPages
         ));
@@ -1305,7 +1332,8 @@ public class AgentChatTabController {
     }
 
     private HBox createSessionHistoryPagination(String useCaseName, List<AgentChatSession> sortedSessions,
-                                                Consumer<AgentChatSession> onSessionSelected, int pageIndex,
+                                                Consumer<AgentChatSession> onSessionSelected,
+                                                Consumer<AgentChatSession> onSessionDeleted, int pageIndex,
                                                 int totalPages) {
         Button previousButton = new Button("Previous");
         previousButton.getStyleClass().add("secondary-button");
@@ -1314,6 +1342,7 @@ public class AgentChatTabController {
                 useCaseName,
                 sortedSessions,
                 onSessionSelected,
+                onSessionDeleted,
                 pageIndex - 1
         ));
 
@@ -1327,6 +1356,7 @@ public class AgentChatTabController {
                 useCaseName,
                 sortedSessions,
                 onSessionSelected,
+                onSessionDeleted,
                 pageIndex + 1
         ));
 

@@ -223,6 +223,18 @@
     -fx-background-radius: 6;
 }
 
+.danger-button {
+    -fx-background-color: #fef2f2;
+    -fx-text-fill: #b91c1c;
+    -fx-border-color: #fecaca;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+}
+
+.danger-button:hover {
+    -fx-background-color: #fee2e2;
+}
+
 .cancel-button {
     -fx-background-color: #d20123;
     -fx-text-fill: white;
