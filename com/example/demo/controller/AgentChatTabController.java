@@ -47,6 +47,8 @@ import java.util.stream.Collectors;
 public class AgentChatTabController {
     private static final String DEFAULT_CHAT_COMMAND_PREFIX = "$";
     private static final int MAX_RECENT_SESSION_MESSAGES = 12;
+    private static final int MAX_RECENT_HISTORY_MESSAGE_LENGTH = 700;
+    private static final int MAX_AGENT_REPLY_SUMMARY_LENGTH = 700;
     private static final int SESSION_HISTORY_PAGE_SIZE = 8;
     private static final List<ChatCommandOption> CHAT_COMMAND_OPTIONS = createChatCommandOptions();
     private static final Map<String, ChatCommandOption> CHAT_COMMAND_OPTIONS_BY_COMMAND = createChatCommandOptionMap();
@@ -771,8 +773,7 @@ public class AgentChatTabController {
                 selectedUseCase,
                 useCaseId,
                 selectedUser,
-                allUsersSelected,
-                expandedMessage
+                allUsersSelected
         ));
         if (selectedUser != null) {
             payload.put("user_id", selectedUser.getUserID());
@@ -978,7 +979,7 @@ public class AgentChatTabController {
     }
 
     private Map<String, Object> buildSessionContext(String selectedUseCase, Integer useCaseId, User selectedUser,
-                                                    boolean allUsersSelected, String currentRequest) {
+                                                    boolean allUsersSelected) {
         List<Map<String, String>> recentConversation = buildRecentConversationSnapshot();
 
         Map<String, Object> context = new LinkedHashMap<>();
@@ -986,11 +987,7 @@ public class AgentChatTabController {
         context.put("selected_usecase_name", selectedUseCase);
         context.put("all_users_selected", allUsersSelected);
         context.put("analysis_scope", allUsersSelected ? "usecase" : "participant");
-        context.put("recent_conversation", recentConversation);
-        context.put("session_memory", buildSessionMemory(currentRequest, recentConversation));
-        if (latestStructuredAssistantResponse != null) {
-            context.put("latest_agent_response", latestStructuredAssistantResponse);
-        }
+        context.put("recent_history", buildRecentHistory(recentConversation));
 
         if (selectedUser != null) {
             context.put("selected_user_id", selectedUser.getUserID());
@@ -1003,18 +1000,85 @@ public class AgentChatTabController {
         return context;
     }
 
-    private Map<String, Object> buildSessionMemory(String currentRequest, List<Map<String, String>> recentConversation) {
-        Map<String, Object> memory = new LinkedHashMap<>();
-        memory.put("current_request", currentRequest == null ? "" : currentRequest.trim());
-        memory.put("recent_conversation", recentConversation == null ? List.of() : recentConversation);
-        memory.put("previous_user_request", findLastConversationContent(recentConversation, "user"));
-        memory.put("previous_assistant_reply", findLastConversationContent(recentConversation, "assistant"));
-        return memory;
+    private Map<String, Object> buildRecentHistory(List<Map<String, String>> recentConversation) {
+        Map<String, Object> history = new LinkedHashMap<>();
+        history.put("messages", compactRecentConversation(recentConversation));
+        history.put("previous_user_message_index", findLastConversationIndex(recentConversation, "user"));
+        history.put("previous_assistant_message_index", findLastConversationIndex(recentConversation, "assistant"));
+
+        Map<String, Object> latestAgentSummary = buildLatestAgentSummary();
+        if (!latestAgentSummary.isEmpty()) {
+            history.put("latest_agent_summary", latestAgentSummary);
+        }
+
+        return history;
     }
 
-    private String findLastConversationContent(List<Map<String, String>> conversation, String role) {
+    private List<Map<String, Object>> compactRecentConversation(List<Map<String, String>> recentConversation) {
+        if (recentConversation == null || recentConversation.isEmpty()) {
+            return List.of();
+        }
+
+        List<Map<String, Object>> compactMessages = new ArrayList<>();
+        for (int i = 0; i < recentConversation.size(); i++) {
+            Map<String, String> item = recentConversation.get(i);
+            if (item == null) {
+                continue;
+            }
+
+            String role = item.getOrDefault("role", "").trim();
+            String content = item.getOrDefault("content", "").trim();
+            if (role.isEmpty() || content.isEmpty()) {
+                continue;
+            }
+
+            Map<String, Object> message = new LinkedHashMap<>();
+            message.put("index", i);
+            message.put("role", role);
+            message.put("content", compactText(content, MAX_RECENT_HISTORY_MESSAGE_LENGTH));
+            message.put("truncated", content.length() > MAX_RECENT_HISTORY_MESSAGE_LENGTH);
+            compactMessages.add(message);
+        }
+
+        return List.copyOf(compactMessages);
+    }
+
+    private Map<String, Object> buildLatestAgentSummary() {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        if (latestStructuredAssistantResponse == null) {
+            return summary;
+        }
+
+        putJsonText(summary, latestStructuredAssistantResponse, "target_workflow");
+        if (latestStructuredAssistantResponse.hasNonNull("success")) {
+            summary.put("success", latestStructuredAssistantResponse.path("success").asBoolean());
+        }
+        if (latestStructuredAssistantResponse.hasNonNull("read_only")) {
+            summary.put("read_only", latestStructuredAssistantResponse.path("read_only").asBoolean());
+        }
+        putJsonText(summary, latestStructuredAssistantResponse, "reply", "reply_summary", MAX_AGENT_REPLY_SUMMARY_LENGTH);
+
+        return summary;
+    }
+
+    private void putJsonText(Map<String, Object> target, JsonNode source, String field) {
+        putJsonText(target, source, field, field, MAX_RECENT_HISTORY_MESSAGE_LENGTH);
+    }
+
+    private void putJsonText(Map<String, Object> target, JsonNode source, String field, String targetField, int maxLength) {
+        if (target == null || source == null || field == null || targetField == null || !source.hasNonNull(field)) {
+            return;
+        }
+
+        String value = source.path(field).asText("").trim();
+        if (!value.isEmpty()) {
+            target.put(targetField, compactText(value, maxLength));
+        }
+    }
+
+    private int findLastConversationIndex(List<Map<String, String>> conversation, String role) {
         if (conversation == null || role == null || role.isBlank()) {
-            return "";
+            return -1;
         }
 
         for (int i = conversation.size() - 1; i >= 0; i--) {
@@ -1025,11 +1089,20 @@ public class AgentChatTabController {
 
             String itemRole = item.getOrDefault("role", "");
             if (role.equalsIgnoreCase(itemRole)) {
-                return item.getOrDefault("content", "");
+                return i;
             }
         }
 
-        return "";
+        return -1;
+    }
+
+    private String compactText(String value, int maxLength) {
+        String normalized = value == null ? "" : value.trim();
+        if (maxLength <= 0 || normalized.length() <= maxLength) {
+            return normalized;
+        }
+
+        return normalized.substring(0, maxLength).trim() + "...";
     }
 
     private List<Map<String, String>> buildRecentConversationSnapshot() {
