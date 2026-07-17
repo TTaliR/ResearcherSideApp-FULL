@@ -111,6 +111,7 @@ public class DashboardController {
 
         leftSidebarController.setOnAddUseCaseRequested(this::onAddUseCaseRequested);
         leftSidebarController.setOnAddUserRequested(this::onAddUserRequested);
+        leftSidebarController.setOnRefreshUsersRequested(this::loadUserss);
         leftSidebarController.setOnAssignUserUseCaseRequested(this::onAssignUserUseCase);
         leftSidebarController.setOnEditUserRequested(this::onEditUserRequested);
         leftSidebarController.setOnChatSessionSelected(this::selectChatSession);
@@ -808,7 +809,24 @@ public class DashboardController {
             }
         }
 
-        return new User(userId, fName, lName, mappings);
+        User user = new User(userId, fName, lName, mappings);
+        user.setMonitoringStatus(
+                node.path("monitoring_expected").asBoolean(false),
+                node.path("offline_alerted").asBoolean(false),
+                parseLastRequest(node.path("lastrequest").asText(null))
+        );
+        return user;
+    }
+
+    private Instant parseLastRequest(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(value);
+        } catch (DateTimeException ignored) {
+            return null;
+        }
     }
 
     private UserUseCaseMapping parseFlatUserMapping(JsonNode node) {

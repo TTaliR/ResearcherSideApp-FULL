@@ -77,6 +77,27 @@
     -fx-text-fill: #d9e4f5;
 }
 
+.user-status-dot {
+    -fx-stroke: rgba(255, 255, 255, 0.35);
+    -fx-stroke-width: 1;
+}
+
+.user-status-connected {
+    -fx-fill: #22c55e;
+}
+
+.user-status-not-responding {
+    -fx-fill: #f59e0b;
+}
+
+.user-status-alerted {
+    -fx-fill: #ef4444;
+}
+
+.user-status-stopped {
+    -fx-fill: #94a3b8;
+}
+
 .sidebar-usecase-row-label {
     -fx-text-fill: #d9e4f5;
     -fx-font-size: 12px;

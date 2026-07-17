@@ -3,6 +3,7 @@ package com.example.demo.model;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -11,6 +12,9 @@ public class User {
    private final SimpleIntegerProperty userID;
    private final SimpleStringProperty fName;
    private final SimpleStringProperty lName;
+   private boolean monitoringExpected;
+   private boolean offlineAlerted;
+   private Instant lastRequest;
 
    /*
     * UI-level current use case/mapping.
@@ -67,6 +71,24 @@ public class User {
 
    public SimpleStringProperty lNameProperty() {
       return this.lName;
+   }
+
+   public boolean isMonitoringExpected() {
+      return monitoringExpected;
+   }
+
+   public boolean isOfflineAlerted() {
+      return offlineAlerted;
+   }
+
+   public Instant getLastRequest() {
+      return lastRequest;
+   }
+
+   public void setMonitoringStatus(boolean monitoringExpected, boolean offlineAlerted, Instant lastRequest) {
+      this.monitoringExpected = monitoringExpected;
+      this.offlineAlerted = offlineAlerted;
+      this.lastRequest = lastRequest;
    }
 
    public List<UserUseCaseMapping> getUsecaseMappings() {

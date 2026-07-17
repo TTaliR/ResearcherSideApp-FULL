@@ -7,6 +7,7 @@
 <?import javafx.scene.control.ListView?>
 <?import javafx.scene.control.Separator?>
 <?import javafx.scene.control.ToggleButton?>
+<?import javafx.scene.effect.ColorAdjust?>
 <?import javafx.scene.image.Image?>
 <?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.HBox?>
@@ -34,6 +35,18 @@
         <HBox alignment="CENTER_LEFT" spacing="8.0">
             <Label styleClass="sidebar-section-title" text="Users List" />
             <Region HBox.hgrow="ALWAYS" />
+            <Button fx:id="refreshUsersButton" styleClass="sidebar-user-settings-button">
+                <graphic>
+                    <ImageView fitHeight="18.0" fitWidth="18.0" preserveRatio="true">
+                        <effect>
+                            <ColorAdjust brightness="1.0" />
+                        </effect>
+                        <image>
+                            <Image url="@../images/refresh.png" />
+                        </image>
+                    </ImageView>
+                </graphic>
+            </Button>
             <Button fx:id="addUserButton" styleClass="sidebar-user-settings-button">
                 <graphic>
                     <ImageView fitHeight="22.0" fitWidth="22.0" preserveRatio="true">

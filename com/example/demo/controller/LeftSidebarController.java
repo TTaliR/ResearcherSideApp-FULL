@@ -22,7 +22,10 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import javafx.scene.shape.Circle;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -38,6 +41,7 @@ import java.util.stream.Collectors;
 public class LeftSidebarController {
     private static final String SETTINGS_ICON_PATH = "/com/example/demo/images/settings.png";
     private static final int SIDEBAR_SESSION_MENU_LIMIT = 5;
+    private static final Duration NOT_RESPONDING_AFTER = Duration.ofMinutes(10);
 
     @FXML
     private ToggleButton useCasesNavButton;
@@ -65,6 +69,8 @@ public class LeftSidebarController {
     private Button assignUserUseCaseButton;
     @FXML
     private Button addUserButton;
+    @FXML
+    private Button refreshUsersButton;
 
 
     private final ObservableList<User> users = FXCollections.observableArrayList();
@@ -80,6 +86,7 @@ public class LeftSidebarController {
     private Consumer<String> onViewAllChatSessionsRequested;
     private Runnable onAddUseCaseRequested;
     private Runnable onAddUserRequested;
+    private Runnable onRefreshUsersRequested;
     private Runnable onAssignUserUseCaseRequested;
 
     @FXML
@@ -97,6 +104,14 @@ public class LeftSidebarController {
         });
         addUserButton.setTooltip(new Tooltip("Add user"));
         addUserButton.setFocusTraversable(false);
+        refreshUsersButton.setTooltip(new Tooltip("Refresh user statuses"));
+        refreshUsersButton.setAccessibleText("Refresh user statuses");
+        refreshUsersButton.setFocusTraversable(false);
+        refreshUsersButton.setOnAction(ignored -> {
+            if (onRefreshUsersRequested != null) {
+                onRefreshUsersRequested.run();
+            }
+        });
         setSidebarMode(true);
 
         setupUsersSidebarListCellFactory();
@@ -241,14 +256,18 @@ public class LeftSidebarController {
 
     private void setupUsersSidebarListCellFactory() {
         UsersSidebarList.setCellFactory(listView -> new ListCell<>() {
+            private final Circle statusDot = new Circle(5);
+            private final Tooltip statusTooltip = new Tooltip();
             private final Label userLabel = new Label();
             private final Region spacer = new Region();
             private final Button editButton = createEditUserButton();
-            private final HBox content = new HBox(8, userLabel, spacer, editButton);
+            private final HBox content = new HBox(8, statusDot, userLabel, spacer, editButton);
 
             {
                 content.setAlignment(Pos.CENTER_LEFT);
                 HBox.setHgrow(spacer, Priority.ALWAYS);
+                statusDot.getStyleClass().add("user-status-dot");
+                Tooltip.install(statusDot, statusTooltip);
                 userLabel.getStyleClass().add("sidebar-user-row-label");
                 editButton.setFocusTraversable(false);
             }
@@ -263,6 +282,7 @@ public class LeftSidebarController {
                 }
 
                 userLabel.setText(formatUser(item));
+                updateStatusDot(statusDot, statusTooltip, item);
                 editButton.setOnAction(ignored -> {
                     if (onEditUserRequested != null) {
                         onEditUserRequested.accept(item);
@@ -272,6 +292,41 @@ public class LeftSidebarController {
                 setGraphic(content);
             }
         });
+    }
+
+    private void updateStatusDot(Circle dot, Tooltip tooltip, User user) {
+        UserStatus status = UserStatus.from(user, Instant.now());
+        dot.getStyleClass().setAll("user-status-dot", status.styleClass);
+        dot.setAccessibleText(status.description);
+        tooltip.setText(status.description);
+    }
+
+    enum UserStatus {
+        CONNECTED("user-status-connected", "Connected: requests received within the last 10 minutes"),
+        NOT_RESPONDING("user-status-not-responding", "Not responding: no request received for more than 10 minutes"),
+        ALERT_SENT("user-status-alerted", "Alert sent: IT has been notified"),
+        STOPPED("user-status-stopped", "Monitoring stopped intentionally or is not expected");
+
+        private final String styleClass;
+        private final String description;
+
+        UserStatus(String styleClass, String description) {
+            this.styleClass = styleClass;
+            this.description = description;
+        }
+
+        static UserStatus from(User user, Instant now) {
+            if (!user.isMonitoringExpected()) {
+                return STOPPED;
+            }
+            if (user.isOfflineAlerted()) {
+                return ALERT_SENT;
+            }
+            Instant lastRequest = user.getLastRequest();
+            return lastRequest != null && !lastRequest.isBefore(now.minus(NOT_RESPONDING_AFTER))
+                    ? CONNECTED
+                    : NOT_RESPONDING;
+        }
     }
 
     @FXML
@@ -426,6 +481,10 @@ public class LeftSidebarController {
 
     public void setOnAddUserRequested(Runnable callback) {
         this.onAddUserRequested = callback;
+    }
+
+    public void setOnRefreshUsersRequested(Runnable callback) {
+        this.onRefreshUsersRequested = callback;
     }
 
     public void setOnAssignUserUseCaseRequested(Runnable callback) {
