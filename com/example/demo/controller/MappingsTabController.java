@@ -50,9 +50,11 @@ public class MappingsTabController {
     @FXML private TextField ruleMaxIntervalField;
     @FXML private Label selectedMappingLabel;
     @FXML private Label loggingIntervalValueLabel;
+    @FXML private Label vibrationIntervalValueLabel;
     @FXML private Button saveRuleButton;
     @FXML private Button refreshRuleButton;
     @FXML private Button editLoggingIntervalButton;
+    @FXML private Button editVibrationIntervalButton;
     @FXML private ToggleGroup mappingToggleGroup;
     @FXML private Pane ruleBuilderPane;
 
@@ -82,6 +84,11 @@ public class MappingsTabController {
         ALL_USERS,
         CURRENT_USER_ONLY,
         CANCELLED
+    }
+
+    private enum IntervalKind {
+        LOGGING,
+        VIBRATION
     }
 
     @FXML
@@ -181,12 +188,12 @@ public class MappingsTabController {
 
     public void onTabActivated() {
         renderMappingsWhenReady(selectedUseCaseSupplier.get());
-        updateLoggingIntervalDisplay(selectedUseCaseSupplier.get());
+        updateIntervalDisplays(selectedUseCaseSupplier.get());
     }
 
     public void onSelectedUseCaseChanged(String selectedUseCase) {
         updateRuleBuilderUseCaseDisplay(selectedUseCase);
-        updateLoggingIntervalDisplay(selectedUseCase);
+        updateIntervalDisplays(selectedUseCase);
         updateSelectedMappingForEdit(null);
         renderMappingsWhenReady(selectedUseCase);
     }
@@ -1084,9 +1091,20 @@ public class MappingsTabController {
 
     @FXML
     private void onEditLoggingInterval() {
+        editUseCaseInterval(IntervalKind.LOGGING);
+    }
+
+    @FXML
+    private void onEditVibrationInterval() {
+        editUseCaseInterval(IntervalKind.VIBRATION);
+    }
+
+    private void editUseCaseInterval(IntervalKind kind) {
+        boolean vibration = kind == IntervalKind.VIBRATION;
+        String intervalLabel = vibration ? "vibration cooldown" : "logging interval";
         String selectedUseCaseName = selectedUseCaseSupplier.get();
         if (selectedUseCaseName == null || selectedUseCaseName.isBlank()) {
-            AlertUtils.showErrorAlert("Missing Use Case", "Please select a use case before editing logging interval.");
+            AlertUtils.showErrorAlert("Missing Use Case", "Please select a use case before editing " + intervalLabel + ".");
             return;
         }
 
@@ -1097,11 +1115,12 @@ public class MappingsTabController {
             return;
         }
 
-        LoggingIntervalDraft initialDraft = parseLoggingIntervalDraft(useCase.getLoggingInterval());
+        String currentInterval = vibration ? useCase.getVibrationInterval() : useCase.getLoggingInterval();
+        LoggingIntervalDraft initialDraft = parseLoggingIntervalDraft(currentInterval);
 
         Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle("Edit Logging Interval");
-        dialog.setHeaderText("Set logging interval for " + selectedUseCaseName + ".");
+        dialog.setTitle(vibration ? "Edit Vibration Cooldown" : "Edit Logging Interval");
+        dialog.setHeaderText("Set " + intervalLabel + " for " + selectedUseCaseName + ".");
 
         ButtonType saveButtonType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(saveButtonType, ButtonType.CANCEL);
@@ -1133,24 +1152,32 @@ public class MappingsTabController {
             return;
         }
 
-        ButtonLoadingState loading = ButtonLoadingState.start(editLoggingIntervalButton, "Saving...");
-        ApiService.getInstance().setLoggingInterval(useCase.getId(), interval)
+        Button editButton = vibration ? editVibrationIntervalButton : editLoggingIntervalButton;
+        ButtonLoadingState loading = ButtonLoadingState.start(editButton, "Saving...");
+        CompletableFuture<Boolean> update = vibration
+            ? ApiService.getInstance().setVibrationInterval(useCase.getId(), interval)
+            : ApiService.getInstance().setLoggingInterval(useCase.getId(), interval);
+        update
             .thenAccept(success -> Platform.runLater(() -> {
                 loading.close();
                 if (!success) {
-                    AlertUtils.showErrorAlert("Update Failed", "Could not update logging interval. Please try again.");
+                    AlertUtils.showErrorAlert("Update Failed", "Could not update " + intervalLabel + ". Please try again.");
                     return;
                 }
 
-                useCase.setLoggingInterval(interval);
-                updateLoggingIntervalDisplay(selectedUseCaseName);
-                AlertUtils.showInfoAlert("Interval Updated", "Logging interval set to " + interval + " for " + selectedUseCaseName + ".");
+                if (vibration) {
+                    useCase.setVibrationInterval(interval);
+                } else {
+                    useCase.setLoggingInterval(interval);
+                }
+                updateIntervalDisplays(selectedUseCaseName);
+                AlertUtils.showInfoAlert("Interval Updated", capitalizeAction(intervalLabel) + " set to " + interval + " for " + selectedUseCaseName + ".");
                 useCasesRefreshCallback.run();
             }))
             .exceptionally(ex -> {
                 Platform.runLater(() -> {
                     loading.close();
-                    AlertUtils.showErrorAlert("Update Failed", "Failed to update logging interval: " + ex.getMessage());
+                    AlertUtils.showErrorAlert("Update Failed", "Failed to update " + intervalLabel + ": " + ex.getMessage());
                 });
                 return null;
             });
@@ -1164,30 +1191,35 @@ public class MappingsTabController {
         }
     }
 
-    private void updateLoggingIntervalDisplay(String selectedUseCase) {
-        if (loggingIntervalValueLabel == null) {
+    private void updateIntervalDisplays(String selectedUseCase) {
+        if (loggingIntervalValueLabel == null || vibrationIntervalValueLabel == null) {
             return;
         }
 
-        String displayText = "Not set";
+        String loggingInterval = "Not set";
+        String vibrationInterval = "Not set";
         if (selectedUseCase != null && !selectedUseCase.isBlank()) {
             String normalizedKey = FormatUtils.normalizeUseCaseName(selectedUseCase);
             UseCase useCase = useCaseLookup.apply(normalizedKey);
             if (useCase != null) {
-                String configuredInterval = useCase.getLoggingInterval();
-                if (!configuredInterval.isEmpty()) {
-                    displayText = configuredInterval;
-                }
+                loggingInterval = displayInterval(useCase.getLoggingInterval());
+                vibrationInterval = displayInterval(useCase.getVibrationInterval());
             }
         }
 
-        loggingIntervalValueLabel.setText(displayText);
-        loggingIntervalValueLabel.setTooltip("Not set".equals(displayText) ? null : new Tooltip(displayText));
+        loggingIntervalValueLabel.setText(loggingInterval);
+        loggingIntervalValueLabel.setTooltip("Not set".equals(loggingInterval) ? null : new Tooltip(loggingInterval));
+        vibrationIntervalValueLabel.setText(vibrationInterval);
+        vibrationIntervalValueLabel.setTooltip("Not set".equals(vibrationInterval) ? null : new Tooltip(vibrationInterval));
 
-        if (editLoggingIntervalButton != null) {
-            Integer useCaseId = selectedUseCaseIdSupplier.get();
-            editLoggingIntervalButton.setDisable(useCaseId == null || useCaseId <= 0);
-        }
+        Integer useCaseId = selectedUseCaseIdSupplier.get();
+        boolean disabled = useCaseId == null || useCaseId <= 0;
+        editLoggingIntervalButton.setDisable(disabled);
+        editVibrationIntervalButton.setDisable(disabled);
+    }
+
+    private String displayInterval(String interval) {
+        return interval == null || interval.isBlank() ? "Not set" : interval;
     }
 
     private boolean isValidLoggingInterval(String interval) {

@@ -20,6 +20,7 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
@@ -412,42 +413,90 @@ public class DashboardController {
     private void onAddUseCaseRequested() {
         Dialog<ButtonType> dialog = new Dialog<>();
         dialog.setTitle("Add Use Case");
-        dialog.setHeaderText("Create a new use case. Name is required.");
+        dialog.setHeaderText(null);
 
-        ButtonType addButtonType = new ButtonType("Add", ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().addAll(addButtonType, ButtonType.CANCEL);
+        DialogPane dialogPane = dialog.getDialogPane();
+        dialogPane.getStylesheets().add(getClass().getResource("/com/example/demo/view/dashboard.css").toExternalForm());
+        dialogPane.getStyleClass().add("usecase-dialog");
+        dialogPane.setPrefWidth(680);
+
+        ButtonType addButtonType = new ButtonType("Add Use Case", ButtonBar.ButtonData.OK_DONE);
+        dialogPane.getButtonTypes().addAll(addButtonType, ButtonType.CANCEL);
+
+        Label titleLabel = new Label("Create a new use case");
+        titleLabel.getStyleClass().add("usecase-dialog-title");
+
+        Label subtitleLabel = new Label("Define its details and default timing.");
+        subtitleLabel.getStyleClass().add("usecase-dialog-subtitle");
 
         TextField nameField = new TextField();
-        nameField.setPromptText("Use case name");
+        nameField.setPromptText("UseCaseName");
+        nameField.setPrefWidth(320);
+        nameField.setMaxWidth(320);
 
-        TextField descriptionField = new TextField();
-        descriptionField.setPromptText("Use case description (optional)");
+        Label nameHelp = new Label("No spaces; for example, TemperatureStudy.");
+        nameHelp.getStyleClass().add("usecase-help-text");
 
-        Label feedbackNote = new Label(
-                "Create the use case now. After creation, you can discuss it with the agent, ask for API parameters or code, or go directly to n8n and build the flow yourself."
+        TextArea descriptionField = new TextArea();
+        descriptionField.setPromptText("What does this use case measure?");
+        descriptionField.setPrefRowCount(2);
+        descriptionField.setWrapText(true);
+
+        Spinner<Integer> loggingAmount = new Spinner<>(1, 100000, 1);
+        Spinner<Integer> vibrationAmount = new Spinner<>(1, 100000, 1);
+        loggingAmount.setEditable(true);
+        vibrationAmount.setEditable(true);
+
+        ComboBox<String> loggingUnit = new ComboBox<>();
+        ComboBox<String> vibrationUnit = new ComboBox<>();
+        loggingUnit.getItems().setAll("second", "minute", "hour", "day");
+        vibrationUnit.getItems().setAll("second", "minute", "hour", "day");
+        loggingUnit.setValue("minute");
+        vibrationUnit.setValue("minute");
+
+        VBox loggingCard = createUseCaseIntervalCard(
+                "Logging interval",
+                "How often data is recorded.",
+                loggingAmount,
+                loggingUnit
         );
-        feedbackNote.setWrapText(true);
+        VBox vibrationCard = createUseCaseIntervalCard(
+                "Vibration cooldown",
+                "Minimum time between vibrations.",
+                vibrationAmount,
+                vibrationUnit
+        );
+        HBox intervalCards = new HBox(12, loggingCard, vibrationCard);
+        HBox.setHgrow(loggingCard, Priority.ALWAYS);
+        HBox.setHgrow(vibrationCard, Priority.ALWAYS);
 
-        // Validation label shown when the name is invalid (empty or contains whitespace)
         Label validationLabel = new Label();
         validationLabel.getStyleClass().add("validation-error");
-        // Fallback inline style so the message is visible without a stylesheet
-        validationLabel.setStyle("-fx-text-fill: #b91c1c; -fx-font-size: 12px;");
         validationLabel.setWrapText(true);
         validationLabel.setVisible(false);
+        validationLabel.managedProperty().bind(validationLabel.visibleProperty());
 
-        VBox content = new VBox(8,
-                new Label("Name *"),
+        Label nameLabel = new Label("Name *");
+        Label descriptionLabel = new Label("Description");
+        nameLabel.getStyleClass().add("usecase-form-label");
+        descriptionLabel.getStyleClass().add("usecase-form-label");
+
+        VBox content = new VBox(14,
+                new VBox(4, titleLabel, subtitleLabel),
+                nameLabel,
                 nameField,
+                nameHelp,
                 validationLabel,
-                new Label("Description"),
+                descriptionLabel,
                 descriptionField,
-                feedbackNote
+                intervalCards
         );
-        content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
+        content.getStyleClass().add("usecase-dialog-content");
+        dialogPane.setContent(content);
 
-        Node addButton = dialog.getDialogPane().lookupButton(addButtonType);
+        Node addButton = dialogPane.lookupButton(addButtonType);
+        addButton.getStyleClass().add("primary-button");
+        dialogPane.lookupButton(ButtonType.CANCEL).getStyleClass().add("secondary-button");
         addButton.setDisable(true);
 
         nameField.textProperty().addListener((obs, oldValue, newValue) -> {
@@ -472,6 +521,8 @@ public class DashboardController {
 
         String name = nameField.getText() == null ? "" : nameField.getText().trim();
         String description = descriptionField.getText() == null ? "" : descriptionField.getText().trim();
+        String loggingInterval = formatInterval(loggingAmount.getValue(), loggingUnit.getValue());
+        String vibrationInterval = formatInterval(vibrationAmount.getValue(), vibrationUnit.getValue());
 
         if (name.isBlank()) {
             AlertUtils.showErrorAlert("Validation Error", "Use case name is required.");
@@ -495,8 +546,8 @@ public class DashboardController {
         ButtonLoadingState loading = ButtonLoadingState.start(leftSidebarController.getAddUseCaseButton(), "Creating...");
         ApiService.getInstance().createUseCase(name, description)
                 .thenAccept(response -> Platform.runLater(() -> {
-                    loading.close();
                     if (response == null || response.has("error")) {
+                        loading.close();
                         String errorMessage = response == null
                                 ? "Could not create the use case. Please try again."
                                 : response.path("error").asText("Could not create the use case. Please try again.");
@@ -541,6 +592,7 @@ public class DashboardController {
                     String createdDescription = created.path("description").asText(description);
 
                     if (createdUseCaseId <= 0) {
+                        loading.close();
                         AlertUtils.showErrorAlert(
                                 "Create Failed",
                                 "The use case was created, but the response did not include a valid usecase_id. Check the n8n /create-usecase response."
@@ -549,35 +601,43 @@ public class DashboardController {
                         return;
                     }
 
-                    String normalizedName = FormatUtils.normalizeUseCaseName(createdName);
-                    UseCase newUseCase = new UseCase(createdUseCaseId, createdName, normalizedName, createdDescription, "");
-                    useCaseRegistry.put(normalizedName, newUseCase);
+                    int newUseCaseId = createdUseCaseId;
+                    ApiService api = ApiService.getInstance();
+                    api.setLoggingInterval(newUseCaseId, loggingInterval)
+                            .thenCombine(
+                                    api.setVibrationInterval(newUseCaseId, vibrationInterval),
+                                    (loggingUpdated, vibrationUpdated) -> loggingUpdated && vibrationUpdated
+                            )
+                            .thenAccept(intervalsUpdated -> Platform.runLater(() -> {
+                                loading.close();
+                                if (!intervalsUpdated) {
+                                    AlertUtils.showErrorAlert(
+                                            "Use Case Partially Created",
+                                            "The use case was created, but its intervals could not be saved. Select it and set the intervals from the Mappings tab."
+                                    );
+                                    loadUseCases();
+                                    return;
+                                }
 
-                    if (!useCases.contains(createdName)) {
-                        useCases.add(createdName);
-                    }
-
-                    leftSidebarController.getUseCases().setAll(useCases);
-                    leftSidebarController.getUserUseCaseComboBox().setItems(useCases);
-
-                    /*
-                     * Important order:
-                     * First put ID in the map.
-                     * Then set selected use case.
-                     * The selected-use-case listener calls resolveSelectedUseCaseId(),
-                     * which depends on useCaseRegistry.
-                     */
-                    state.setSelectedUseCase(createdName);
-                    state.setSelectedUseCaseId(createdUseCaseId);
-
-                    applySelectedUseCaseUi(createdName);
-
-                    AlertUtils.showInfoAlert(
-                            "Use Case Created",
-                            "Use case '" + createdName + "' was created. You can now discuss it with the agent or go directly to n8n."
-                    );
-
-                    loadUseCases();
+                                completeUseCaseCreation(
+                                        newUseCaseId,
+                                        createdName,
+                                        createdDescription,
+                                        loggingInterval,
+                                        vibrationInterval
+                                );
+                            }))
+                            .exceptionally(ex -> {
+                                Platform.runLater(() -> {
+                                    loading.close();
+                                    AlertUtils.showErrorAlert(
+                                        "Use Case Partially Created",
+                                        "The use case was created, but saving its intervals failed: " + ex.getMessage()
+                                    );
+                                    loadUseCases();
+                                });
+                                return null;
+                            });
                 }))
                 .exceptionally(ex -> {
                     Platform.runLater(() -> {
@@ -586,6 +646,59 @@ public class DashboardController {
                     });
                     return null;
                 });
+    }
+
+    private VBox createUseCaseIntervalCard(String title, String helpText,
+                                            Spinner<Integer> amountSpinner, ComboBox<String> unitComboBox) {
+        Label titleLabel = new Label(title);
+        titleLabel.getStyleClass().add("usecase-form-label");
+
+        Label helpLabel = new Label(helpText);
+        helpLabel.getStyleClass().add("usecase-help-text");
+
+        amountSpinner.setPrefWidth(100);
+        unitComboBox.setPrefWidth(130);
+        HBox controls = new HBox(8, amountSpinner, unitComboBox);
+        controls.setAlignment(Pos.CENTER_LEFT);
+
+        VBox card = new VBox(8, new VBox(3, titleLabel, helpLabel), controls);
+        card.getStyleClass().add("usecase-interval-card");
+        card.setMaxWidth(Double.MAX_VALUE);
+        return card;
+    }
+
+    private String formatInterval(int amount, String unit) {
+        String safeUnit = unit == null || unit.isBlank() ? "minute" : unit.trim().toLowerCase(Locale.ROOT);
+        return amount + " " + (amount == 1 ? safeUnit : safeUnit + "s");
+    }
+
+    private void completeUseCaseCreation(int useCaseId, String name, String description,
+                                         String loggingInterval, String vibrationInterval) {
+        String normalizedName = FormatUtils.normalizeUseCaseName(name);
+        useCaseRegistry.put(normalizedName, new UseCase(
+                useCaseId,
+                name,
+                normalizedName,
+                description,
+                loggingInterval,
+                vibrationInterval
+        ));
+
+        if (!useCases.contains(name)) {
+            useCases.add(name);
+        }
+
+        leftSidebarController.getUseCases().setAll(useCases);
+        leftSidebarController.getUserUseCaseComboBox().setItems(useCases);
+        state.setSelectedUseCase(name);
+        state.setSelectedUseCaseId(useCaseId);
+        applySelectedUseCaseUi(name);
+
+        AlertUtils.showInfoAlert(
+                "Use Case Created",
+                "Use case '" + name + "' was created with its logging interval and vibration cooldown."
+        );
+        loadUseCases();
     }
 
     private void setupTabs() {
@@ -967,7 +1080,8 @@ public class DashboardController {
                             rawName,
                             normalizedName,
                             useCaseNode.path("description").asText("").trim(),
-                            extractLoggingInterval(useCaseNode)
+                            extractInterval(useCaseNode, "log_interval", "loginterval", "logInterval"),
+                            extractInterval(useCaseNode, "vibration_interval", "vibrationinterval", "vibrationInterval")
                         );
                         useCaseRegistry.put(normalizedName, useCase);
                     }
@@ -976,7 +1090,7 @@ public class DashboardController {
                 if (useCaseRegistry.isEmpty()) {
                     for (String defaultUseCase : DEFAULT_USE_CASES) {
                         String normalized = FormatUtils.normalizeUseCaseName(defaultUseCase);
-                        useCaseRegistry.put(normalized, new UseCase(0, defaultUseCase, normalized, "", ""));
+                        useCaseRegistry.put(normalized, new UseCase(0, defaultUseCase, normalized, "", "", ""));
                     }
                 }
 
@@ -1600,17 +1714,21 @@ public class DashboardController {
         };
     }
 
-    private String extractLoggingInterval(JsonNode useCaseNode) {
+    private String extractInterval(JsonNode useCaseNode, String... fieldNames) {
         if (useCaseNode == null || !useCaseNode.isObject()) {
             return "";
         }
 
-        JsonNode intervalNode = useCaseNode.path("log_interval");
-        if (intervalNode.isMissingNode() || intervalNode.isNull()) {
-            intervalNode = useCaseNode.path("loginterval");
+        JsonNode intervalNode = null;
+        for (String fieldName : fieldNames) {
+            JsonNode candidate = useCaseNode.path(fieldName);
+            if (!candidate.isMissingNode() && !candidate.isNull()) {
+                intervalNode = candidate;
+                break;
+            }
         }
 
-        if (intervalNode.isMissingNode() || intervalNode.isNull()) {
+        if (intervalNode == null) {
             return "";
         }
 

@@ -215,6 +215,69 @@
     -fx-border-radius: 10;
 }
 
+.usecase-dialog {
+    -fx-background-color: #ffffff;
+}
+
+.usecase-dialog > .content {
+    -fx-padding: 20;
+}
+
+.usecase-dialog > .button-bar > .container {
+    -fx-background-color: #f8fafc;
+    -fx-border-color: #d6dde8 transparent transparent transparent;
+    -fx-padding: 14 20;
+}
+
+.usecase-dialog-content {
+    -fx-padding: 20;
+    -fx-background-color: #ffffff;
+}
+
+.usecase-dialog-title {
+    -fx-text-fill: #1f2f43;
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+}
+
+.usecase-dialog-subtitle,
+.usecase-help-text {
+    -fx-text-fill: #64748b;
+    -fx-font-size: 12px;
+}
+
+.usecase-form-label {
+    -fx-text-fill: #4f627a;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.usecase-interval-card {
+    -fx-background-color: #f8fafc;
+    -fx-border-color: #d6dde8;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 12;
+}
+
+.usecase-dialog .text-field,
+.usecase-dialog .text-area,
+.usecase-dialog .combo-box-base,
+.usecase-dialog .spinner {
+    -fx-border-color: #cfd8e4;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+}
+
+.usecase-dialog .button {
+    -fx-padding: 8 16;
+}
+
+.validation-error {
+    -fx-text-fill: #b91c1c;
+    -fx-font-size: 12px;
+}
+
 .button,
 .toggle-button,
 .radio-button,

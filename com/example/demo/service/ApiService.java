@@ -44,6 +44,7 @@ public class ApiService {
     public static final String EP_SET_RULES = "/set-rules";
     public static final String EP_MAPPING_ACTIVATION = "/mapping-activation";
     public static final String EP_SET_LOGGING_INTERVAL = "/set-logging-interval";
+    public static final String EP_SET_VIBRATION_INTERVAL = "/set-vibration-interval";
     public static final String EP_MAPPING_COMMANDS = "/mapping-commands";
     public static final String EP_CHAT_CONFIG = "/chat";
     public static final String EP_CHECK_CONNECTION = "/check-connection";
@@ -261,6 +262,14 @@ public class ApiService {
     }
 
     public CompletableFuture<Boolean> setLoggingInterval(int usecaseId, String interval) {
+        return setUseCaseInterval(EP_SET_LOGGING_INTERVAL, usecaseId, interval);
+    }
+
+    public CompletableFuture<Boolean> setVibrationInterval(int usecaseId, String interval) {
+        return setUseCaseInterval(EP_SET_VIBRATION_INTERVAL, usecaseId, interval);
+    }
+
+    private CompletableFuture<Boolean> setUseCaseInterval(String endpoint, int usecaseId, String interval) {
         if (usecaseId <= 0 || interval == null || interval.isBlank()) {
             return CompletableFuture.completedFuture(false);
         }
@@ -268,7 +277,7 @@ public class ApiService {
         Map<String, Object> payload = new HashMap<>();
         payload.put("usecase_id", usecaseId);
         payload.put("interval", interval.trim());
-        return post(EP_SET_LOGGING_INTERVAL, payload);
+        return post(endpoint, payload);
     }
 
     public CompletableFuture<JsonNode> getUserMappingHistory(int userId, String useCaseName) {

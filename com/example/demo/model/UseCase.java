@@ -6,13 +6,16 @@ public class UseCase {
     private String normalizedName;
     private String description;
     private String loggingInterval;
+    private String vibrationInterval;
 
-    public UseCase(int id, String rawName, String normalizedName, String description, String loggingInterval) {
+    public UseCase(int id, String rawName, String normalizedName, String description,
+                   String loggingInterval, String vibrationInterval) {
         this.id = id;
         this.rawName = rawName;
         this.normalizedName = normalizedName;
         this.description = description;
         this.loggingInterval = loggingInterval;
+        this.vibrationInterval = vibrationInterval;
     }
 
     public int getId() {
@@ -53,5 +56,13 @@ public class UseCase {
 
     public void setLoggingInterval(String loggingInterval) {
         this.loggingInterval = loggingInterval;
+    }
+
+    public String getVibrationInterval() {
+        return vibrationInterval;
+    }
+
+    public void setVibrationInterval(String vibrationInterval) {
+        this.vibrationInterval = vibrationInterval;
     }
 }

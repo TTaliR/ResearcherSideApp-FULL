@@ -6,6 +6,7 @@
 <?import javafx.scene.control.ScrollPane?>
 <?import javafx.scene.control.Separator?>
 <?import javafx.scene.control.TextField?>
+<?import javafx.scene.control.Tooltip?>
 <?import javafx.scene.control.ToggleButton?>
 <?import javafx.scene.control.ToggleGroup?>
 <?import javafx.scene.layout.FlowPane?>
@@ -74,9 +75,25 @@
         <Label text="Selected Mapping:" styleClass="topbar-label" />
         <Label fx:id="selectedMappingLabel" text="None selected" styleClass="topbar-value" />
         <Separator orientation="VERTICAL" />
-        <Label text="Logging Interval:" styleClass="topbar-label" />
-        <Label fx:id="loggingIntervalValueLabel" text="Not set" styleClass="topbar-value" />
-        <Button fx:id="editLoggingIntervalButton" text="Edit Logging Interval" onAction="#onEditLoggingInterval" styleClass="secondary-button" />
+        <VBox spacing="3.0">
+            <Label text="Logging Interval" styleClass="topbar-label" />
+            <HBox spacing="8.0" alignment="CENTER_LEFT">
+                <Label fx:id="loggingIntervalValueLabel" text="Not set" styleClass="topbar-value" />
+                <Button fx:id="editLoggingIntervalButton" text="Edit" onAction="#onEditLoggingInterval" styleClass="secondary-button" />
+            </HBox>
+        </VBox>
+        <Separator orientation="VERTICAL" />
+        <VBox spacing="3.0">
+            <Label text="Vibration Cooldown" styleClass="topbar-label">
+                <tooltip>
+                    <Tooltip text="Minimum time before this use case may trigger another vibration. The current system uses one shared last-vibration timestamp per user, so another use case may also affect this timer." />
+                </tooltip>
+            </Label>
+            <HBox spacing="8.0" alignment="CENTER_LEFT">
+                <Label fx:id="vibrationIntervalValueLabel" text="Not set" styleClass="topbar-value" />
+                <Button fx:id="editVibrationIntervalButton" text="Edit" onAction="#onEditVibrationInterval" styleClass="secondary-button" />
+            </HBox>
+        </VBox>
     </HBox>
 
     <StackPane VBox.vgrow="ALWAYS">
