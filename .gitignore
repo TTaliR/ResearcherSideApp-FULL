@@ -25,3 +25,4 @@ replay_pid*.log
 Thumbs.db
 desktop.ini
 /.wix
+/tests/validation-results/
