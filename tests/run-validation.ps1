@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('smoke', 'core', 'external', 'ai', 'soak', 'formal')]
+    [ValidateSet('smoke', 'core', 'external', 'ai', 'soak', 'formal', 'all')]
     [string]$Mode = 'core',
 
     [switch]$WithWatch,
@@ -43,12 +43,51 @@ $responseDirectory = Join-Path $runDirectory 'responses'
 New-Item -ItemType Directory -Force -Path $responseDirectory | Out-Null
 
 $results = New-Object 'System.Collections.Generic.List[object]'
+$testIdsByPhase = [ordered]@{
+    smoke = @(
+        'smoke.connection', 'smoke.configurations', 'smoke.users', 'smoke.usecases',
+        'smoke.sensor_data', 'smoke.mapping_history', 'reject.mapping_action',
+        'reject.sensor_type', 'reject.missing_devices'
+    )
+    core = @(
+        'fixture.bootstrap', 'mapping.assign_command', 'mapping.shared', 'mapping.change_shared',
+        'mapping.participant_copy', 'mapping.history', 'schedule.lifecycle',
+        'monitoring.lifecycle', 'routing.heartrate_boundaries', 'routing.database_log',
+        'dashboard.data_consistency'
+    )
+    external = @('external.temperature', 'external.pollution')
+    ai = @(
+        'ai.participant_analysis', 'ai.usecase_analysis', 'ai.incomplete_input',
+        'ai.empty_message', 'ai.invalid_usecase'
+    )
+    soak = @('soak.api_delivery')
+    watch = @(
+        'watch.preflight', 'watch.matching_id', 'watch.nonmatching_id',
+        'watch.ack_latency', 'watch.two_watch_isolation'
+    )
+}
+$selectedPhases = switch ($Mode) {
+    'smoke' { @('smoke') }
+    'core' { @('smoke', 'core') }
+    'external' { @('smoke', 'external') }
+    'ai' { @('smoke', 'ai') }
+    'soak' { @('smoke', 'soak') }
+    'formal' { @('smoke', 'core', 'soak') }
+    'all' { @('smoke', 'core', 'external', 'ai', 'soak') }
+}
+$selectedTestIds = @($selectedPhases | ForEach-Object { $testIdsByPhase[$_] })
+if ($WithWatch) { $selectedTestIds += $testIdsByPhase.watch }
+$plannedTests = $selectedTestIds.Count
+$completedTests = 0
+$lastApiResponse = $null
 $fixture = @{
     BaselineMappingId = $null
     CreatedMappingIds = New-Object 'System.Collections.Generic.List[int]'
     CreatedScheduleId = $null
     HeartRateMappingId = $null
     HeartRateUseCaseId = $null
+    HeartRateCases = New-Object 'System.Collections.Generic.List[object]'
+    MappingHistoryCount = 0
     ValidationUseCaseId = $null
     MonitoringExpected = @{}
     MappingSnapshot = @()
@@ -111,14 +150,22 @@ function Add-Result {
         [ValidateSet('PASSED', 'FAILED', 'SKIPPED')][string]$Status,
         [double]$DurationMs,
         [string]$Message,
-        [string]$Artifact = ''
+        [string]$Artifact = '',
+        [string]$StartedAtUtc = '',
+        [string]$EndedAtUtc = ''
     )
+
+    $recordedAt = [DateTimeOffset]::UtcNow.ToString('o')
+    if ([string]::IsNullOrWhiteSpace($StartedAtUtc)) { $StartedAtUtc = $recordedAt }
+    if ([string]::IsNullOrWhiteSpace($EndedAtUtc)) { $EndedAtUtc = $recordedAt }
 
     $results.Add([pscustomobject][ordered]@{
         TestId = $Id
         Name = $Name
         Category = $Category
         RequiresWatch = $RequiresWatch
+        StartedAtUtc = $StartedAtUtc
+        EndedAtUtc = $EndedAtUtc
         Status = $Status
         DurationMs = [math]::Round($DurationMs, 2)
         Message = $Message
@@ -126,7 +173,14 @@ function Add-Result {
     })
 
     $color = if ($Status -eq 'PASSED') { 'Green' } elseif ($Status -eq 'FAILED') { 'Red' } else { 'Yellow' }
-    Write-Host ('[{0}] {1} - {2}' -f $Status, $Id, $Message) -ForegroundColor $color
+    if ($selectedTestIds -contains $Id) {
+        $script:completedTests++
+        $percent = [int][math]::Floor(($completedTests / $plannedTests) * 100)
+        Write-Progress -Activity "Haptic Hub validation ($Mode)" -Status "$completedTests/$plannedTests $Id - $Status" -PercentComplete $percent
+        Write-Host ('[{0}% | {1}/{2}] {3} - {4}' -f $percent, $completedTests, $plannedTests, $Id, $Status) -ForegroundColor $color
+    } else {
+        Write-Host ('[{0}] {1} - {2}' -f $Status, $Id, $Message) -ForegroundColor $color
+    }
 }
 
 function Invoke-ValidationTest {
@@ -139,27 +193,33 @@ function Invoke-ValidationTest {
     )
 
     if ($RequiresWatch -and -not $WithWatch) {
+        $skippedAt = [DateTimeOffset]::UtcNow.ToString('o')
         Add-Result -Id $Id -Name $Name -Category $Category -RequiresWatch $true -Status SKIPPED `
-            -DurationMs 0 -Message 'watch_not_requested'
+            -DurationMs 0 -Message 'watch_not_requested' -StartedAtUtc $skippedAt -EndedAtUtc $skippedAt
         return
     }
 
+    $script:lastApiResponse = $null
+    $testStartedAt = [DateTimeOffset]::UtcNow
     $timer = [Diagnostics.Stopwatch]::StartNew()
     try {
         $actual = & $Body
         $timer.Stop()
         $artifact = Save-TestArtifact -TestId $Id -Value $actual
         Add-Result -Id $Id -Name $Name -Category $Category -RequiresWatch ([bool]$RequiresWatch) `
-            -Status PASSED -DurationMs $timer.Elapsed.TotalMilliseconds -Message 'ok' -Artifact $artifact
+            -Status PASSED -DurationMs $timer.Elapsed.TotalMilliseconds -Message 'ok' -Artifact $artifact `
+            -StartedAtUtc $testStartedAt.ToString('o') -EndedAtUtc ([DateTimeOffset]::UtcNow.ToString('o'))
     } catch {
         $timer.Stop()
         $details = [pscustomobject]@{
             Error = $_.Exception.Message
             ScriptStackTrace = $_.ScriptStackTrace
+            LastApiResponse = $lastApiResponse
         }
         $artifact = Save-TestArtifact -TestId $Id -Value $details
         Add-Result -Id $Id -Name $Name -Category $Category -RequiresWatch ([bool]$RequiresWatch) `
-            -Status FAILED -DurationMs $timer.Elapsed.TotalMilliseconds -Message $_.Exception.Message -Artifact $artifact
+            -Status FAILED -DurationMs $timer.Elapsed.TotalMilliseconds -Message $_.Exception.Message -Artifact $artifact `
+            -StartedAtUtc $testStartedAt.ToString('o') -EndedAtUtc ([DateTimeOffset]::UtcNow.ToString('o'))
     }
 }
 
@@ -238,7 +298,7 @@ function Invoke-Api {
         try { $data = $content | ConvertFrom-Json } catch { $data = $content }
     }
 
-    return [pscustomobject]@{
+    $result = [pscustomobject]@{
         Method = $Method
         Uri = $uri
         StatusCode = $statusCode
@@ -246,6 +306,8 @@ function Invoke-Api {
         Content = $content
         Data = $data
     }
+    $script:lastApiResponse = $result
+    return $result
 }
 
 function Get-Users {
@@ -449,6 +511,39 @@ function Find-ScheduleId {
     return 0
 }
 
+function Find-Schedule {
+    param($Value, [int]$ScheduleId)
+
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [System.Collections.IEnumerable] -and -not ($Value -is [string])) {
+        foreach ($item in $Value) {
+            $found = Find-Schedule $item $ScheduleId
+            if ($null -ne $found) { return $found }
+        }
+        return $null
+    }
+
+    if ([int](Get-Value $Value @('schedule_id', 'scheduleId', 'id') 0) -eq $ScheduleId) { return $Value }
+    foreach ($name in @('data', 'payload', 'schedules')) {
+        $found = Find-Schedule (Get-Value $Value @($name) $null) $ScheduleId
+        if ($null -ne $found) { return $found }
+    }
+    return $null
+}
+
+function Get-MappingHistory {
+    param([int]$UserId, [string]$UseCaseName)
+
+    $response = Invoke-Api GET ('users-mappings-history?useCaseName={0}&userId={1}' -f [uri]::EscapeDataString($UseCaseName), $UserId)
+    Assert-Status $response @(200)
+    $root = First-OrNull @(As-Array $response.Data | Select-Object -First 1)
+    return [pscustomobject]@{
+        Response = $response
+        Entries = @(As-Array (Get-Value $root @('mappings') @()))
+        Count = [int](Get-Value $root @('count') 0)
+    }
+}
+
 function Invoke-Schedule {
     param([string]$Action, [hashtable]$Parameters)
     $response = Invoke-Api POST 'schedule' @{
@@ -505,6 +600,7 @@ function Initialize-Fixture {
     Assign-UseCase $UserB $fixture.ValidationUseCaseId | Out-Null
     Wait-UserMapping $UserA $ValidationUseCase $fixture.BaselineMappingId | Out-Null
     Wait-UserMapping $UserB $ValidationUseCase $fixture.BaselineMappingId | Out-Null
+    $fixture.MappingHistoryCount = (Get-MappingHistory $UserA $ValidationUseCase).Count
     $fixture.ScheduleSnapshot = @(
         (Invoke-Schedule 'listAll' @{ user_id = $UserA }).Data
         (Invoke-Schedule 'listAll' @{ user_id = $UserB }).Data
@@ -600,6 +696,12 @@ function Assert-Haptic {
         Assert-True ($actualValue -ge $low -and $actualValue -le $high) "$field is outside the assigned mapping bounds."
     }
     Assert-True ([int](Get-Value $Actual @('interval') -1) -ge 0) 'HeartRate interval is negative.'
+    Assert-RouteIdentity $Actual $UserId $WatchId $PhoneId
+}
+
+function Assert-RouteIdentity {
+    param($Actual, [int]$UserId, [int]$WatchId, [int]$PhoneId)
+
     Assert-True ([int](Get-Value $Actual @('userID', 'userId') 0) -eq $UserId) 'Unexpected user ID in routing response.'
     Assert-True ([int](Get-Value $Actual @('watchID', 'SmartWatchID', 'smartWatchId') 0) -eq $WatchId) 'Unexpected watch ID.'
     Assert-True ([int](Get-Value $Actual @('phoneID', 'AndroidID', 'androidId') 0) -eq $PhoneId) 'Unexpected phone ID.'
@@ -608,6 +710,7 @@ function Assert-Haptic {
 function Invoke-RouteCase {
     param([int]$UserId, [int]$WatchId, [int]$PhoneId, [double]$Value, $Mapping)
 
+    $sentAt = [DateTimeOffset]::UtcNow
     $response = Invoke-Api POST 'usecase-routing' @{
         userId = $UserId
         smartWatchId = $WatchId
@@ -633,6 +736,9 @@ function Invoke-RouteCase {
 
     Assert-True ([string](Get-Value $response.Data @('reason') '') -ne 'rate_limited') 'Routing remained rate-limited after the configured cooldown.'
     Assert-Haptic $response.Data $Mapping $Value $UserId $WatchId $PhoneId
+    if ($Value -ge 30 -and $Value -le 220) {
+        $fixture.HeartRateCases.Add([pscustomobject]@{ UserId = $UserId; Value = $Value; SentAt = $sentAt })
+    }
     return $response
 }
 
@@ -798,12 +904,17 @@ function Invoke-CoreTests {
     }
 
     Invoke-ValidationTest 'mapping.history' 'Mapping history records the validation changes' 'mapping' {
-        $response = Invoke-Api GET ('users-mappings-history?useCaseName={0}&userId={1}' -f [uri]::EscapeDataString($ValidationUseCase), $UserA)
-        Assert-Status $response @(200)
-        $root = First-OrNull @(As-Array $response.Data | Select-Object -First 1)
-        $count = [int](Get-Value $root @('count') 0)
-        Assert-True ($count -ge 1) 'No mapping history was returned for user A.'
-        return $response
+        $history = Get-MappingHistory $UserA $ValidationUseCase
+        Assert-True ($history.Count -gt $fixture.MappingHistoryCount) 'Mapping history did not grow after validation assignments.'
+        foreach ($mappingId in @($fixture.CreatedMappingIds | Select-Object -Unique)) {
+            $entry = First-OrNull @($history.Entries | Where-Object {
+                [int](Get-Value $_ @('mappingId', 'mapping_id', 'feedback_config_rule_id') 0) -eq $mappingId
+            } | Select-Object -First 1)
+            Assert-True ($null -ne $entry) "Mapping $mappingId is absent from user A history."
+            Assert-True (-not [string]::IsNullOrWhiteSpace([string](Get-Value $entry @('assignedAt', 'assigned_at') ''))) `
+                "Mapping $mappingId has no assignment timestamp."
+        }
+        return $history.Response
     }
 
     Invoke-ValidationTest 'schedule.lifecycle' 'Schedule lifecycle and activation succeed' 'schedule' {
@@ -812,9 +923,33 @@ function Invoke-CoreTests {
         $scheduleId = Find-ScheduleId $add.Data
         Assert-True ($scheduleId -gt 0) 'The added schedule ID was not returned.'
         $fixture.CreatedScheduleId = $scheduleId
+
+        $added = Find-Schedule (Invoke-Schedule 'listAll' @{ user_id = $UserA }).Data $scheduleId
+        Assert-True ($null -ne $added) 'The added schedule was not returned by listAll.'
+        Assert-True ([int](Get-Value $added @('user_id', 'userId') 0) -eq $UserA) 'The schedule belongs to the wrong participant.'
+        Assert-True ([int](Get-Value $added @('interval_days', 'intervalDays') 0) -eq 7) 'The added schedule interval was not stored.'
+        Assert-True ([string](Get-Value $added @('measure_type', 'measureType') '') -eq 'average') 'The added schedule measure type was not stored.'
+        Assert-True ([math]::Abs([double](Get-Value $added @('trigger_percentage', 'triggerPercentage') -1) - 10) -lt 0.0001) `
+            'The added schedule trigger percentage was not stored.'
+
         $change = Invoke-Schedule 'change' @{ schedule_id = $scheduleId; user_id = $UserA; interval_days = 14; measure_type = 'median'; trigger_percentage = 0.15 }
+        $changed = Find-Schedule (Invoke-Schedule 'listAll' @{ user_id = $UserA }).Data $scheduleId
+        Assert-True ([int](Get-Value $changed @('interval_days', 'intervalDays') 0) -eq 14) 'The changed schedule interval was not stored.'
+        Assert-True ([string](Get-Value $changed @('measure_type', 'measureType') '') -eq 'median') 'The changed schedule measure type was not stored.'
+        Assert-True ([math]::Abs([double](Get-Value $changed @('trigger_percentage', 'triggerPercentage') -1) - 15) -lt 0.0001) `
+            'The changed schedule trigger percentage was not stored.'
+
         $deactivate = Invoke-Schedule 'deactivate' @{ schedule_id = $scheduleId }
+        $inactive = Find-Schedule (Invoke-Schedule 'listAll' @{ user_id = $UserA }).Data $scheduleId
+        $inactiveValue = Get-Value $inactive @('active', 'isActive') $null
+        Assert-True ($null -ne $inactive -and $null -ne $inactiveValue -and -not [System.Convert]::ToBoolean($inactiveValue)) `
+            'The schedule remained active after deactivation.'
+
         $activate = Invoke-Schedule 'activate' @{ schedule_id = $scheduleId }
+        $active = Find-Schedule (Invoke-Schedule 'listAll' @{ user_id = $UserA }).Data $scheduleId
+        $activeValue = Get-Value $active @('active', 'isActive') $null
+        Assert-True ($null -ne $active -and $null -ne $activeValue -and [System.Convert]::ToBoolean($activeValue)) `
+            'The schedule remained inactive after activation.'
         return [pscustomobject]@{ ScheduleId = $scheduleId; List = $list.Data; Add = $add.Data; Change = $change.Data; Deactivate = $deactivate.Data; Activate = $activate.Data }
     }
 
@@ -863,12 +998,23 @@ function Invoke-CoreTests {
     }
 
     Invoke-ValidationTest 'routing.database_log' 'HeartRate results are visible in sensor data' 'routing' {
-        $response = Invoke-Api GET ('sensor-data?userid={0}&alert_type=HeartRate' -f $UserA)
-        Assert-Status $response @(200)
-        $rows = @(As-Array (Get-Value $response.Data @('payload') @()))
-        Assert-True ($rows.Count -gt 0) 'No HeartRate sensor rows were returned for user A.'
-        Assert-True (@($rows | Where-Object { [int](Get-Value $_ @('userid', 'userId') 0) -eq $UserA }).Count -gt 0) 'Sensor rows do not contain user A.'
-        return [pscustomobject]@{ Count = $rows.Count; Latest = @($rows | Select-Object -First 5) }
+        $evidence = @()
+        foreach ($userId in @($UserA, $UserB)) {
+            $response = Invoke-Api GET ('sensor-data?userid={0}&alert_type=HeartRate' -f $userId)
+            Assert-Status $response @(200)
+            $rows = @(As-Array (Get-Value $response.Data @('payload') @()))
+            foreach ($expected in @($fixture.HeartRateCases | Where-Object UserId -eq $userId)) {
+                $match = First-OrNull @($rows | Where-Object {
+                    $rowTime = try { [DateTimeOffset](Get-Value $_ @('time', 'timestamp', 'created_at') [DateTimeOffset]::MinValue) } catch { [DateTimeOffset]::MinValue }
+                    [int](Get-Value $_ @('userid', 'userId') 0) -eq $userId -and
+                    [math]::Abs([double](Get-Value $_ @('value') -999999) - [double]$expected.Value) -lt 0.000001 -and
+                    $rowTime -ge $expected.SentAt.AddSeconds(-1)
+                } | Select-Object -First 1)
+                Assert-True ($null -ne $match) "HeartRate value $($expected.Value) for user $userId was not recorded by this run."
+            }
+            $evidence += [pscustomobject]@{ UserId = $userId; Expected = @($fixture.HeartRateCases | Where-Object UserId -eq $userId); Latest = @($rows | Select-Object -First 5) }
+        }
+        return $evidence
     }
 
     Invoke-ValidationTest 'dashboard.data_consistency' 'Dashboard API data agrees on active mappings' 'dashboard' {
@@ -883,30 +1029,99 @@ function Invoke-CoreTests {
 
 function Invoke-ExternalTests {
     Invoke-ValidationTest 'external.temperature' 'Temperature route contacts its external service' 'external' {
-        $response = Invoke-Api POST 'usecase-routing' @{
-            userId = $UserA; smartWatchId = $WatchA; androidId = $PhoneA
-            type = 'Temperature'; lat = 32.794; lon = 34.989; validationRunId = $runId
-        } -TimeoutSeconds ([math]::Max(60, $HttpTimeoutSeconds))
-        Assert-Status $response @(200)
-        Assert-True ($null -ne $response.Data) 'Temperature returned no JSON result.'
-        return $response
+        return Invoke-ExternalRouteCase 'Temperature' $UserA $WatchA $PhoneA
     }
     Invoke-ValidationTest 'external.pollution' 'Pollution route contacts its external service' 'external' {
+        return Invoke-ExternalRouteCase 'Pollution' $UserB $WatchB $PhoneB
+    }
+}
+
+function Invoke-ExternalRouteCase {
+    param([string]$Type, [int]$UserId, [int]$WatchId, [int]$PhoneId)
+
+    $user = Get-User $UserId
+    $original = First-OrNull @(As-Array (Get-Value $user @('usecase_mappings', 'mappings') @()) | Select-Object -First 1)
+    $originalMappingId = Get-MappingId $original
+    $originalUseCaseId = [int](Get-Value $original @('usecase_id', 'usecaseId') 0)
+    $originalUseCaseName = [string](Get-Value $original @('usecase_name', 'usecaseName', 'monitoringType', 'type') '')
+
+    Assert-True ($originalMappingId -gt 0 -and $originalUseCaseId -gt 0 -and -not [string]::IsNullOrWhiteSpace($originalUseCaseName)) `
+        "User $UserId has no active mapping to restore after the $Type test."
+
+    $useCase = Get-UseCase $Type
+    $useCaseId = [int](Get-Value $useCase @('usecase_id', 'id') 0)
+    Assert-True ($useCaseId -gt 0) "$Type use case is missing."
+
+    $createdMappingId = 0
+    try {
+        $target = First-OrNull @(Get-Configurations | Where-Object {
+            [int](Get-Value $_ @('usecase_id', 'usecaseId') 0) -eq $useCaseId -or
+            [string](Get-Value $_ @('usecase_name', 'usecaseName', 'type') '') -eq $Type
+        } | Sort-Object { Get-MappingId $_ } | Select-Object -First 1)
+        if ($null -eq $target) {
+            $target = New-Mapping $Type -100 100
+            $createdMappingId = Get-MappingId $target
+        }
+        $targetMappingId = Get-MappingId $target
+        Assert-True ($targetMappingId -gt 0) "$Type has no mapping available for validation."
+
+        Assign-Mapping $UserId $targetMappingId $useCaseId $Type | Out-Null
+        Wait-UserMapping $UserId $Type $targetMappingId | Out-Null
+
+        $sentAt = [DateTimeOffset]::UtcNow
         $response = Invoke-Api POST 'usecase-routing' @{
-            userId = $UserB; smartWatchId = $WatchB; androidId = $PhoneB
-            type = 'Pollution'; lat = 32.794; lon = 34.989; validationRunId = $runId
+            userId = $UserId; smartWatchId = $WatchId; androidId = $PhoneId
+            type = $Type; lat = 32.794; lon = 34.989; validationRunId = $runId
         } -TimeoutSeconds ([math]::Max(60, $HttpTimeoutSeconds))
         Assert-Status $response @(200)
-        Assert-True ($null -ne $response.Data) 'Pollution returned no JSON result.'
-        return $response
+        Assert-True ($null -ne $response.Data) "$Type returned no JSON result."
+        return Assert-ExternalRoute $response $Type $UserId $WatchId $PhoneId $sentAt
+    } finally {
+        Assign-Mapping $UserId $originalMappingId $originalUseCaseId $originalUseCaseName | Out-Null
+        Wait-UserMapping $UserId $originalUseCaseName $originalMappingId | Out-Null
+        if ($createdMappingId -gt 0) { Set-MappingActive $createdMappingId $false | Out-Null }
+    }
+}
+
+function Assert-ExternalRoute {
+    param($Response, [string]$Type, [int]$UserId, [int]$WatchId, [int]$PhoneId, [DateTimeOffset]$SentAt)
+
+    $hasHaptic = $null -ne (Get-Value $Response.Data @('pulses', 'intensity', 'fbRangeID') $null)
+    if ($hasHaptic) { Assert-RouteIdentity $Response.Data $UserId $WatchId $PhoneId }
+
+    $value = Get-Value $Response.Data @('value', 'sensorValue', 'temperature', 'pollution', 'aqi') $null
+    $recorded = $null
+    if ($null -ne $value) {
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        do {
+            $sensor = Invoke-Api GET ('sensor-data?userid={0}&alert_type={1}' -f $UserId, [uri]::EscapeDataString($Type))
+            Assert-Status $sensor @(200)
+            $recorded = First-OrNull @(As-Array (Get-Value $sensor.Data @('payload') $sensor.Data) | Where-Object {
+                $rowTime = try { [DateTimeOffset](Get-Value $_ @('time', 'timestamp', 'created_at') [DateTimeOffset]::MinValue) } catch { [DateTimeOffset]::MinValue }
+                [int](Get-Value $_ @('userid', 'userId') 0) -eq $UserId -and
+                [math]::Abs([double](Get-Value $_ @('value') -999999) - [double]$value) -lt 0.000001 -and
+                $rowTime -ge $SentAt.AddSeconds(-1)
+            } | Select-Object -First 1)
+            if ($null -eq $recorded) { Start-Sleep -Milliseconds 250 }
+        } while ($null -eq $recorded -and $timer.Elapsed.TotalSeconds -lt 5)
+        Assert-True ($null -ne $recorded) "$Type value $value was not recorded for user $UserId."
+    }
+
+    return [pscustomobject]@{
+        Response = $Response
+        RoutingIdentityChecked = $hasHaptic
+        DatabaseCorrelation = if ($null -eq $value) { 'not_available_in_response' } else { 'matched' }
+        RecordedRow = $recorded
     }
 }
 
 function Invoke-AiTests {
-    $session = '{0}-ai' -f $runId
+    $session = [guid]::NewGuid().ToString()
     Invoke-ValidationTest 'ai.participant_analysis' 'AI uses participant context' 'ai' {
+        $heartRateId = [int](Get-Value (Get-UseCase 'HeartRate') @('usecase_id', 'id') 0)
+        Assert-True ($heartRateId -gt 0) 'HeartRate use case is missing.'
         $response = Invoke-Api POST 'chat' @{
-            session_id = $session; usecase_id = 3; usecase_name = 'HeartRate'
+            session_id = $session; usecase_id = $heartRateId; usecase_name = 'HeartRate'
             user_id = $UserA; user_name = 'Validation A'; analysis_scope = 'participant'
             message = 'Explain the active HeartRate mapping without changing anything.'
         } -TimeoutSeconds ([math]::Max(90, $HttpTimeoutSeconds))
@@ -915,8 +1130,10 @@ function Invoke-AiTests {
         return $response
     }
     Invoke-ValidationTest 'ai.usecase_analysis' 'AI uses use-case-wide context' 'ai' {
+        $heartRateId = [int](Get-Value (Get-UseCase 'HeartRate') @('usecase_id', 'id') 0)
+        Assert-True ($heartRateId -gt 0) 'HeartRate use case is missing.'
         $response = Invoke-Api POST 'chat' @{
-            session_id = $session; usecase_id = 3; usecase_name = 'HeartRate'
+            session_id = $session; usecase_id = $heartRateId; usecase_name = 'HeartRate'
             all_users_selected = $true; analysis_scope = 'usecase'
             message = 'Summarize the active HeartRate mappings without changing anything.'
         } -TimeoutSeconds ([math]::Max(90, $HttpTimeoutSeconds))
@@ -925,10 +1142,30 @@ function Invoke-AiTests {
         return $response
     }
     Invoke-ValidationTest 'ai.incomplete_input' 'AI rejects incomplete context' 'ai' {
-        $response = Invoke-Api POST 'chat' @{ session_id = "$session-invalid"; message = 'This intentionally omits the use-case ID.' } `
+        $response = Invoke-Api POST 'chat' @{ session_id = [guid]::NewGuid().ToString(); message = 'This intentionally omits the use-case ID.' } `
             -TimeoutSeconds ([math]::Max(90, $HttpTimeoutSeconds))
         $failedBody = $response.Data -and ((Get-Value $response.Data @('success') $true) -eq $false -or $null -ne (Get-Value $response.Data @('error') $null))
         Assert-True ($response.StatusCode -ge 400 -or $failedBody) 'Incomplete AI input was not rejected.'
+        return $response
+    }
+    Invoke-ValidationTest 'ai.empty_message' 'AI rejects an empty message' 'ai' {
+        $heartRateId = [int](Get-Value (Get-UseCase 'HeartRate') @('usecase_id', 'id') 0)
+        Assert-True ($heartRateId -gt 0) 'HeartRate use case is missing.'
+        $response = Invoke-Api POST 'chat' @{
+            session_id = [guid]::NewGuid().ToString(); usecase_id = $heartRateId; usecase_name = 'HeartRate'
+            user_id = $UserA; message = ''
+        } -TimeoutSeconds ([math]::Max(90, $HttpTimeoutSeconds))
+        $failedBody = $response.Data -and ((Get-Value $response.Data @('success') $true) -eq $false -or $null -ne (Get-Value $response.Data @('error') $null))
+        Assert-True ($response.StatusCode -ge 400 -or $failedBody) 'An empty AI message was not rejected.'
+        return $response
+    }
+    Invoke-ValidationTest 'ai.invalid_usecase' 'AI rejects an invalid use-case ID' 'ai' {
+        $response = Invoke-Api POST 'chat' @{
+            session_id = [guid]::NewGuid().ToString(); usecase_id = -1; usecase_name = 'UnsupportedValidationUseCase'
+            user_id = $UserA; message = 'Explain this invalid use case.'
+        } -TimeoutSeconds ([math]::Max(90, $HttpTimeoutSeconds))
+        $failedBody = $response.Data -and ((Get-Value $response.Data @('success') $true) -eq $false -or $null -ne (Get-Value $response.Data @('error') $null))
+        Assert-True ($response.StatusCode -ge 400 -or $failedBody) 'An invalid AI use-case ID was not rejected.'
         return $response
     }
 }
@@ -1035,6 +1272,88 @@ function Get-GitMetadata {
     }
 }
 
+function ConvertTo-HtmlText {
+    param($Value)
+    return [System.Net.WebUtility]::HtmlEncode([string]$Value)
+}
+
+function Write-HtmlReport {
+    param($Metadata, [string]$Path)
+
+    $categoryRows = @($results | Group-Object Category | ForEach-Object {
+        $group = @($_.Group)
+        '<tr><td>{0}</td><td>{1}</td><td class="passed">{2}</td><td class="failed">{3}</td><td class="skipped">{4}</td></tr>' -f `
+            (ConvertTo-HtmlText $_.Name), $group.Count,
+            @($group | Where-Object Status -eq PASSED).Count,
+            @($group | Where-Object Status -eq FAILED).Count,
+            @($group | Where-Object Status -eq SKIPPED).Count
+    }) -join [Environment]::NewLine
+
+    $testRows = @($results | ForEach-Object {
+        $statusClass = ([string]$_.Status).ToLowerInvariant()
+        $artifact = if ([string]::IsNullOrWhiteSpace($_.Artifact)) {
+            ''
+        } else {
+            '<a href="responses/{0}">evidence</a>' -f (ConvertTo-HtmlText ([IO.Path]::GetFileName($_.Artifact)))
+        }
+        '<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td><td>{4}</td><td class="{5}">{6}</td><td>{7}</td><td>{8}</td><td>{9}</td></tr>' -f `
+            (ConvertTo-HtmlText $_.TestId), (ConvertTo-HtmlText $_.Name), (ConvertTo-HtmlText $_.Category),
+            (ConvertTo-HtmlText $_.StartedAtUtc), (ConvertTo-HtmlText $_.EndedAtUtc),
+            $statusClass, (ConvertTo-HtmlText $_.Status), (ConvertTo-HtmlText $_.DurationMs),
+            (ConvertTo-HtmlText $_.Message), $artifact
+    }) -join [Environment]::NewLine
+
+    $hardwareSelection = if ($WithWatch) { 'Selected' } else { 'Not selected (use -WithWatch to include it)' }
+    $overallClass = ([string]$Metadata.OverallStatus).ToLowerInvariant()
+    $html = @"
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Haptic Hub validation - $(ConvertTo-HtmlText $Metadata.RunId)</title>
+<style>
+body{font-family:Segoe UI,Arial,sans-serif;margin:0;background:#f4f6f8;color:#17202a}main{max-width:1200px;margin:auto;padding:32px}h1{margin-bottom:6px}.muted{color:#627080}.cards{display:flex;flex-wrap:wrap;gap:12px;margin:22px 0}.card{background:white;border-radius:8px;padding:15px 18px;min-width:135px;box-shadow:0 1px 4px #0002}.card strong{display:block;font-size:24px}.passed{color:#16763c;font-weight:600}.failed{color:#b42318;font-weight:600}.skipped{color:#9a6700;font-weight:600}.status{font-size:28px}table{width:100%;border-collapse:collapse;background:white;margin:14px 0 28px}th,td{text-align:left;padding:10px;border-bottom:1px solid #dde2e7;vertical-align:top}th{background:#e9eef3}tr:hover{background:#f8fafb}code{background:#e9eef3;padding:2px 5px;border-radius:3px}a{color:#075aa8}.meta{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;background:white;padding:16px;border-radius:8px}.meta dt{font-weight:600}.meta dd{margin:0;overflow-wrap:anywhere}@media(max-width:700px){main{padding:18px}.meta{grid-template-columns:1fr}table{font-size:13px;display:block;overflow-x:auto}}
+</style>
+</head>
+<body><main>
+<h1>Haptic Hub validation</h1>
+<div class="status">$(ConvertTo-HtmlText $Metadata.PassPercent)% passed</div>
+<p class="muted">Gate: <span class="$overallClass">$(ConvertTo-HtmlText $Metadata.OverallStatus)</span> - $(ConvertTo-HtmlText $Metadata.RunId)</p>
+<div class="cards">
+  <div class="card"><span>Pass rate</span><strong>$(ConvertTo-HtmlText $Metadata.PassPercent)%</strong><small>$(ConvertTo-HtmlText $Metadata.SelectedPassed) / $(ConvertTo-HtmlText $Metadata.EvaluatedSelectedTests) evaluated selected tests</small></div>
+  <div class="card"><span>Progress</span><strong>$(ConvertTo-HtmlText $Metadata.CompletionPercent)%</strong><small>$(ConvertTo-HtmlText $Metadata.CompletedTests) / $(ConvertTo-HtmlText $Metadata.PlannedTests) selected tests</small></div>
+  <div class="card"><span>Passed</span><strong class="passed">$(ConvertTo-HtmlText $Metadata.Passed)</strong></div>
+  <div class="card"><span>Failed</span><strong class="failed">$(ConvertTo-HtmlText $Metadata.Failed)</strong></div>
+  <div class="card"><span>Skipped</span><strong class="skipped">$(ConvertTo-HtmlText $Metadata.Skipped)</strong></div>
+</div>
+<h2>Run details</h2>
+<dl class="meta">
+<dt>Mode</dt><dd>$(ConvertTo-HtmlText $Metadata.Mode)</dd>
+<dt>Started (UTC)</dt><dd>$(ConvertTo-HtmlText $Metadata.StartedAtUtc)</dd>
+<dt>Duration</dt><dd>$(ConvertTo-HtmlText $Metadata.DurationSeconds) seconds</dd>
+<dt>Operator</dt><dd>$(ConvertTo-HtmlText $Metadata.Operator)</dd>
+<dt>Backend</dt><dd>$(ConvertTo-HtmlText $Metadata.BaseUrl)</dd>
+<dt>Application commit</dt><dd><code>$(ConvertTo-HtmlText $Metadata.ApplicationCommit)</code></dd>
+<dt>n8n workflow version</dt><dd>$(ConvertTo-HtmlText $Metadata.N8nWorkflowVersion)</dd>
+<dt>Cleanup</dt><dd>$(ConvertTo-HtmlText $Metadata.CleanupStatus)</dd>
+<dt>Gate status</dt><dd>$(ConvertTo-HtmlText $Metadata.OverallStatus)</dd>
+<dt>Watch testing</dt><dd>$(ConvertTo-HtmlText $hardwareSelection) — $(ConvertTo-HtmlText $Metadata.HardwareStatement)</dd>
+</dl>
+<h2>Categories</h2>
+<table><thead><tr><th>Category</th><th>Total</th><th>Passed</th><th>Failed</th><th>Skipped</th></tr></thead><tbody>
+$categoryRows
+</tbody></table>
+<h2>Test results</h2>
+<table><thead><tr><th>Test ID</th><th>Name</th><th>Category</th><th>Started (UTC)</th><th>Ended (UTC)</th><th>Status</th><th>Duration (ms)</th><th>Message</th><th>Artifact</th></tr></thead><tbody>
+$testRows
+</tbody></table>
+<p class="muted">Response artifacts are sanitized before being written. Share the generated ZIP to include this report and its evidence links.</p>
+</main></body></html>
+"@
+    Set-Content -Encoding UTF8 -Path $Path -Value $html
+}
+
 function Write-RunOutputs {
     param([string]$CleanupStatus)
 
@@ -1043,10 +1362,23 @@ function Write-RunOutputs {
     $failed = @($results | Where-Object Status -eq FAILED).Count
     $skipped = @($results | Where-Object Status -eq SKIPPED).Count
     $hardwareSkipped = @($results | Where-Object { $_.Status -eq 'SKIPPED' -and $_.RequiresWatch }).Count
-    $watchNotRequested = @($results | Where-Object { $_.Status -eq 'SKIPPED' -and $_.Message -eq 'watch_not_requested' }).Count
+    $watchPreflightFailed = @($results | Where-Object { $_.TestId -eq 'watch.preflight' -and $_.Status -eq 'FAILED' }).Count -gt 0
+    $completedWatchTests = @($results | Where-Object { $testIdsByPhase.watch -contains $_.TestId }).Count
     $git = Get-GitMetadata
-    $message = if ($watchNotRequested -gt 0) {
+    $selectedResults = @($results | Where-Object { $selectedTestIds -contains $_.TestId })
+    $selectedPassed = @($selectedResults | Where-Object Status -eq PASSED).Count
+    $selectedFailed = @($selectedResults | Where-Object Status -eq FAILED).Count
+    $selectedSkipped = @($selectedResults | Where-Object Status -eq SKIPPED).Count
+    $evaluatedSelectedTests = $selectedPassed + $selectedFailed
+    $passPercent = if ($evaluatedSelectedTests -eq 0) { 0 } else { [math]::Round(($selectedPassed / $evaluatedSelectedTests) * 100, 1) }
+    $completionPercent = if ($plannedTests -eq 0) { 100 } else { [int][math]::Floor(($completedTests / $plannedTests) * 100) }
+    $overallStatus = if ($failed -gt 0 -or $CleanupStatus -eq 'failed') { 'FAILED' } else { 'PASSED' }
+    $message = if (-not $WithWatch) {
         'Physical watch delivery was not evaluated in this run.'
+    } elseif ($watchPreflightFailed) {
+        'Watch validation was requested, but preflight failed before physical delivery tests ran.'
+    } elseif ($completedWatchTests -lt $testIdsByPhase.watch.Count) {
+        'Watch validation was requested, but the run ended before all physical delivery tests ran.'
     } elseif ($hardwareSkipped -gt 0) {
         'Single-watch delivery was evaluated; simultaneous two-watch isolation was not evaluated.'
     } else {
@@ -1069,6 +1401,15 @@ function Write-RunOutputs {
         TestPhones = @($PhoneA, $PhoneB)
         TestWatches = @($WatchA, $WatchB)
         CleanupStatus = $CleanupStatus
+        OverallStatus = $overallStatus
+        PlannedTests = $plannedTests
+        CompletedTests = $completedTests
+        CompletionPercent = $completionPercent
+        SelectedPassed = $selectedPassed
+        SelectedFailed = $selectedFailed
+        SelectedSkipped = $selectedSkipped
+        EvaluatedSelectedTests = $evaluatedSelectedTests
+        PassPercent = $passPercent
         Passed = $passed
         Failed = $failed
         Skipped = $skipped
@@ -1079,17 +1420,29 @@ function Write-RunOutputs {
             WatchAckP95Ms = 5000
             SoakRequests = $SoakRequests
         }
+        ReportFile = 'report.html'
+        ShareableArchive = "$runId.zip"
     }
 
     $results | ConvertTo-Json -Depth 10 | Set-Content -Encoding UTF8 -Path (Join-Path $runDirectory 'results.json')
     $results | Export-Csv -NoTypeInformation -Encoding UTF8 -Path (Join-Path $runDirectory 'summary.csv')
     $metadata | ConvertTo-Json -Depth 10 | Set-Content -Encoding UTF8 -Path (Join-Path $runDirectory 'run-metadata.json')
+    $reportPath = Join-Path $runDirectory 'report.html'
+    Write-HtmlReport $metadata $reportPath
+    $archivePath = Join-Path $OutputRoot "$runId.zip"
+    Compress-Archive -LiteralPath $runDirectory -DestinationPath $archivePath -CompressionLevel Optimal
+
+    Write-Progress -Activity "Haptic Hub validation ($Mode)" -Completed
 
     Write-Host ''
     Write-Host ('Run: {0}' -f $runId)
+    Write-Host ('Progress: {0}% ({1}/{2} selected tests)' -f $completionPercent, $completedTests, $plannedTests)
+    Write-Host ('Pass rate: {0}% ({1}/{2} evaluated selected tests)' -f $passPercent, $selectedPassed, $evaluatedSelectedTests)
     Write-Host ('Passed: {0}  Failed: {1}  Skipped: {2}' -f $passed, $failed, $skipped)
     Write-Host $message
     Write-Host ('Evidence: {0}' -f $runDirectory)
+    Write-Host ('Report: {0}' -f $reportPath)
+    Write-Host ('Share: {0}' -f $archivePath)
     return $failed
 }
 
@@ -1115,10 +1468,10 @@ try {
 
     Invoke-SmokeTests
 
-    if ($Mode -in @('core', 'formal')) { Invoke-CoreTests }
-    if ($Mode -eq 'external') { Invoke-ExternalTests }
-    if ($Mode -eq 'ai') { Invoke-AiTests }
-    if ($Mode -in @('soak', 'formal')) { Invoke-SoakTests }
+    if ($Mode -in @('core', 'formal', 'all')) { Invoke-CoreTests }
+    if ($Mode -in @('external', 'all')) { Invoke-ExternalTests }
+    if ($Mode -in @('ai', 'all')) { Invoke-AiTests }
+    if ($Mode -in @('soak', 'formal', 'all')) { Invoke-SoakTests }
     Invoke-WatchTests
 } catch {
     $fatalError = $_
