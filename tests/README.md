@@ -42,12 +42,13 @@ Smoke and rejection tests run at the start of every mode.
 | Mode | What it runs |
 |---|---|
 | `smoke` | Connection, endpoint schemas, read-only endpoints and rejection cases |
-| `core` | Smoke plus mappings, participant isolation, schedules, monitoring, HeartRate routing/logging and dashboard data consistency |
+| `core` | Smoke plus mappings, exact interpolation, vibration-interval behavior, participant isolation, schedules, monitoring, HeartRate routing/logging and dashboard data consistency |
 | `external` | Smoke plus Temperature and Pollution routing; reserved users are temporarily assigned matching mappings and then restored, with a temporary inactive rule retained only when a use case had no rule |
-| `ai` | Smoke plus participant-wide and use-case-wide AI analysis and incomplete-input rejection |
+| `ai` | Smoke plus participant-wide and use-case-wide AI routing contracts and incomplete-input rejection |
 | `soak` | Smoke plus latency, loss and duplicate checks; 50 requests by default |
+| `stress` | Smoke plus concurrent ingestion, loss and duplicate checks; 30 requests at concurrency 10 by default |
 | `formal` | Core plus soak with required metadata and a clean Git worktree |
-| `all` | Smoke, core, external, AI and soak in one run; watch tests remain optional |
+| `all` | Smoke, core, external, AI, soak and stress in one run; watch tests remain optional |
 
 Examples:
 
@@ -67,6 +68,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run-validation.ps1 -Mo
 # Backend reliability with the default 50 requests
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run-validation.ps1 -Mode soak
 
+# Concurrent ingestion with the default 30 requests at concurrency 10
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run-validation.ps1 -Mode stress
+
 # Publishable software-only run
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run-validation.ps1 `
     -Mode formal `
@@ -83,7 +87,7 @@ All mode requires the backend, PostgreSQL, Temperature and Pollution services, a
 During a run, each selected test prints completion progress:
 
 ```text
-[39% | 11/28] mapping.shared - PASSED
+[41% | 12/29] mapping.shared - PASSED
 ```
 
 The progress percentage counts software tests selected by the mode. Watch preflight and watch cases join the total only when `-WithWatch` is supplied. Cleanup and fatal-run records are reported separately.
@@ -99,6 +103,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run-validation.ps1 -Mo
 # Change the soak sample size
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run-validation.ps1 -Mode soak -SoakRequests 100
 
+# Change the stress size and concurrency
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run-validation.ps1 -Mode stress `
+    -StressRequests 100 -StressConcurrency 10
+
 # Write evidence somewhere else
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run-validation.ps1 -Mode core -OutputRoot "C:\validation-evidence"
 
@@ -106,7 +114,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run-validation.ps1 -Mo
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run-validation.ps1 -Mode external -HttpTimeoutSeconds 60
 ```
 
-The default HeartRate routing cooldown is 61 seconds. Only override `-RouteCooldownSeconds` when the n8n HeartRate vibration interval has also been changed; otherwise valid requests may remain rate-limited.
+Core mapping and interval contracts temporarily set the HeartRate vibration interval to two seconds and restore its original value during cleanup. `-RouteCooldownSeconds` is the maximum time the runner polls for an accepted route; `-TestVibrationIntervalSeconds` changes the temporary interval when needed.
 
 ## What the automated tests validate
 
@@ -119,13 +127,21 @@ The default HeartRate routing cooldown is 61 seconds. Only override `-RouteCoold
 | `mapping.history` | Mappings created during the run and their assignment timestamps appear in history |
 | `schedule.lifecycle` | List, add, read-back, change, deactivate and activate operations succeed with the expected values |
 | `monitoring.lifecycle` | Monitoring start/stop works and an invalid stop reason is rejected |
+| `interval.configuration` | A short validation interval is applied, read back and restored during cleanup |
+| `mapping.linear_interpolation` | Ascending input, ascending output, descending output, and start/mid/end values produce exact intensity, duration and HeartRate interval values |
+| `mapping.reversed_input` | A mapping whose first input endpoint is greater than its second endpoint still selects and interpolates correctly |
+| `mapping.zero_width` | Equal input endpoints return the configured output minima without division errors |
+| `mapping.outside_range` | Values outside both endpoints do not select a mapping or generate haptics |
+| `interval.immediate_limit`, `interval.expiry` | Immediate repeats are suppressed and routing resumes after the configured interval |
+| `interval.user_isolation`, `interval.concurrent_gate` | Rate-limit state is participant-specific and concurrent requests atomically consume one slot |
 | `routing.heartrate_boundaries` | Values at 30, 125 and 220 produce mapped haptics for the expected participant, phone and watch; 29 and 221 are rejected |
 | `routing.database_log` | HeartRate values sent by the current run appear in sensor data |
 | `dashboard.data_consistency` | User mapping IDs exist in the current configuration data consumed by the JavaFX dashboard |
 | `external.temperature`, `external.pollution` | Contextual routes return data for the expected identities and exposed values are correlated with sensor-data records |
-| `ai.participant_analysis`, `ai.usecase_analysis` | The chat endpoint accepts participant-wide and use-case-wide requests and returns HTTP 200 with a non-empty response |
+| `ai.participant_analysis`, `ai.usecase_analysis` | The chat endpoint returns a non-empty reply classified as `knowledge`, routed to `expert_panel`, and marked read-only |
 | `ai.incomplete_input`, `ai.empty_message`, `ai.invalid_usecase` | Invalid AI requests are rejected by HTTP status or an explicit failure response |
 | `soak.api_delivery` | Every unique request returns HTTP 200, is stored once, and direct API p95 stays within two seconds |
+| `stress.concurrent_ingestion` | Concurrent request batches all return HTTP 200 and every unique value is stored exactly once |
 | `fixture.cleanup` | Both reserved users return to the baseline mapping and created mappings/schedules are deactivated |
 
 The six `smoke.*` IDs verify endpoint availability and schemas. `reject.mapping_action`, `reject.sensor_type`, and `reject.missing_devices` verify deterministic rejection at the public webhook boundary.
@@ -207,14 +223,15 @@ Import-Csv "$($latest.FullName)\summary.csv" |
 
 The process exits with code `0` when all executed tests pass and cleanup succeeds. It exits with code `1` when any test, preflight or cleanup check fails. Evidence is still written after ordinary test failures.
 
-### Latest verified software coverage
+### Latest verification of the expanded tests
 
-On 2026-08-07, all 28 selectable software tests, plus cleanup, passed across these retained evidence runs:
+On 2026-08-08:
 
-- `validation-20260807T185148376Z`: 27 of 28 passed; only `external.temperature` failed before contextual fixture assignment was corrected.
-- `validation-20260807T192632740Z`: all 11 selected external-mode tests passed, including `external.temperature` and `external.pollution`.
+- `validation-20260808T094220109Z`: all 10 selected stress-mode tests passed; 30 concurrent requests were stored exactly once.
+- `validation-20260808T094246617Z`: 28 of 29 selected core-mode tests passed. Only `mapping.reversed_input` failed because the live HeartRate workflow checks `value >= minvalue && value <= maxvalue`, which cannot select descending input endpoints.
+- `validation-20260808T094435581Z`: both strengthened AI analysis contracts failed. Participant analysis returned an empty HTTP 200 response; use-case analysis returned `clarify` instead of `knowledge` routed to `expert_panel`. All three deterministic AI rejection cases passed.
 
-This establishes aggregate automated coverage, not a single final acceptance run. Run `-Mode all` again to produce one post-fix report and ZIP in which all 28 selected software tests and cleanup pass together.
+Run `-Mode all` after those n8n defects are fixed to produce one acceptance report containing all 38 software tests.
 
 ## Reserved validation data and cleanup
 

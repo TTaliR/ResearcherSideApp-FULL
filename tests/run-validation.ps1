@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('smoke', 'core', 'external', 'ai', 'soak', 'formal', 'all')]
+    [ValidateSet('smoke', 'core', 'external', 'ai', 'soak', 'stress', 'formal', 'all')]
     [string]$Mode = 'core',
 
     [switch]$WithWatch,
@@ -17,6 +17,9 @@ param(
     [int]$HttpTimeoutSeconds = 30,
     [int]$RouteCooldownSeconds = 61,
     [int]$SoakRequests = 50,
+    [int]$StressRequests = 30,
+    [int]$StressConcurrency = 10,
+    [int]$TestVibrationIntervalSeconds = 2,
 
     [string]$N8nWorkflowVersion = '',
     [string]$Operator = $env:USERNAME,
@@ -52,8 +55,11 @@ $testIdsByPhase = [ordered]@{
     core = @(
         'fixture.bootstrap', 'mapping.assign_command', 'mapping.shared', 'mapping.change_shared',
         'mapping.participant_copy', 'mapping.history', 'schedule.lifecycle',
-        'monitoring.lifecycle', 'routing.heartrate_boundaries', 'routing.database_log',
-        'dashboard.data_consistency'
+        'monitoring.lifecycle', 'interval.configuration', 'mapping.linear_interpolation',
+        'mapping.reversed_input', 'mapping.zero_width', 'mapping.outside_range',
+        'interval.immediate_limit', 'interval.expiry', 'interval.user_isolation',
+        'interval.concurrent_gate', 'routing.heartrate_boundaries',
+        'routing.database_log', 'dashboard.data_consistency'
     )
     external = @('external.temperature', 'external.pollution')
     ai = @(
@@ -61,6 +67,7 @@ $testIdsByPhase = [ordered]@{
         'ai.empty_message', 'ai.invalid_usecase'
     )
     soak = @('soak.api_delivery')
+    stress = @('stress.concurrent_ingestion')
     watch = @(
         'watch.preflight', 'watch.matching_id', 'watch.nonmatching_id',
         'watch.ack_latency', 'watch.two_watch_isolation'
@@ -72,8 +79,9 @@ $selectedPhases = switch ($Mode) {
     'external' { @('smoke', 'external') }
     'ai' { @('smoke', 'ai') }
     'soak' { @('smoke', 'soak') }
+    'stress' { @('smoke', 'stress') }
     'formal' { @('smoke', 'core', 'soak') }
-    'all' { @('smoke', 'core', 'external', 'ai', 'soak') }
+    'all' { @('smoke', 'core', 'external', 'ai', 'soak', 'stress') }
 }
 $selectedTestIds = @($selectedPhases | ForEach-Object { $testIdsByPhase[$_] })
 if ($WithWatch) { $selectedTestIds += $testIdsByPhase.watch }
@@ -85,6 +93,9 @@ $fixture = @{
     CreatedMappingIds = New-Object 'System.Collections.Generic.List[int]'
     CreatedScheduleId = $null
     HeartRateMappingId = $null
+    HeartRateContractMappingId = $null
+    HeartRateIntervalOriginal = $null
+    HeartRateIntervalChanged = $false
     HeartRateUseCaseId = $null
     HeartRateCases = New-Object 'System.Collections.Generic.List[object]'
     MappingHistoryCount = 0
@@ -425,7 +436,13 @@ function New-Mapping {
         [double]$MinValue,
         [double]$MaxValue,
         [int]$MinPulses = 1,
-        [int]$MaxPulses = 3
+        [int]$MaxPulses = 3,
+        [int]$MinIntensity = 20,
+        [int]$MaxIntensity = 60,
+        [int]$MinDuration = 100,
+        [int]$MaxDuration = 300,
+        [int]$MinInterval = 200,
+        [int]$MaxInterval = 600
     )
 
     $rule = [ordered]@{
@@ -434,14 +451,36 @@ function New-Mapping {
         maxvalue = $MaxValue
         minpulses = $MinPulses
         maxpulses = $MaxPulses
-        minintensity = 20
-        maxintensity = 60
-        minduration = 100
-        maxduration = 300
-        mininterval = 200
-        maxinterval = 600
+        minintensity = $MinIntensity
+        maxintensity = $MaxIntensity
+        minduration = $MinDuration
+        maxduration = $MaxDuration
+        mininterval = $MinInterval
+        maxinterval = $MaxInterval
         active = $true
     }
+    $existing = First-OrNull @(Get-Configurations | Where-Object {
+        [string](Get-Value $_ @('usecase_name', 'type') '') -eq $Type -and
+        [double](Get-Value $_ @('minvalue') 0) -eq $MinValue -and
+        [double](Get-Value $_ @('maxvalue') 0) -eq $MaxValue -and
+        [int](Get-Value $_ @('minpulses') 0) -eq $MinPulses -and
+        [int](Get-Value $_ @('maxpulses') 0) -eq $MaxPulses -and
+        [int](Get-Value $_ @('minintensity') 0) -eq $MinIntensity -and
+        [int](Get-Value $_ @('maxintensity') 0) -eq $MaxIntensity -and
+        [int](Get-Value $_ @('minduration') 0) -eq $MinDuration -and
+        [int](Get-Value $_ @('maxduration') 0) -eq $MaxDuration -and
+        [int](Get-Value $_ @('mininterval') 0) -eq $MinInterval -and
+        [int](Get-Value $_ @('maxinterval') 0) -eq $MaxInterval
+    } | Sort-Object { Get-MappingId $_ } | Select-Object -First 1)
+    if ($null -ne $existing) {
+        if (-not [bool](Get-Value $existing @('active') $false)) {
+            Set-MappingActive (Get-MappingId $existing) $true | Out-Null
+        }
+        return First-OrNull @(Get-Configurations | Where-Object {
+            (Get-MappingId $_) -eq (Get-MappingId $existing)
+        } | Select-Object -First 1)
+    }
+
     $raw = '[[{0}]]' -f ($rule | ConvertTo-Json -Depth 10 -Compress)
     $response = Invoke-Api POST 'set-rules' -RawBody $raw
     Assert-Status $response @(200, 201)
@@ -449,11 +488,101 @@ function New-Mapping {
     $mapping = First-OrNull @(Get-Configurations | Where-Object {
         [string](Get-Value $_ @('usecase_name', 'type') '') -eq $Type -and
         [double](Get-Value $_ @('minvalue') 0) -eq $MinValue -and
-        [double](Get-Value $_ @('maxvalue') 0) -eq $MaxValue
+        [double](Get-Value $_ @('maxvalue') 0) -eq $MaxValue -and
+        [int](Get-Value $_ @('minintensity') 0) -eq $MinIntensity -and
+        [int](Get-Value $_ @('maxintensity') 0) -eq $MaxIntensity -and
+        [int](Get-Value $_ @('minduration') 0) -eq $MinDuration -and
+        [int](Get-Value $_ @('maxduration') 0) -eq $MaxDuration
     } | Sort-Object { Get-MappingId $_ } -Descending | Select-Object -First 1)
 
     Assert-True ($null -ne $mapping) "Could not find the mapping created for $Type."
     return $mapping
+}
+
+function ConvertTo-IntervalSeconds {
+    param($Value)
+
+    if ($Value -is [string]) {
+        if ($Value -match '^\s*([0-9]+(?:\.[0-9]+)?)\s+(second|minute|hour|day)s?\s*$') {
+            $multiplier = switch ($matches[2].ToLowerInvariant()) {
+                'second' { 1 }
+                'minute' { 60 }
+                'hour' { 3600 }
+                'day' { 86400 }
+            }
+            return [double]$matches[1] * $multiplier
+        }
+        throw "Unsupported interval value '$Value'."
+    }
+
+    $total = 0.0
+    $found = $false
+    foreach ($unit in @(
+        @{ Name = 'days'; Multiplier = 86400 },
+        @{ Name = 'hours'; Multiplier = 3600 },
+        @{ Name = 'minutes'; Multiplier = 60 },
+        @{ Name = 'seconds'; Multiplier = 1 }
+    )) {
+        $amount = Get-Value $Value @($unit.Name) $null
+        if ($null -ne $amount) {
+            $total += [double]$amount * $unit.Multiplier
+            $found = $true
+        }
+    }
+    if ($found) { return $total }
+    throw 'The use-case vibration interval could not be read.'
+}
+
+function ConvertTo-IntervalText {
+    param([double]$Seconds)
+
+    foreach ($unit in @(
+        @{ Name = 'day'; Seconds = 86400 },
+        @{ Name = 'hour'; Seconds = 3600 },
+        @{ Name = 'minute'; Seconds = 60 }
+    )) {
+        if ($Seconds -ge $unit.Seconds -and $Seconds % $unit.Seconds -eq 0) {
+            $amount = $Seconds / $unit.Seconds
+            return '{0} {1}{2}' -f $amount, $unit.Name, $(if ($amount -eq 1) { '' } else { 's' })
+        }
+    }
+    return '{0} second{1}' -f $Seconds, $(if ($Seconds -eq 1) { '' } else { 's' })
+}
+
+function Set-VibrationInterval {
+    param([int]$UseCaseId, [double]$Seconds)
+
+    $response = Invoke-Api POST 'set-vibration-interval' @{
+        usecase_id = $UseCaseId
+        interval = ConvertTo-IntervalText $Seconds
+    }
+    Assert-Status $response @(200)
+
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        $useCase = Get-UseCase 'HeartRate'
+        $actual = ConvertTo-IntervalSeconds (Get-Value $useCase @('vibration_interval', 'vibrationInterval') $null)
+        if ([math]::Abs($actual - $Seconds) -lt 0.001) { return $response }
+        Start-Sleep -Milliseconds 250
+    } while ($timer.Elapsed.TotalSeconds -lt 5)
+    throw "HeartRate vibration interval did not change to $Seconds seconds."
+}
+
+function Ensure-FastHeartRateInterval {
+    $heartRate = Get-UseCase 'HeartRate'
+    $heartRateId = [int](Get-Value $heartRate @('usecase_id', 'id') 0)
+    Assert-True ($heartRateId -gt 0) 'HeartRate use case is missing.'
+
+    if ($null -eq $fixture.HeartRateIntervalOriginal) {
+        $fixture.HeartRateIntervalOriginal = ConvertTo-IntervalSeconds `
+            (Get-Value $heartRate @('vibration_interval', 'vibrationInterval') $null)
+    }
+    if (-not $fixture.HeartRateIntervalChanged) {
+        $fixture.HeartRateIntervalChanged = $true
+        Set-VibrationInterval $heartRateId $TestVibrationIntervalSeconds | Out-Null
+    }
+    $fixture.HeartRateUseCaseId = $heartRateId
+    return $heartRateId
 }
 
 function Assign-Mapping {
@@ -620,6 +749,15 @@ function Initialize-Fixture {
 function Restore-Fixture {
     $errors = New-Object 'System.Collections.Generic.List[string]'
 
+    if ($fixture.HeartRateIntervalChanged -and $null -ne $fixture.HeartRateIntervalOriginal) {
+        try {
+            $heartRate = Get-UseCase 'HeartRate'
+            $heartRateId = [int](Get-Value $heartRate @('usecase_id', 'id') 0)
+            Set-VibrationInterval $heartRateId ([double]$fixture.HeartRateIntervalOriginal) | Out-Null
+            $fixture.HeartRateIntervalChanged = $false
+        } catch { $errors.Add("HeartRate interval restore failed: $($_.Exception.Message)") }
+    }
+
     foreach ($mappingId in @($fixture.CreatedMappingIds | Select-Object -Unique)) {
         if ($mappingId -gt 0 -and $mappingId -ne $fixture.BaselineMappingId) {
             try { Set-MappingActive $mappingId $false | Out-Null }
@@ -676,6 +814,149 @@ function Get-Percentile {
     return [double]$sorted[[math]::Max(0, $index)]
 }
 
+function Get-MappedValue {
+    param([double]$Value, [double]$InMin, [double]$InMax, [double]$OutMin, [double]$OutMax)
+    if ($InMin -eq $InMax) { return $OutMin }
+    return $OutMin + (($Value - $InMin) * ($OutMax - $OutMin)) / ($InMax - $InMin)
+}
+
+function Invoke-HeartRateRequest {
+    param([int]$UserId, [int]$WatchId, [int]$PhoneId, [double]$Value)
+    return Invoke-Api POST 'usecase-routing' @{
+        userId = $UserId
+        smartWatchId = $WatchId
+        androidId = $PhoneId
+        type = 'HeartRate'
+        value = $Value
+        validationRunId = $runId
+    }
+}
+
+function Wait-HeartRateAccepted {
+    param([int]$UserId, [int]$WatchId, [int]$PhoneId, [double]$Value)
+
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    do {
+        $response = Invoke-HeartRateRequest $UserId $WatchId $PhoneId $Value
+        Assert-Status $response @(200)
+        if ([string](Get-Value $response.Data @('reason') '') -ne 'rate_limited') { return $response }
+        Start-Sleep -Milliseconds 500
+    } while ($timer.Elapsed.TotalSeconds -lt $RouteCooldownSeconds)
+    throw "HeartRate routing remained rate-limited for $RouteCooldownSeconds seconds."
+}
+
+function New-HeartRateContractMapping {
+    param(
+        [double]$MinValue,
+        [double]$MaxValue,
+        [int]$MinIntensity,
+        [int]$MaxIntensity,
+        [int]$MinDuration,
+        [int]$MaxDuration,
+        [int]$UserId = $UserA
+    )
+
+    $heartRateId = Ensure-FastHeartRateInterval
+    $mapping = New-Mapping 'HeartRate' $MinValue $MaxValue 2 8 `
+        $MinIntensity $MaxIntensity $MinDuration $MaxDuration 50 250
+    $mappingId = Get-MappingId $mapping
+    $fixture.CreatedMappingIds.Add($mappingId)
+    Assign-Mapping $UserId $mappingId $heartRateId 'HeartRate' | Out-Null
+    Wait-UserMapping $UserId 'HeartRate' $mappingId | Out-Null
+    return $mapping
+}
+
+function Get-HeartRateContractMapping {
+    param([int]$UserId = $UserA)
+
+    $mapping = $null
+    if ($fixture.HeartRateContractMappingId) {
+        $mapping = First-OrNull @(Get-Configurations | Where-Object {
+            (Get-MappingId $_) -eq [int]$fixture.HeartRateContractMappingId
+        } | Select-Object -First 1)
+    }
+    if ($null -eq $mapping) {
+        $mapping = New-HeartRateContractMapping 40 220 20 100 500 100 $UserId
+        $fixture.HeartRateContractMappingId = Get-MappingId $mapping
+    } else {
+        $heartRateId = Ensure-FastHeartRateInterval
+        Assign-Mapping $UserId (Get-MappingId $mapping) $heartRateId 'HeartRate' | Out-Null
+        Wait-UserMapping $UserId 'HeartRate' (Get-MappingId $mapping) | Out-Null
+    }
+    return $mapping
+}
+
+function Assert-ExactHeartRateHaptic {
+    param($Actual, $Mapping, [int]$CleanedValue, [int]$UserId, [int]$WatchId, [int]$PhoneId)
+
+    Assert-RouteIdentity $Actual $UserId $WatchId $PhoneId
+    Assert-True ([int](Get-Value $Actual @('fbRangeID') 0) -eq (Get-MappingId $Mapping)) 'Routing used the wrong mapping.'
+    Assert-True ([int](Get-Value $Actual @('pulses') 0) -eq 10) 'HeartRate output did not use ten pulses.'
+    Assert-True ([string](Get-Value $Actual @('alertGiven') '') -eq 'yes') 'Expected a routed HeartRate alert.'
+
+    $expectedIntensity = [math]::Floor((Get-MappedValue $CleanedValue `
+        ([double](Get-Value $Mapping @('minvalue') 0)) ([double](Get-Value $Mapping @('maxvalue') 0)) `
+        ([double](Get-Value $Mapping @('minintensity') 0)) ([double](Get-Value $Mapping @('maxintensity') 0))) + 0.5)
+    $expectedDuration = [math]::Floor((Get-MappedValue $CleanedValue `
+        ([double](Get-Value $Mapping @('minvalue') 0)) ([double](Get-Value $Mapping @('maxvalue') 0)) `
+        ([double](Get-Value $Mapping @('minduration') 0)) ([double](Get-Value $Mapping @('maxduration') 0))) + 0.5)
+    $expectedInterval = [math]::Max(0, [math]::Floor(((60000 / $CleanedValue) - $expectedDuration) + 0.5))
+
+    Assert-True ([int](Get-Value $Actual @('intensity') -1) -eq $expectedIntensity) `
+        "Expected intensity $expectedIntensity, received $(Get-Value $Actual @('intensity') -1)."
+    Assert-True ([int](Get-Value $Actual @('duration') -1) -eq $expectedDuration) `
+        "Expected duration $expectedDuration, received $(Get-Value $Actual @('duration') -1)."
+    Assert-True ([int](Get-Value $Actual @('interval') -1) -eq $expectedInterval) `
+        "Expected interval $expectedInterval, received $(Get-Value $Actual @('interval') -1)."
+}
+
+function Invoke-ConcurrentHeartRateRequests {
+    param(
+        [int]$UserId,
+        [int]$WatchId,
+        [int]$PhoneId,
+        [double[]]$Values,
+        [int]$Concurrency
+    )
+
+    Add-Type -AssemblyName System.Net.Http
+    $client = New-Object System.Net.Http.HttpClient
+    $client.Timeout = [TimeSpan]::FromSeconds($HttpTimeoutSeconds)
+    $uri = '{0}/usecase-routing' -f $BaseUrl.TrimEnd('/')
+    $results = New-Object 'System.Collections.Generic.List[object]'
+    try {
+        for ($offset = 0; $offset -lt $Values.Count; $offset += $Concurrency) {
+            $batchValues = @($Values | Select-Object -Skip $offset -First $Concurrency)
+            $batch = @($batchValues | ForEach-Object {
+                $body = @{
+                    userId = $UserId; smartWatchId = $WatchId; androidId = $PhoneId
+                    type = 'HeartRate'; value = $_; validationRunId = $runId
+                } | ConvertTo-Json -Compress
+                $content = New-Object System.Net.Http.StringContent($body, [Text.Encoding]::UTF8, 'application/json')
+                [pscustomobject]@{ Value = $_; Content = $content; Task = $client.PostAsync($uri, $content) }
+            })
+            [Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($batch.Task), $HttpTimeoutSeconds * 1000) | Out-Null
+            foreach ($item in $batch) {
+                $response = $item.Task.Result
+                $text = $response.Content.ReadAsStringAsync().Result
+                $data = if ([string]::IsNullOrWhiteSpace($text)) { $null } else { try { $text | ConvertFrom-Json } catch { $text } }
+                $results.Add([pscustomobject]@{
+                    Value = $item.Value
+                    StatusCode = [int]$response.StatusCode
+                    Content = $text
+                    Data = $data
+                    Reason = [string](Get-Value $data @('reason') '')
+                })
+                $item.Content.Dispose()
+                $response.Dispose()
+            }
+        }
+    } finally {
+        $client.Dispose()
+    }
+    return @($results | ForEach-Object { $_ })
+}
+
 function Assert-Haptic {
     param($Actual, $Mapping, [double]$Value, [int]$UserId, [int]$WatchId, [int]$PhoneId)
 
@@ -711,30 +992,7 @@ function Invoke-RouteCase {
     param([int]$UserId, [int]$WatchId, [int]$PhoneId, [double]$Value, $Mapping)
 
     $sentAt = [DateTimeOffset]::UtcNow
-    $response = Invoke-Api POST 'usecase-routing' @{
-        userId = $UserId
-        smartWatchId = $WatchId
-        androidId = $PhoneId
-        type = 'HeartRate'
-        value = $Value
-        validationRunId = $runId
-    }
-    Assert-Status $response @(200)
-
-    if ([string](Get-Value $response.Data @('reason') '') -eq 'rate_limited') {
-        Start-Sleep -Seconds $RouteCooldownSeconds
-        $response = Invoke-Api POST 'usecase-routing' @{
-            userId = $UserId
-            smartWatchId = $WatchId
-            androidId = $PhoneId
-            type = 'HeartRate'
-            value = $Value
-            validationRunId = $runId
-        }
-        Assert-Status $response @(200)
-    }
-
-    Assert-True ([string](Get-Value $response.Data @('reason') '') -ne 'rate_limited') 'Routing remained rate-limited after the configured cooldown.'
+    $response = Wait-HeartRateAccepted $UserId $WatchId $PhoneId $Value
     Assert-Haptic $response.Data $Mapping $Value $UserId $WatchId $PhoneId
     if ($Value -ge 30 -and $Value -le 220) {
         $fixture.HeartRateCases.Add([pscustomobject]@{ UserId = $UserId; Value = $Value; SentAt = $sentAt })
@@ -963,36 +1221,117 @@ function Invoke-CoreTests {
         return [pscustomobject]@{ Start = $start; Stop = $stop; InvalidStop = $invalid }
     }
 
+    Invoke-ValidationTest 'interval.configuration' 'Temporary validation interval is applied and readable' 'interval' {
+        $heartRateId = Ensure-FastHeartRateInterval
+        return [pscustomobject]@{
+            UseCaseId = $heartRateId
+            OriginalSeconds = $fixture.HeartRateIntervalOriginal
+            ValidationSeconds = $TestVibrationIntervalSeconds
+        }
+    }
+
+    Invoke-ValidationTest 'mapping.linear_interpolation' 'HeartRate endpoints and midpoint map exactly' 'mapping' {
+        $mapping = New-HeartRateContractMapping 40 220 20 100 500 100 $UserA
+        $fixture.HeartRateContractMappingId = Get-MappingId $mapping
+        $responses = @()
+        $values = @(40, 130, 220)
+        for ($index = 0; $index -lt $values.Count; $index++) {
+            $watchId = $WatchA + 10 + $index
+            $phoneId = $PhoneA + 10 + $index
+            $response = Wait-HeartRateAccepted $UserA $watchId $phoneId $values[$index]
+            Assert-ExactHeartRateHaptic $response.Data $mapping $values[$index] $UserA $watchId $phoneId
+            $responses += $response
+        }
+        return [pscustomobject]@{ Mapping = $mapping; Cases = $responses }
+    }
+
+    Invoke-ValidationTest 'mapping.reversed_input' 'Descending input endpoints map exactly' 'mapping' {
+        $mapping = New-HeartRateContractMapping 220 40 20 100 500 100 $UserA
+        $response = Wait-HeartRateAccepted $UserA ($WatchA + 20) ($PhoneA + 20) 130
+        Assert-ExactHeartRateHaptic $response.Data $mapping 130 $UserA ($WatchA + 20) ($PhoneA + 20)
+        return [pscustomobject]@{ Mapping = $mapping; Response = $response }
+    }
+
+    Invoke-ValidationTest 'mapping.zero_width' 'Equal input endpoints return output minima' 'mapping' {
+        $mapping = New-HeartRateContractMapping 90 90 33 99 222 444 $UserA
+        $response = Wait-HeartRateAccepted $UserA ($WatchA + 30) ($PhoneA + 30) 90
+        Assert-ExactHeartRateHaptic $response.Data $mapping 90 $UserA ($WatchA + 30) ($PhoneA + 30)
+        return [pscustomobject]@{ Mapping = $mapping; Response = $response }
+    }
+
+    Invoke-ValidationTest 'mapping.outside_range' 'Values outside both endpoints produce no haptic' 'mapping' {
+        $mapping = New-HeartRateContractMapping 80 100 20 100 500 100 $UserA
+        $response = Wait-HeartRateAccepted $UserA ($WatchA + 40) ($PhoneA + 40) 120
+        Assert-RouteIdentity $response.Data $UserA ($WatchA + 40) ($PhoneA + 40)
+        Assert-True ([string](Get-Value $response.Data @('alertGiven') '') -eq 'no') 'An outside-range value generated an alert.'
+        Assert-True ([int](Get-Value $response.Data @('pulses') -1) -eq 0) 'An outside-range value generated pulses.'
+        Assert-True ([int](Get-Value $response.Data @('fbRangeID') 0) -eq 0) 'An outside-range value selected a mapping.'
+        return [pscustomobject]@{ Mapping = $mapping; Response = $response }
+    }
+
+    Invoke-ValidationTest 'interval.immediate_limit' 'An immediate repeat is rate-limited' 'interval' {
+        $mapping = Get-HeartRateContractMapping $UserA
+        $first = Wait-HeartRateAccepted $UserA ($WatchA + 50) ($PhoneA + 50) 100
+        Assert-ExactHeartRateHaptic $first.Data $mapping 100 $UserA ($WatchA + 50) ($PhoneA + 50)
+        $second = Invoke-HeartRateRequest $UserA ($WatchA + 50) ($PhoneA + 50) 100
+        Assert-Status $second @(200)
+        Assert-True ([string](Get-Value $second.Data @('reason') '') -eq 'rate_limited') 'An immediate repeat was not rate-limited.'
+        Assert-True ([int](Get-Value $second.Data @('pulses') -1) -eq 0) 'A rate-limited response generated pulses.'
+        return [pscustomobject]@{ First = $first; ImmediateRepeat = $second }
+    }
+
+    Invoke-ValidationTest 'interval.expiry' 'Routing resumes after the configured interval' 'interval' {
+        $mapping = Get-HeartRateContractMapping $UserA
+        Wait-HeartRateAccepted $UserA ($WatchA + 51) ($PhoneA + 51) 110 | Out-Null
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        $response = Wait-HeartRateAccepted $UserA ($WatchA + 51) ($PhoneA + 51) 110
+        $timer.Stop()
+        Assert-ExactHeartRateHaptic $response.Data $mapping 110 $UserA ($WatchA + 51) ($PhoneA + 51)
+        Assert-True ($timer.Elapsed.TotalSeconds -ge ($TestVibrationIntervalSeconds - 0.5)) 'Routing resumed before the configured interval elapsed.'
+        return [pscustomobject]@{ WaitSeconds = $timer.Elapsed.TotalSeconds; Response = $response }
+    }
+
+    Invoke-ValidationTest 'interval.user_isolation' 'One participant does not consume another participant slot' 'interval' {
+        $mappingA = Get-HeartRateContractMapping $UserA
+        $mappingB = Get-HeartRateContractMapping $UserB
+        $a = Wait-HeartRateAccepted $UserA ($WatchA + 52) ($PhoneA + 52) 120
+        $b = Invoke-HeartRateRequest $UserB ($WatchB + 52) ($PhoneB + 52) 120
+        Assert-Status $b @(200)
+        Assert-True ([string](Get-Value $b.Data @('reason') '') -ne 'rate_limited') 'User B was rate-limited by user A activity.'
+        Assert-ExactHeartRateHaptic $a.Data $mappingA 120 $UserA ($WatchA + 52) ($PhoneA + 52)
+        Assert-ExactHeartRateHaptic $b.Data $mappingB 120 $UserB ($WatchB + 52) ($PhoneB + 52)
+        return [pscustomobject]@{ UserAResponse = $a; UserBResponse = $b }
+    }
+
+    Invoke-ValidationTest 'interval.concurrent_gate' 'Concurrent requests consume one vibration slot' 'interval' {
+        $mapping = Get-HeartRateContractMapping $UserA
+        Wait-HeartRateAccepted $UserA ($WatchA + 53) ($PhoneA + 53) 100 | Out-Null
+        Start-Sleep -Milliseconds (($TestVibrationIntervalSeconds * 1000) + 250)
+        $responses = Invoke-ConcurrentHeartRateRequests $UserA ($WatchA + 53) ($PhoneA + 53) `
+            ([double[]](1..$StressConcurrency | ForEach-Object { 100 + ($_ / 1000.0) })) $StressConcurrency
+        Assert-True (@($responses | Where-Object StatusCode -ne 200).Count -eq 0) 'A concurrent route request did not return HTTP 200.'
+        $accepted = @($responses | Where-Object Reason -ne 'rate_limited')
+        Assert-True ($accepted.Count -eq 1) "Expected one accepted concurrent request, received $($accepted.Count)."
+        Assert-True ([int](Get-Value $accepted[0].Data @('fbRangeID') 0) -eq (Get-MappingId $mapping)) 'The accepted concurrent request used the wrong mapping.'
+        return [pscustomobject]@{ AcceptedCount = $accepted.Count; Responses = $responses }
+    }
+
     Invoke-ValidationTest 'routing.heartrate_boundaries' 'HeartRate boundaries generate expected haptics' 'routing' {
-        $heartRate = Get-UseCase 'HeartRate'
-        $fixture.HeartRateUseCaseId = [int](Get-Value $heartRate @('usecase_id', 'id') 0)
-        Assert-True ($fixture.HeartRateUseCaseId -gt 0) 'HeartRate use case is missing.'
-        Assign-UseCase $UserA $fixture.HeartRateUseCaseId | Out-Null
-        Assign-UseCase $UserB $fixture.HeartRateUseCaseId | Out-Null
-        $userMappingA = Wait-UserMapping $UserA 'HeartRate'
-        $userMappingB = Wait-UserMapping $UserB 'HeartRate'
-        $mappings = Get-Configurations
-        $mappingA = First-OrNull @($mappings | Where-Object { (Get-MappingId $_) -eq (Get-MappingId $userMappingA) } | Select-Object -First 1)
-        $mappingB = First-OrNull @($mappings | Where-Object { (Get-MappingId $_) -eq (Get-MappingId $userMappingB) } | Select-Object -First 1)
-        Assert-True ($null -ne $mappingA -and $null -ne $mappingB) 'A user has no active HeartRate mapping.'
+        $mappingA = New-HeartRateContractMapping 30 220 20 100 500 100 $UserA
+        Assign-Mapping $UserB (Get-MappingId $mappingA) $fixture.HeartRateUseCaseId 'HeartRate' | Out-Null
+        $mappingB = Wait-UserMapping $UserB 'HeartRate' (Get-MappingId $mappingA)
         $fixture.HeartRateMappingId = Get-MappingId $mappingA
 
         $cases = @(
-            @{ User = $UserA; Watch = $WatchA; Phone = $PhoneA; Value = 30; Mapping = $mappingA },
-            @{ User = $UserB; Watch = $WatchB; Phone = $PhoneB; Value = 125; Mapping = $mappingB },
-            @{ User = $UserA; Watch = $WatchA; Phone = $PhoneA; Value = 220; Mapping = $mappingA },
-            @{ User = $UserB; Watch = $WatchB; Phone = $PhoneB; Value = 29; Mapping = $mappingB },
-            @{ User = $UserA; Watch = $WatchA; Phone = $PhoneA; Value = 221; Mapping = $mappingA }
+            @{ User = $UserA; Watch = $WatchA + 101; Phone = $PhoneA + 101; Value = 30; Mapping = $mappingA },
+            @{ User = $UserB; Watch = $WatchB + 102; Phone = $PhoneB + 102; Value = 125; Mapping = $mappingB },
+            @{ User = $UserA; Watch = $WatchA + 103; Phone = $PhoneA + 103; Value = 220; Mapping = $mappingA },
+            @{ User = $UserB; Watch = $WatchB + 104; Phone = $PhoneB + 104; Value = 29; Mapping = $mappingB },
+            @{ User = $UserA; Watch = $WatchA + 105; Phone = $PhoneA + 105; Value = 221; Mapping = $mappingA }
         )
-        $lastRun = @{}
         $responses = @()
         foreach ($case in $cases) {
-            if ($lastRun.ContainsKey($case.User)) {
-                $elapsed = ([DateTimeOffset]::UtcNow - $lastRun[$case.User]).TotalSeconds
-                if ($elapsed -lt $RouteCooldownSeconds) { Start-Sleep -Seconds ([math]::Ceiling($RouteCooldownSeconds - $elapsed)) }
-            }
             $responses += Invoke-RouteCase $case.User $case.Watch $case.Phone $case.Value $case.Mapping
-            $lastRun[$case.User] = [DateTimeOffset]::UtcNow
         }
         return [pscustomobject]@{ UserAMappingId = Get-MappingId $mappingA; UserBMappingId = Get-MappingId $mappingB; Cases = $responses }
     }
@@ -1121,12 +1460,43 @@ function Invoke-AiTests {
         $heartRateId = [int](Get-Value (Get-UseCase 'HeartRate') @('usecase_id', 'id') 0)
         Assert-True ($heartRateId -gt 0) 'HeartRate use case is missing.'
         $response = Invoke-Api POST 'chat' @{
-            session_id = $session; usecase_id = $heartRateId; usecase_name = 'HeartRate'
-            user_id = $UserA; user_name = 'Validation A'; analysis_scope = 'participant'
-            message = 'Explain the active HeartRate mapping without changing anything.'
+            session_id     = $session
+            usecase_id     = $heartRateId
+            usecase_name   = 'HeartRate'
+            user_id        = $UserA
+            user_name      = 'Validation A'
+            analysis_scope = 'participant'
+            message        = 'Explain the active HeartRate mapping without changing anything.'
         } -TimeoutSeconds ([math]::Max(90, $HttpTimeoutSeconds))
+
         Assert-Status $response @(200)
-        Assert-True (-not [string]::IsNullOrWhiteSpace($response.Content)) 'AI returned an empty response.'
+
+        $reply = [string](Get-Value $response.Data @('reply') '')
+
+        Assert-True `
+            (-not [string]::IsNullOrWhiteSpace($reply)) `
+            'AI returned an empty reply.'
+
+        Assert-True `
+            ([bool](Get-Value $response.Data @('success') $false)) `
+            'Expert Panel did not produce a successful answer.'
+
+        Assert-True `
+            ($reply -notmatch '(?i)no valid request|no message was provided|does not contain any specific inquiry|could not process the request') `
+            'Expert Panel returned a failure/placeholder reply.'
+
+        Assert-True `
+            ([string](Get-Value $response.Data @('intent') '') -eq 'knowledge') `
+            'AI did not classify participant analysis as knowledge.'
+
+        Assert-True `
+            ([string](Get-Value $response.Data @('target_workflow') '') -eq 'expert_panel') `
+            'AI did not route participant analysis to the expert panel.'
+
+        Assert-True `
+            ([bool](Get-Value $response.Data @('read_only') $false)) `
+            'AI participant analysis was not read-only.'
+
         return $response
     }
     Invoke-ValidationTest 'ai.usecase_analysis' 'AI uses use-case-wide context' 'ai' {
@@ -1138,7 +1508,24 @@ function Invoke-AiTests {
             message = 'Summarize the active HeartRate mappings without changing anything.'
         } -TimeoutSeconds ([math]::Max(90, $HttpTimeoutSeconds))
         Assert-Status $response @(200)
-        Assert-True (-not [string]::IsNullOrWhiteSpace($response.Content)) 'AI returned an empty response.'
+
+        $reply = [string](Get-Value $response.Data @('reply') '')
+
+        Assert-True `
+            (-not [string]::IsNullOrWhiteSpace($reply)) `
+            'AI returned an empty reply.'
+
+        Assert-True `
+            ([bool](Get-Value $response.Data @('success') $false)) `
+            'Expert Panel did not produce a successful answer.'
+
+        Assert-True `
+            ($reply -notmatch '(?i)no valid request|no message was provided|does not contain any specific inquiry|could not process the request') `
+            'Expert Panel returned a failure/placeholder reply.'
+
+        Assert-True ([string](Get-Value $response.Data @('intent') '') -eq 'knowledge') 'AI did not classify use-case analysis as knowledge.'
+        Assert-True ([string](Get-Value $response.Data @('target_workflow') '') -eq 'expert_panel') 'AI did not route use-case analysis to the expert panel.'
+        Assert-True ([bool](Get-Value $response.Data @('read_only') $false)) 'AI use-case analysis was not read-only.'
         return $response
     }
     Invoke-ValidationTest 'ai.incomplete_input' 'AI rejects incomplete context' 'ai' {
@@ -1212,6 +1599,51 @@ function Invoke-SoakTests {
         Assert-True ($duplicates.Count -eq 0) 'Duplicate or missing values were found in stored sensor events.'
         Assert-True ($p95 -le 2000) "Direct API p95 was $([math]::Round($p95,2)) ms, above 2000 ms."
         return [pscustomobject]@{ RequestCount = $SoakRequests; StoredCount = $matches.Count; P95Ms = $p95; Requests = $responses }
+    }
+}
+
+function Invoke-StressTests {
+    if (-not $fixture.Ready) { Initialize-Fixture | Out-Null }
+    $heartRate = Get-UseCase 'HeartRate'
+    $fixture.HeartRateUseCaseId = [int](Get-Value $heartRate @('usecase_id', 'id') 0)
+    Assert-True ($fixture.HeartRateUseCaseId -gt 0) 'HeartRate use case is missing.'
+    Assign-UseCase $UserA $fixture.HeartRateUseCaseId | Out-Null
+    $fixture.HeartRateMappingId = Get-MappingId (Wait-UserMapping $UserA 'HeartRate')
+
+    Invoke-ValidationTest 'stress.concurrent_ingestion' "$StressRequests concurrent requests are stored exactly once" 'stress' {
+        Assert-True ($StressRequests -gt 0) '-StressRequests must be greater than zero.'
+        Assert-True ($StressConcurrency -gt 0) '-StressConcurrency must be greater than zero.'
+        $values = [double[]](0..($StressRequests - 1) | ForEach-Object { 150 + ($_ / 10000.0) })
+        $sentAt = [DateTimeOffset]::UtcNow
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        $responses = Invoke-ConcurrentHeartRateRequests $UserA ($WatchA + 60) ($PhoneA + 60) $values $StressConcurrency
+        $timer.Stop()
+        Assert-True ($responses.Count -eq $StressRequests) "Expected $StressRequests HTTP responses, received $($responses.Count)."
+        Assert-True (@($responses | Where-Object StatusCode -ne 200).Count -eq 0) 'A concurrent request did not return HTTP 200.'
+
+        $matches = @()
+        $poll = [Diagnostics.Stopwatch]::StartNew()
+        do {
+            $sensor = Invoke-Api GET ('sensor-data?userid={0}&alert_type=HeartRate' -f $UserA)
+            Assert-Status $sensor @(200)
+            $matches = @(As-Array (Get-Value $sensor.Data @('payload') @()) | Where-Object {
+                $rowTime = try { [DateTimeOffset](Get-Value $_ @('time', 'timestamp', 'created_at') [DateTimeOffset]::MinValue) } catch { [DateTimeOffset]::MinValue }
+                $values -contains [double](Get-Value $_ @('value') -1) -and $rowTime -ge $sentAt.AddSeconds(-1)
+            })
+            if ($matches.Count -lt $StressRequests) { Start-Sleep -Milliseconds 250 }
+        } while ($matches.Count -lt $StressRequests -and $poll.Elapsed.TotalSeconds -lt 15)
+
+        $duplicates = @($matches | Group-Object { [double](Get-Value $_ @('value') -1) } | Where-Object Count -ne 1)
+        Assert-True ($matches.Count -eq $StressRequests) "Expected $StressRequests stored events, found $($matches.Count)."
+        Assert-True ($duplicates.Count -eq 0) 'Concurrent ingestion produced missing or duplicate sensor rows.'
+        return [pscustomobject]@{
+            RequestCount = $StressRequests
+            Concurrency = $StressConcurrency
+            StoredCount = $matches.Count
+            BatchDurationMs = $timer.Elapsed.TotalMilliseconds
+            AcceptedHaptics = @($responses | Where-Object Reason -ne 'rate_limited').Count
+            Responses = $responses
+        }
     }
 }
 
@@ -1419,6 +1851,9 @@ function Write-RunOutputs {
             DirectApiP95Ms = 2000
             WatchAckP95Ms = 5000
             SoakRequests = $SoakRequests
+            StressRequests = $StressRequests
+            StressConcurrency = $StressConcurrency
+            TestVibrationIntervalSeconds = $TestVibrationIntervalSeconds
         }
         ReportFile = 'report.html'
         ShareableArchive = "$runId.zip"
@@ -1472,6 +1907,7 @@ try {
     if ($Mode -in @('external', 'all')) { Invoke-ExternalTests }
     if ($Mode -in @('ai', 'all')) { Invoke-AiTests }
     if ($Mode -in @('soak', 'formal', 'all')) { Invoke-SoakTests }
+    if ($Mode -in @('stress', 'all')) { Invoke-StressTests }
     Invoke-WatchTests
 } catch {
     $fatalError = $_

@@ -2,27 +2,28 @@
 
 ## 1. Automated / Scriptable Validation (Data Flows & Logic)
 
-Status updated 2026-08-07. Checked items have passing automated evidence across `validation-20260807T185148376Z` and `validation-20260807T192632740Z`. Together those runs cover all 28 selectable software tests plus cleanup; a single post-fix `-Mode all` acceptance run is still recommended. Unchecked items are only partially automated or still require manual/hardware validation.
+Status updated 2026-08-08. The expanded runner now contains 38 selectable software tests. Latest evidence: `validation-20260808T094246617Z` passed 28/29 core tests, `validation-20260808T094220109Z` passed all stress tests, and `validation-20260808T094435581Z` exposed both AI routing-contract failures. Unchecked items are partially automated, currently failing, or still require manual/hardware validation.
 
 ### End-to-End Data & Routing Logic
 - [x] **Physiological-data flow** — `routing.heartrate_boundaries`, `routing.database_log`
 - [x] **Contextual-data flow** — `external.temperature`, `external.pollution`
 - [x] **Correct routing validation** — `routing.heartrate_boundaries`, `external.temperature`, `external.pollution`
-- [ ] **Translation correctness** — partial: `routing.heartrate_boundaries` verifies pulse pattern, alert state, mapping ID and parameter bounds, but not exact interpolated intensity/duration values
-- [x] **Performance & reliability** — `soak.api_delivery`
+- [ ] **Translation correctness** — `mapping.linear_interpolation`, `mapping.zero_width`, and `mapping.outside_range` pass exact routed checks; `mapping.reversed_input` is implemented but currently fails because descending input endpoints are not selected by the live workflow
+- [x] **Performance & reliability** — `soak.api_delivery`, `stress.concurrent_ingestion`, `interval.concurrent_gate`
 
 ### Configuration, Mappings & Schedules
-- [x] **Value-range and boundary behavior** — `routing.heartrate_boundaries`, `reject.sensor_type`, `reject.missing_devices`
+- [ ] **Value-range and boundary behavior** — `routing.heartrate_boundaries`, `mapping.linear_interpolation`, `mapping.zero_width`, `mapping.outside_range`, `reject.sensor_type`, and `reject.missing_devices` pass; `mapping.reversed_input` currently fails
 - [x] **Global vs. participant-specific mappings** — `mapping.participant_copy`
 - [x] **Shared mapping behavior** — `mapping.shared`, `mapping.change_shared`
 - [x] **Mapping assignment and history** — `mapping.assign_command`, `mapping.history`
 - [x] **Schedule configuration lifecycle** — `schedule.lifecycle`
 - [x] **End monitoring behavior** — `monitoring.lifecycle`
+- [x] **Vibration interval behavior** — `interval.configuration`, `interval.immediate_limit`, `interval.expiry`, `interval.user_isolation`, `interval.concurrent_gate`
 - [ ] **Database consistency** — partial: `routing.database_log` and `dashboard.data_consistency` verify API-visible records and active mappings; direct PostgreSQL/cache comparison is not automated
 
 ### Assistant Safety & Input Validation
 - [x] **Safe handling of ambiguous, incomplete, or unsupported requests** — `reject.mapping_action`, `reject.sensor_type`, `reject.missing_devices`, `ai.incomplete_input`, `ai.empty_message`, `ai.invalid_usecase`
-- [x] **AI Assistant endpoint connectivity** — `ai.participant_analysis`, `ai.usecase_analysis` (connectivity/non-empty response only; semantic accuracy remains manual below)
+- [ ] **AI Assistant routing contract** — `ai.participant_analysis` currently returns an empty HTTP 200 response; `ai.usecase_analysis` currently returns `clarify` instead of `knowledge` routed to `expert_panel`
 
 ## 2. Manual & Hardware Validation (Physical Watch Behavior & Operations)
 
