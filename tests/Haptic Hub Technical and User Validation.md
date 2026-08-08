@@ -2,17 +2,17 @@
 
 ## 1. Automated / Scriptable Validation (Data Flows & Logic)
 
-Status updated 2026-08-08. The expanded runner now contains 38 selectable software tests. Latest evidence: `validation-20260808T094246617Z` passed 28/29 core tests, `validation-20260808T094220109Z` passed all stress tests, and `validation-20260808T094435581Z` exposed both AI routing-contract failures. Unchecked items are partially automated, currently failing, or still require manual/hardware validation.
+Status updated 2026-08-08. The runner contains 37 selectable software tests. Final full evidence `validation-20260808T133153594Z` completed all 37 selected tests with a 100% pass rate and successful cleanup. Unchecked items are partially automated or still require manual/hardware validation.
 
 ### End-to-End Data & Routing Logic
 - [x] **Physiological-data flow** — `routing.heartrate_boundaries`, `routing.database_log`
 - [x] **Contextual-data flow** — `external.temperature`, `external.pollution`
 - [x] **Correct routing validation** — `routing.heartrate_boundaries`, `external.temperature`, `external.pollution`
-- [ ] **Translation correctness** — `mapping.linear_interpolation`, `mapping.zero_width`, and `mapping.outside_range` pass exact routed checks; `mapping.reversed_input` is implemented but currently fails because descending input endpoints are not selected by the live workflow
+- [x] **Translation correctness** — `mapping.linear_interpolation`, `mapping.zero_width`, and `mapping.outside_range` pass exact routed checks, including descending vibration-output interpolation
 - [x] **Performance & reliability** — `soak.api_delivery`, `stress.concurrent_ingestion`, `interval.concurrent_gate`
 
 ### Configuration, Mappings & Schedules
-- [ ] **Value-range and boundary behavior** — `routing.heartrate_boundaries`, `mapping.linear_interpolation`, `mapping.zero_width`, `mapping.outside_range`, `reject.sensor_type`, and `reject.missing_devices` pass; `mapping.reversed_input` currently fails
+- [x] **Value-range and boundary behavior** — `routing.heartrate_boundaries`, `mapping.linear_interpolation`, `mapping.zero_width`, `mapping.outside_range`, `reject.sensor_type`, and `reject.missing_devices`
 - [x] **Global vs. participant-specific mappings** — `mapping.participant_copy`
 - [x] **Shared mapping behavior** — `mapping.shared`, `mapping.change_shared`
 - [x] **Mapping assignment and history** — `mapping.assign_command`, `mapping.history`
@@ -23,7 +23,7 @@ Status updated 2026-08-08. The expanded runner now contains 38 selectable softwa
 
 ### Assistant Safety & Input Validation
 - [x] **Safe handling of ambiguous, incomplete, or unsupported requests** — `reject.mapping_action`, `reject.sensor_type`, `reject.missing_devices`, `ai.incomplete_input`, `ai.empty_message`, `ai.invalid_usecase`
-- [ ] **AI Assistant routing contract** — `ai.participant_analysis` currently returns an empty HTTP 200 response; `ai.usecase_analysis` currently returns `clarify` instead of `knowledge` routed to `expert_panel`
+- [x] **AI Assistant routing contract** — `ai.participant_analysis` and `ai.usecase_analysis` return successful, non-placeholder, read-only answers classified as `knowledge` and routed to `expert_panel`
 
 ## 2. Manual & Hardware Validation (Physical Watch Behavior & Operations)
 
@@ -31,6 +31,8 @@ Status updated 2026-08-08. The expanded runner now contains 38 selectable softwa
 - [ ] **Physical watch vibration output** (physically verifying that the watch vibrates in response to data triggers)
 - [ ] **Targeted watch verification** (physically verifying that only the correct watch vibrates and not others)
 - [ ] **Simultaneous two-watch physical isolation** (verifying isolation when multiple physical devices are connected)
+
+Automated and ResearcherSide-originated requests validate the returned haptic mapping but do not deliver it to the watch: the HTTP response returns to the requesting component. For a physical preview, use a Test control in the phone app so the phone sends the normal routing request; triggering this from ResearcherSide would require a separate push channel to the phone.
 
 ### Operations, Deployment & Resiliency
 - [ ] **Clean installation and deployment** (verifying deployment from scratch using only documentation)

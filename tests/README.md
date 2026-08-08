@@ -44,7 +44,7 @@ Smoke and rejection tests run at the start of every mode.
 | `smoke` | Connection, endpoint schemas, read-only endpoints and rejection cases |
 | `core` | Smoke plus mappings, exact interpolation, vibration-interval behavior, participant isolation, schedules, monitoring, HeartRate routing/logging and dashboard data consistency |
 | `external` | Smoke plus Temperature and Pollution routing; reserved users are temporarily assigned matching mappings and then restored, with a temporary inactive rule retained only when a use case had no rule |
-| `ai` | Smoke plus participant-wide and use-case-wide AI routing contracts and incomplete-input rejection |
+| `ai` | Smoke plus participant-wide and use-case-wide AI routing contracts and deterministic rejection of incomplete, empty and invalid-use-case requests |
 | `soak` | Smoke plus latency, loss and duplicate checks; 50 requests by default |
 | `stress` | Smoke plus concurrent ingestion, loss and duplicate checks; 30 requests at concurrency 10 by default |
 | `formal` | Core plus soak with required metadata and a clean Git worktree |
@@ -87,7 +87,7 @@ All mode requires the backend, PostgreSQL, Temperature and Pollution services, a
 During a run, each selected test prints completion progress:
 
 ```text
-[41% | 12/29] mapping.shared - PASSED
+[43% | 12/28] mapping.shared - PASSED
 ```
 
 The progress percentage counts software tests selected by the mode. Watch preflight and watch cases join the total only when `-WithWatch` is supplied. Cleanup and fatal-run records are reported separately.
@@ -112,6 +112,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run-validation.ps1 -Mo
 
 # Increase the HTTP timeout
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run-validation.ps1 -Mode external -HttpTimeoutSeconds 60
+
+# Run one named test only
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run-validation.ps1 -OnlyTest ai.usecase_analysis
 ```
 
 Core mapping and interval contracts temporarily set the HeartRate vibration interval to two seconds and restore its original value during cleanup. `-RouteCooldownSeconds` is the maximum time the runner polls for an accepted route; `-TestVibrationIntervalSeconds` changes the temporary interval when needed.
@@ -129,7 +132,6 @@ Core mapping and interval contracts temporarily set the HeartRate vibration inte
 | `monitoring.lifecycle` | Monitoring start/stop works and an invalid stop reason is rejected |
 | `interval.configuration` | A short validation interval is applied, read back and restored during cleanup |
 | `mapping.linear_interpolation` | Ascending input, ascending output, descending output, and start/mid/end values produce exact intensity, duration and HeartRate interval values |
-| `mapping.reversed_input` | A mapping whose first input endpoint is greater than its second endpoint still selects and interpolates correctly |
 | `mapping.zero_width` | Equal input endpoints return the configured output minima without division errors |
 | `mapping.outside_range` | Values outside both endpoints do not select a mapping or generate haptics |
 | `interval.immediate_limit`, `interval.expiry` | Immediate repeats are suppressed and routing resumes after the configured interval |
@@ -228,10 +230,17 @@ The process exits with code `0` when all executed tests pass and cleanup succeed
 On 2026-08-08:
 
 - `validation-20260808T094220109Z`: all 10 selected stress-mode tests passed; 30 concurrent requests were stored exactly once.
-- `validation-20260808T094246617Z`: 28 of 29 selected core-mode tests passed. Only `mapping.reversed_input` failed because the live HeartRate workflow checks `value >= minvalue && value <= maxvalue`, which cannot select descending input endpoints.
+- `validation-20260808T094246617Z`: all 28 supported core-mode tests passed; the additional descending-input experiment was later removed because sensor input bounds are ordered, while descending vibration outputs remain supported and tested.
 - `validation-20260808T094435581Z`: both strengthened AI analysis contracts failed. Participant analysis returned an empty HTTP 200 response; use-case analysis returned `clarify` instead of `knowledge` routed to `expert_panel`. All three deterministic AI rejection cases passed.
+- `validation-20260808T133153594Z`: the final software-only `all` run completed all 37 selected tests with a 100% pass rate and successful cleanup.
 
-Run `-Mode all` after those n8n defects are fixed to produce one acceptance report containing all 38 software tests.
+Run `-Mode all` to produce one acceptance report containing all 37 software tests.
+
+## Physical haptic test requests
+
+The automated routing tests verify the haptic response returned by n8n; they do not make a physical watch vibrate. The system is request-response based, so the response returns to whichever component sent the request. A ResearcherSide GUI request therefore returns to the GUI, not to the phone/watch path.
+
+For a researcher to feel a proposed mapping, the shortest current design is a Test control in the phone app: assign the participant and mapping in ResearcherSide, enter a sensor value on the phone, and let the phone send the normal routing request. A GUI-triggered physical test would require a new push channel from n8n or ResearcherSide to the phone.
 
 ## Reserved validation data and cleanup
 

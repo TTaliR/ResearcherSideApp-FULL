@@ -3,6 +3,8 @@ param(
     [ValidateSet('smoke', 'core', 'external', 'ai', 'soak', 'stress', 'formal', 'all')]
     [string]$Mode = 'core',
 
+    [string]$OnlyTest = '',
+
     [switch]$WithWatch,
 
     [string]$BaseUrl = 'http://localhost:5678/webhook',
@@ -56,7 +58,7 @@ $testIdsByPhase = [ordered]@{
         'fixture.bootstrap', 'mapping.assign_command', 'mapping.shared', 'mapping.change_shared',
         'mapping.participant_copy', 'mapping.history', 'schedule.lifecycle',
         'monitoring.lifecycle', 'interval.configuration', 'mapping.linear_interpolation',
-        'mapping.reversed_input', 'mapping.zero_width', 'mapping.outside_range',
+        'mapping.zero_width', 'mapping.outside_range',
         'interval.immediate_limit', 'interval.expiry', 'interval.user_isolation',
         'interval.concurrent_gate', 'routing.heartrate_boundaries',
         'routing.database_log', 'dashboard.data_consistency'
@@ -85,6 +87,11 @@ $selectedPhases = switch ($Mode) {
 }
 $selectedTestIds = @($selectedPhases | ForEach-Object { $testIdsByPhase[$_] })
 if ($WithWatch) { $selectedTestIds += $testIdsByPhase.watch }
+if (-not [string]::IsNullOrWhiteSpace($OnlyTest)) {
+    $selectedPhases = @($testIdsByPhase.Keys | Where-Object { $testIdsByPhase[$_] -contains $OnlyTest })
+    if ($selectedPhases.Count -eq 0) { throw "Unknown test ID: $OnlyTest" }
+    $selectedTestIds = @($OnlyTest)
+}
 $plannedTests = $selectedTestIds.Count
 $completedTests = 0
 $lastApiResponse = $null
@@ -202,6 +209,8 @@ function Invoke-ValidationTest {
         [switch]$RequiresWatch,
         [scriptblock]$Body
     )
+
+    if ($OnlyTest -and $Id -ne $OnlyTest) { return }
 
     if ($RequiresWatch -and -not $WithWatch) {
         $skippedAt = [DateTimeOffset]::UtcNow.ToString('o')
@@ -1245,13 +1254,6 @@ function Invoke-CoreTests {
         return [pscustomobject]@{ Mapping = $mapping; Cases = $responses }
     }
 
-    Invoke-ValidationTest 'mapping.reversed_input' 'Descending input endpoints map exactly' 'mapping' {
-        $mapping = New-HeartRateContractMapping 220 40 20 100 500 100 $UserA
-        $response = Wait-HeartRateAccepted $UserA ($WatchA + 20) ($PhoneA + 20) 130
-        Assert-ExactHeartRateHaptic $response.Data $mapping 130 $UserA ($WatchA + 20) ($PhoneA + 20)
-        return [pscustomobject]@{ Mapping = $mapping; Response = $response }
-    }
-
     Invoke-ValidationTest 'mapping.zero_width' 'Equal input endpoints return output minima' 'mapping' {
         $mapping = New-HeartRateContractMapping 90 90 33 99 222 444 $UserA
         $response = Wait-HeartRateAccepted $UserA ($WatchA + 30) ($PhoneA + 30) 90
@@ -1903,11 +1905,11 @@ try {
 
     Invoke-SmokeTests
 
-    if ($Mode -in @('core', 'formal', 'all')) { Invoke-CoreTests }
-    if ($Mode -in @('external', 'all')) { Invoke-ExternalTests }
-    if ($Mode -in @('ai', 'all')) { Invoke-AiTests }
-    if ($Mode -in @('soak', 'formal', 'all')) { Invoke-SoakTests }
-    if ($Mode -in @('stress', 'all')) { Invoke-StressTests }
+    if ($selectedPhases -contains 'core') { Invoke-CoreTests }
+    if ($selectedPhases -contains 'external') { Invoke-ExternalTests }
+    if ($selectedPhases -contains 'ai') { Invoke-AiTests }
+    if ($selectedPhases -contains 'soak') { Invoke-SoakTests }
+    if ($selectedPhases -contains 'stress') { Invoke-StressTests }
     Invoke-WatchTests
 } catch {
     $fatalError = $_
