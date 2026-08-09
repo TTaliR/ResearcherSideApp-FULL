@@ -50,6 +50,84 @@ Smoke and rejection tests run at the start of every mode.
 | `formal` | Core plus soak with required metadata and a clean Git worktree |
 | `all` | Smoke, core, external, AI, soak and stress in one run; watch tests remain optional |
 
+## What the automated tests validate
+
+### Smoke and request rejection
+
+| Test ID | Main checks |
+|---|---|
+| `smoke.connection` | The DB Manager connection webhook is reachable and returns HTTP 200 |
+| `smoke.configurations` | Current configurations return HTTP 200 and include a `rows` collection |
+| `smoke.users` | The users endpoint returns at least one user and exposes its schema |
+| `smoke.usecases` | The sensor/use-case endpoint returns at least one named use case |
+| `smoke.sensor_data` | The HeartRate sensor-data endpoint returns HTTP 200 with a payload |
+| `smoke.mapping_history` | Mapping history can be read for the reserved HeartRate participant |
+| `reject.mapping_action` | An unsupported mapping command is rejected with HTTP 400 |
+| `reject.sensor_type` | An unsupported sensor type returns `unsupported_sensor_type` without entering a valid route |
+| `reject.missing_devices` | A routing request missing phone and watch identifiers is rejected or returns no routed response |
+
+### Fixture lifecycle
+
+| Test ID | Main checks |
+|---|---|
+| `fixture.bootstrap` | Reserved users and the validation use case exist; current mappings, schedules and intervals are snapshotted for safe restoration |
+| `fixture.cleanup` | Reserved users return to the baseline mapping, the original HeartRate interval is restored, and mappings or schedules created by the run are deactivated |
+
+### Mapping behavior
+
+| Test ID | Main checks |
+|---|---|
+| `mapping.assign_command` | A newly created mapping can be assigned through the mapping command workflow |
+| `mapping.shared`, `mapping.change_shared` | Two synthetic users receive the same mapping and both still reference it after a shared value is changed |
+| `mapping.participant_copy` | Starting with two users on one shared mapping, requests a participant-specific duplicate for user A; verifies user A is assigned a new mapping ID while user B remains assigned to the original mapping ID |
+| `mapping.history` | Mappings created during the run and their assignment timestamps appear in history |
+| `mapping.linear_interpolation` | Ascending input, ascending output, descending output, and start/mid/end values produce exact intensity, duration and HeartRate interval values |
+| `mapping.zero_width` | Creates a HeartRate mapping with an input range of exactly `90–90`, routes the value `90`, and verifies interpolation avoids division by zero by returning minimum intensity `33`, minimum duration `222`, and the exact derived HeartRate interval |
+| `mapping.outside_range` | Values outside both endpoints do not select a mapping or generate haptics |
+
+### Scheduling and monitoring
+
+| Test ID | Main checks |
+|---|---|
+| `schedule.lifecycle` | List, add, read-back, change, deactivate and activate operations succeed with the expected schedule ID, participant, configuration and active state |
+| `monitoring.lifecycle` | Monitoring start and intentional stop succeed, while an invalid stop reason is rejected |
+
+### Vibration interval and rate limiting
+
+| Test ID | Main checks |
+|---|---|
+| `interval.configuration` | A short validation interval is applied, read back and restored during cleanup |
+| `interval.immediate_limit`, `interval.expiry` | Immediate repeats are suppressed and routing resumes after the configured interval |
+| `interval.user_isolation`, `interval.concurrent_gate` | Rate-limit state is participant-specific and concurrent requests atomically consume one slot |
+
+### Routing and stored data
+
+| Test ID | Main checks |
+|---|---|
+| `routing.heartrate_boundaries` | Values at 30, 125 and 220 produce mapped haptics for the expected participant, phone and watch; 29 and 221 are rejected |
+| `routing.database_log` | HeartRate values sent by the current run appear in sensor data |
+| `dashboard.data_consistency` | User mapping IDs exist in the current configuration data consumed by the JavaFX dashboard |
+
+### External contextual services
+
+| Test ID | Main checks |
+|---|---|
+| `external.temperature`, `external.pollution` | Contextual routes return data for the expected identities and exposed values are correlated with sensor-data records |
+
+### AI routing and rejection
+
+| Test ID | Main checks |
+|---|---|
+| `ai.participant_analysis`, `ai.usecase_analysis` | The chat endpoint returns a non-empty reply classified as `knowledge`, routed to `expert_panel`, and marked read-only |
+| `ai.incomplete_input`, `ai.empty_message`, `ai.invalid_usecase` | Invalid AI requests are rejected by HTTP status or an explicit failure response |
+
+### Reliability and load
+
+| Test ID | Main checks |
+|---|---|
+| `soak.api_delivery` | Every unique request returns HTTP 200, is stored once, and direct API p95 stays within two seconds |
+| `stress.concurrent_ingestion` | Concurrent request batches all return HTTP 200 and every unique value is stored exactly once |
+
 Examples:
 
 ```powershell
@@ -118,35 +196,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\run-validation.ps1 -On
 ```
 
 Core mapping and interval contracts temporarily set the HeartRate vibration interval to two seconds and restore its original value during cleanup. `-RouteCooldownSeconds` is the maximum time the runner polls for an accepted route; `-TestVibrationIntervalSeconds` changes the temporary interval when needed.
-
-## What the automated tests validate
-
-| Test ID | Main checks |
-|---|---|
-| `fixture.bootstrap` | Reserved users and validation use case exist; mappings and schedules are snapshotted |
-| `mapping.assign_command` | A newly created mapping can be assigned through the mapping command workflow |
-| `mapping.shared`, `mapping.change_shared` | Two synthetic users receive the same mapping and shared changes |
-| `mapping.participant_copy` | A user-specific copy does not change the second user |
-| `mapping.history` | Mappings created during the run and their assignment timestamps appear in history |
-| `schedule.lifecycle` | List, add, read-back, change, deactivate and activate operations succeed with the expected values |
-| `monitoring.lifecycle` | Monitoring start/stop works and an invalid stop reason is rejected |
-| `interval.configuration` | A short validation interval is applied, read back and restored during cleanup |
-| `mapping.linear_interpolation` | Ascending input, ascending output, descending output, and start/mid/end values produce exact intensity, duration and HeartRate interval values |
-| `mapping.zero_width` | Equal input endpoints return the configured output minima without division errors |
-| `mapping.outside_range` | Values outside both endpoints do not select a mapping or generate haptics |
-| `interval.immediate_limit`, `interval.expiry` | Immediate repeats are suppressed and routing resumes after the configured interval |
-| `interval.user_isolation`, `interval.concurrent_gate` | Rate-limit state is participant-specific and concurrent requests atomically consume one slot |
-| `routing.heartrate_boundaries` | Values at 30, 125 and 220 produce mapped haptics for the expected participant, phone and watch; 29 and 221 are rejected |
-| `routing.database_log` | HeartRate values sent by the current run appear in sensor data |
-| `dashboard.data_consistency` | User mapping IDs exist in the current configuration data consumed by the JavaFX dashboard |
-| `external.temperature`, `external.pollution` | Contextual routes return data for the expected identities and exposed values are correlated with sensor-data records |
-| `ai.participant_analysis`, `ai.usecase_analysis` | The chat endpoint returns a non-empty reply classified as `knowledge`, routed to `expert_panel`, and marked read-only |
-| `ai.incomplete_input`, `ai.empty_message`, `ai.invalid_usecase` | Invalid AI requests are rejected by HTTP status or an explicit failure response |
-| `soak.api_delivery` | Every unique request returns HTTP 200, is stored once, and direct API p95 stays within two seconds |
-| `stress.concurrent_ingestion` | Concurrent request batches all return HTTP 200 and every unique value is stored exactly once |
-| `fixture.cleanup` | Both reserved users return to the baseline mapping and created mappings/schedules are deactivated |
-
-The six `smoke.*` IDs verify endpoint availability and schemas. `reject.mapping_action`, `reject.sensor_type`, and `reject.missing_devices` verify deterministic rejection at the public webhook boundary.
 
 The soak test sends unique valid HeartRate readings and requires:
 
