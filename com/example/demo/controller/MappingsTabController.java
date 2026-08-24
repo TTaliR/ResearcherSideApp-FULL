@@ -472,7 +472,8 @@ public class MappingsTabController {
     private RuleCardData findIdenticalMapping(SensorRuleConfig ruleConfig) {
         String normalizedUseCase = FormatUtils.normalizeUseCaseName(ruleConfig.getType());
         for (RuleCardData rule : rulesSupplier.get()) {
-            if (ruleConfig.getId() > 0 && rule.mappingId == ruleConfig.getId()) {
+            if (ruleConfig.getId() != null
+                    && rule.mappingId == ruleConfig.getId()) {
                 continue;
             }
             if (normalizedUseCase.equalsIgnoreCase(rule.useCaseKey)

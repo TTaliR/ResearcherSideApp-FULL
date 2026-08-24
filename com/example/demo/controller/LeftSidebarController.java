@@ -120,20 +120,25 @@ public class LeftSidebarController {
         useCaseListView.setCellFactory(listView -> new ListCell<>() {
             private final Label useCaseLabel = new Label();
             private final Region spacer = new Region();
-            private final Button sessionsButton = new Button("Sessions");
-            private final Button newSessionButton = new Button("New");
-            private final HBox content = new HBox(6, useCaseLabel, spacer, sessionsButton, newSessionButton);
+            private final Button newChatButton = new Button("New chat");
+            private final Button sessionsMenuButton = new Button("▾");
+            private final HBox chatActions = new HBox(newChatButton, sessionsMenuButton);
+            private final HBox content = new HBox(6, useCaseLabel, spacer, chatActions);
 
             {
                 content.setAlignment(Pos.CENTER_LEFT);
+                chatActions.setAlignment(Pos.CENTER_LEFT);
                 HBox.setHgrow(spacer, Priority.ALWAYS);
                 useCaseLabel.getStyleClass().add("sidebar-usecase-row-label");
-                sessionsButton.getStyleClass().add("sidebar-session-button");
-                newSessionButton.getStyleClass().add("sidebar-session-button");
-                sessionsButton.setFocusTraversable(false);
-                newSessionButton.setFocusTraversable(false);
-                sessionsButton.setTooltip(new Tooltip("Show recent sessions"));
-                newSessionButton.setTooltip(new Tooltip("Start a new session"));
+                newChatButton.getStyleClass().add("sidebar-new-chat-button");
+                sessionsMenuButton.getStyleClass().add("sidebar-sessions-menu-button");
+                newChatButton.setFocusTraversable(false);
+                sessionsMenuButton.setFocusTraversable(false);
+                newChatButton.setTooltip(new Tooltip("Start a new chat for this use case"));
+                sessionsMenuButton.setTooltip(new Tooltip("Open previous chat sessions"));
+                sessionsMenuButton.setAccessibleText("Open previous chat sessions");
+                newChatButton.setOnMouseClicked(event -> event.consume());
+                sessionsMenuButton.setOnMouseClicked(event -> event.consume());
             }
 
             @Override
@@ -146,20 +151,13 @@ public class LeftSidebarController {
                 }
 
                 useCaseLabel.setText(formatUseCaseName(item));
-                sessionsButton.setOnAction(event -> {
-                    event.consume();
-                    showSessionMenu(item, sessionsButton);
-                });
-                newSessionButton.setOnAction(event -> {
-                    event.consume();
+                newChatButton.setOnAction(event -> {
                     if (onNewChatSessionRequested != null) {
                         onNewChatSessionRequested.accept(item);
                     }
                 });
+                sessionsMenuButton.setOnAction(event -> showSessionMenu(item, sessionsMenuButton));
                 content.setOnMouseClicked(event -> {
-                    if (event.getTarget() == sessionsButton || event.getTarget() == newSessionButton) {
-                        return;
-                    }
                     getListView().getSelectionModel().select(item);
                 });
                 setText(null);

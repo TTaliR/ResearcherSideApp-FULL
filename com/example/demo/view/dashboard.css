@@ -103,17 +103,29 @@
     -fx-font-size: 12px;
 }
 
-.sidebar-session-button {
+.sidebar-new-chat-button,
+.sidebar-sessions-menu-button {
     -fx-background-color: #243247;
     -fx-text-fill: #e8eef8;
     -fx-font-size: 10px;
     -fx-padding: 4 6 4 6;
-    -fx-background-radius: 5;
     -fx-border-color: #34445d;
-    -fx-border-radius: 5;
 }
 
-.sidebar-session-button:hover {
+.sidebar-new-chat-button {
+    -fx-background-radius: 5 0 0 5;
+    -fx-border-radius: 5 0 0 5;
+}
+
+.sidebar-sessions-menu-button {
+    -fx-padding: 4 5 4 5;
+    -fx-background-radius: 0 5 5 0;
+    -fx-border-width: 1 1 1 0;
+    -fx-border-radius: 0 5 5 0;
+}
+
+.sidebar-new-chat-button:hover,
+.sidebar-sessions-menu-button:hover {
     -fx-background-color: #2c3f59;
 }
 
