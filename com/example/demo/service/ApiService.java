@@ -872,7 +872,7 @@ public class ApiService {
                 conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
                 conn.setDoOutput(true);
                 conn.setConnectTimeout(10000);  // 10 seconds for connection
-                conn.setReadTimeout(30000);     // 30 seconds for response
+                conn.setReadTimeout(120000);     // 30 seconds for response
 
                 try (OutputStream os = conn.getOutputStream()) {
                     byte[] input = jsonInputString.getBytes(StandardCharsets.UTF_8);
