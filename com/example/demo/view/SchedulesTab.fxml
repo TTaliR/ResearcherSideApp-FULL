@@ -37,7 +37,7 @@
         <Label text="Days" styleClass="topbar-muted-value" />
         <Label text="Measure:" styleClass="topbar-label" />
         <ComboBox fx:id="measureTypeComboBox" prefWidth="120" promptText="Select" />
-        <Label text="Trigger %:" styleClass="topbar-label" />
+        <Label text="Range ± %:" styleClass="topbar-label" />
         <Spinner fx:id="triggerPercentageSpinner" prefWidth="105" editable="true">
             <tooltip>
                 <Tooltip text="Use a negative % to lower the vibration threshold." />
