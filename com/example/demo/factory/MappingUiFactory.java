@@ -3,6 +3,7 @@ package com.example.demo.factory;
 import com.example.demo.model.RuleCardData;
 import com.example.demo.model.Schedule;
 import com.example.demo.util.DateUtils;
+import com.example.demo.util.FormatUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
@@ -74,7 +75,7 @@ public class MappingUiFactory {
             titleRow.getChildren().add(createDeleteMappingButton(rule, onDelete));
         }
 
-        Label values = new Label("Values: " + rule.minValue + "-" + rule.maxValue);
+        Label values = new Label("Values: " + FormatUtils.formatMappingValue(rule.minValue) + "-" + FormatUtils.formatMappingValue(rule.maxValue));
         Label pulses = new Label("Pulse count: " + rule.pulseLabel);
         Label intensity = new Label("Intensity: " + rule.intensityLabel);
         Label duration = new Label("Duration: " + rule.durationLabel);
@@ -112,8 +113,8 @@ public class MappingUiFactory {
         RuleCardData rule = new RuleCardData();
         rule.mappingId = mappingNode.path("mappingId").asInt();
         rule.useCaseLabel = mappingNode.path("type").asText(useCase);
-        rule.minValue = mappingNode.path("minValue").asInt();
-        rule.maxValue = mappingNode.path("maxValue").asInt();
+        rule.minValue = mappingNode.path("minValue").decimalValue();
+        rule.maxValue = mappingNode.path("maxValue").decimalValue();
         rule.minPulses = mappingNode.path("minPulses").asInt();
         rule.maxPulses = mappingNode.path("maxPulses").asInt();
         rule.minIntensity = mappingNode.path("minIntensity").asInt();
@@ -127,7 +128,7 @@ public class MappingUiFactory {
         rule.intensityLabel = rule.minIntensity + "-" + rule.maxIntensity;
         rule.durationLabel = rule.minDuration + "-" + rule.maxDuration;
         rule.intervalLabel = rule.minInterval + "-" + rule.maxInterval;
-        rule.rangeLabel = rule.useCaseLabel + ": " + rule.minValue + "-" + rule.maxValue;
+        rule.rangeLabel = rule.useCaseLabel + ": " + FormatUtils.formatMappingValue(rule.minValue) + "-" + FormatUtils.formatMappingValue(rule.maxValue);
         rule.active = isHistoryMappingActive(mappingNode);
         return rule;
     }

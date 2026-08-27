@@ -322,7 +322,7 @@ public class ExportService {
                                 table.addCell(pulsesVal);
                                 table.addCell(node.has("intensity") ? String.valueOf(node.get("intensity").asInt()) : "N/A");
                                 table.addCell(node.has("duration") ? String.valueOf(node.get("duration").asInt()) : "N/A");
-                                table.addCell(node.has("maxvalue") ? String.valueOf(node.get("maxvalue").asInt()) : "N/A");
+                                table.addCell(node.has("maxvalue") ? node.get("maxvalue").asText() : "N/A");
                                 table.addCell(node.hasNonNull("reason") ? node.get("reason").asText() : "N/A");
                                 count++;
                             }
