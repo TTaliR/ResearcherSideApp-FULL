@@ -36,9 +36,9 @@
         <Separator orientation="VERTICAL"></Separator>
         <VBox spacing="10.0" alignment="CENTER_LEFT">
             <Label minWidth="100.0" text="Min Value" styleClass="topbar-label" />
-            <TextField fx:id="ruleMinValueField" prefWidth="120.0" promptText="e.g. 60" />
+            <TextField fx:id="ruleMinValueField" prefWidth="120.0" promptText="e.g. -10.5" />
             <Label minWidth="100.0" text="Max Value" styleClass="topbar-label" />
-            <TextField fx:id="ruleMaxValueField" prefWidth="120.0" promptText="e.g. 100" />
+            <TextField fx:id="ruleMaxValueField" prefWidth="120.0" promptText="e.g. 100.5" />
         </VBox>
         <VBox spacing="10.0" alignment="CENTER_LEFT">
             <Label minWidth="100.0" text="Min Pulses" styleClass="topbar-label" />
@@ -48,9 +48,9 @@
         </VBox>
         <VBox spacing="10.0" alignment="CENTER_LEFT">
             <Label minWidth="100.0" text="Min Intensity" styleClass="topbar-label" />
-            <TextField fx:id="ruleMinIntensityField" prefWidth="120.0" promptText="e.g. 2" />
+            <TextField fx:id="ruleMinIntensityField" prefWidth="120.0" promptText="1–255" />
             <Label minWidth="100.0" text="Max Intensity" styleClass="topbar-label" />
-            <TextField fx:id="ruleMaxIntensityField" prefWidth="120.0" promptText="e.g. 5" />
+            <TextField fx:id="ruleMaxIntensityField" prefWidth="120.0" promptText="1–255" />
         </VBox>
         <VBox spacing="10.0" alignment="CENTER_LEFT">
             <Label minWidth="100.0" text="Min Duration (ms)" styleClass="topbar-label" />

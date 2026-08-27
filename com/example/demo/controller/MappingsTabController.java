@@ -25,6 +25,7 @@ import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.util.Duration;
 
+import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.*;
@@ -93,8 +94,8 @@ public class MappingsTabController {
 
     @FXML
     private void initialize() {
-        enforceIntegerInput(ruleMinValueField);
-        enforceIntegerInput(ruleMaxValueField);
+        enforceDecimalInput(ruleMinValueField);
+        enforceDecimalInput(ruleMaxValueField);
         enforceIntegerInput(ruleMinPulsesField);
         enforceIntegerInput(ruleMaxPulsesField);
         enforceIntegerInput(ruleMinIntensityField);
@@ -299,9 +300,9 @@ public class MappingsTabController {
             throw new IllegalArgumentException("Please select an active use case.");
         }
 
-        int minValue = parseRequiredInt(ruleMinValueField, "Min Value");
-        int maxValue = parseRequiredInt(ruleMaxValueField, "Max Value");
-        if (minValue > maxValue) {
+        BigDecimal minValue = parseRequiredDecimal(ruleMinValueField, "Min Value");
+        BigDecimal maxValue = parseRequiredDecimal(ruleMaxValueField, "Max Value");
+        if (minValue.compareTo(maxValue) > 0) {
             throw new IllegalArgumentException("Min Value cannot be greater than Max Value.");
         }
 
@@ -477,8 +478,8 @@ public class MappingsTabController {
                 continue;
             }
             if (normalizedUseCase.equalsIgnoreCase(rule.useCaseKey)
-                && rule.minValue == ruleConfig.getMinvalue()
-                && rule.maxValue == ruleConfig.getMaxvalue()
+                && rule.minValue.compareTo(ruleConfig.getMinvalue()) == 0
+                && rule.maxValue.compareTo(ruleConfig.getMaxvalue()) == 0
                 && rule.minPulses == ruleConfig.getMinpulses()
                 && rule.maxPulses == ruleConfig.getMaxpulses()
                 && rule.minIntensity == ruleConfig.getMinintensity()
@@ -1272,6 +1273,18 @@ public class MappingsTabController {
         }
     }
 
+    private BigDecimal parseRequiredDecimal(TextField field, String fieldName) {
+        if (field == null || field.getText() == null || field.getText().trim().isEmpty()) {
+            throw new IllegalArgumentException(fieldName + " is required.");
+        }
+
+        try {
+            return new BigDecimal(field.getText().trim());
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException(fieldName + " must be a valid decimal number.");
+        }
+    }
+
     private void clearRuleBuilderForm() {
         List.of(
                 ruleMinValueField,
@@ -1310,6 +1323,20 @@ public class MappingsTabController {
         }
     }
 
+    private void setText(TextField field, BigDecimal value) {
+        if (field != null) {
+            field.setText(FormatUtils.formatDecimal(value));
+        }
+    }
+
+    private void enforceDecimalInput(TextField textField) {
+        if (textField == null) {
+            return;
+        }
+        textField.setTextFormatter(new TextFormatter<>(change ->
+                change.getControlNewText().matches("[+-]?(?:\\d*(?:\\.\\d*)?)?") ? change : null));
+    }
+
     private void enforceIntegerInput(TextField textField) {
         if (textField == null) {
             return;
@@ -1336,7 +1363,7 @@ public class MappingsTabController {
         if (rule == null) {
             return "-";
         }
-        return rule.minValue + "-" + rule.maxValue;
+        return FormatUtils.formatMappingValue(rule.minValue) + "-" + FormatUtils.formatMappingValue(rule.maxValue);
     }
 
     private boolean isMappingsViewReady() {

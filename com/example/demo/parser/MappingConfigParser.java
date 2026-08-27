@@ -4,6 +4,7 @@ import com.example.demo.model.RuleCardData;
 import com.example.demo.util.FormatUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -46,8 +47,8 @@ public class MappingConfigParser {
             rule.configKey = configKey;
             rule.useCaseKey = useCaseKey;
             rule.useCaseLabel = useCaseLabel;
-            rule.minValue = readInt(node, "minvalue", "min", 0);
-            rule.maxValue = readInt(node, "maxvalue", "max", 0);
+            rule.minValue = readDecimal(node, "minvalue", "min");
+            rule.maxValue = readDecimal(node, "maxvalue", "max");
             rule.minPulses = readInt(node, "minpulses", "", 0);
             rule.maxPulses = readInt(node, "maxpulses", "", 0);
             rule.minIntensity = readInt(node, "minintensity", "", 0);
@@ -105,12 +106,28 @@ public class MappingConfigParser {
 
     private String readRangeLabel(JsonNode node, String useCaseLabel) {
         if (node.has("minvalue") && node.has("maxvalue")) {
-            return useCaseLabel + ": " + node.path("minvalue").asInt() + " - " + node.path("maxvalue").asInt();
+            return useCaseLabel + ": " + formatDecimal(node.path("minvalue")) + " - " + formatDecimal(node.path("maxvalue"));
         }
         if (node.has("min") && node.has("max")) {
-            return useCaseLabel + ": " + node.path("min").asInt() + " - " + node.path("max").asInt();
+            return useCaseLabel + ": " + formatDecimal(node.path("min")) + " - " + formatDecimal(node.path("max"));
         }
         return useCaseLabel + ": rule";
+    }
+
+    private String formatDecimal(JsonNode node) {
+        return FormatUtils.formatMappingValue(node.decimalValue());
+    }
+
+    private BigDecimal readDecimal(JsonNode node, String primaryField, String fallbackField) {
+        if (node != null && node.isObject()) {
+            if (primaryField != null && !primaryField.isBlank() && node.has(primaryField)) {
+                return node.path(primaryField).decimalValue();
+            }
+            if (fallbackField != null && !fallbackField.isBlank() && node.has(fallbackField)) {
+                return node.path(fallbackField).decimalValue();
+            }
+        }
+        return BigDecimal.ZERO;
     }
 
     private String readRangeValue(JsonNode node, String minField, String maxField, String fallback) {

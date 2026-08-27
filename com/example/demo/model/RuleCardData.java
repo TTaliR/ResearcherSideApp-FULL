@@ -1,5 +1,7 @@
 package com.example.demo.model;
 
+import java.math.BigDecimal;
+
 public class RuleCardData {
     public int mappingId;
     public String configKey;
@@ -10,8 +12,8 @@ public class RuleCardData {
     public String intensityLabel;
     public String durationLabel;
     public String intervalLabel;
-    public int minValue;
-    public int maxValue;
+    public BigDecimal minValue = BigDecimal.ZERO;
+    public BigDecimal maxValue = BigDecimal.ZERO;
     public int minPulses;
     public int maxPulses;
     public int minIntensity;

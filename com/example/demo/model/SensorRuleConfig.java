@@ -1,9 +1,11 @@
 package com.example.demo.model;
 
+import java.math.BigDecimal;
+
 public class SensorRuleConfig {
    private Integer id;
-   private Integer minvalue;
-   private Integer maxvalue;
+   private BigDecimal minvalue;
+   private BigDecimal maxvalue;
    private Integer minpulses;
    private Integer maxpulses;
    private Integer minintensity;
@@ -26,19 +28,19 @@ public class SensorRuleConfig {
       this.id = id;
    }
 
-   public Integer getMinvalue() {
+   public BigDecimal getMinvalue() {
       return this.minvalue;
    }
 
-   public void setMinvalue(Integer minvalue) {
+   public void setMinvalue(BigDecimal minvalue) {
       this.minvalue = minvalue;
    }
 
-   public Integer getMaxvalue() {
+   public BigDecimal getMaxvalue() {
       return this.maxvalue;
    }
 
-   public void setMaxvalue(Integer maxvalue) {
+   public void setMaxvalue(BigDecimal maxvalue) {
       this.maxvalue = maxvalue;
    }
 
@@ -63,7 +65,7 @@ public class SensorRuleConfig {
    }
 
    public void setMinintensity(Integer minintensity) {
-      this.minintensity = minintensity;
+      this.minintensity = requireIntensity(minintensity, "Min Intensity");
    }
 
    public Integer getMaxintensity() {
@@ -71,7 +73,14 @@ public class SensorRuleConfig {
    }
 
    public void setMaxintensity(Integer maxintensity) {
-      this.maxintensity = maxintensity;
+      this.maxintensity = requireIntensity(maxintensity, "Max Intensity");
+   }
+
+   private Integer requireIntensity(Integer intensity, String fieldName) {
+      if (intensity == null || intensity < 1 || intensity > 255) {
+         throw new IllegalArgumentException(fieldName + " must be between 1 and 255.");
+      }
+      return intensity;
    }
 
    public Integer getMinduration() {

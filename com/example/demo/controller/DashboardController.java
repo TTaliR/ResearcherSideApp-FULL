@@ -25,6 +25,7 @@ import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 
+import java.math.BigDecimal;
 import java.time.*;
 import java.util.*;
 import java.util.function.BiConsumer;
@@ -885,8 +886,8 @@ public class DashboardController {
                 String usecaseName = readUserMappingUseCaseName(mappingNode);
                 String usecaseDescription = readNestedText(mappingNode, "usecase", "description");
 
-                int minvalue = mappingNode.path("minvalue").asInt(0);
-                int maxvalue = mappingNode.path("maxvalue").asInt(0);
+                BigDecimal minvalue = mappingNode.path("minvalue").decimalValue();
+                BigDecimal maxvalue = mappingNode.path("maxvalue").decimalValue();
                 int minpulses = mappingNode.path("minpulses").asInt(0);
                 int maxpulses = mappingNode.path("maxpulses").asInt(0);
                 int minintensity = mappingNode.path("minintensity").asInt(0);
@@ -962,8 +963,8 @@ public class DashboardController {
                 usecaseId,
                 usecaseName,
                 usecaseDescription,
-                node.path("minvalue").asInt(0),
-                node.path("maxvalue").asInt(0),
+                node.path("minvalue").decimalValue(),
+                node.path("maxvalue").decimalValue(),
                 node.path("minpulses").asInt(0),
                 node.path("maxpulses").asInt(0),
                 node.path("minintensity").asInt(0),

@@ -1,5 +1,7 @@
 package com.example.demo.model;
 
+import java.math.BigDecimal;
+
 public class UserUseCaseMapping {
     private final int mappingId;
     private final int feedbackConfigRuleId;
@@ -7,8 +9,8 @@ public class UserUseCaseMapping {
     private final String usecaseName;
     private final String usecaseDescription;
 
-    private final int minvalue;
-    private final int maxvalue;
+    private final BigDecimal minvalue;
+    private final BigDecimal maxvalue;
     private final int minpulses;
     private final int maxpulses;
     private final int minintensity;
@@ -24,8 +26,8 @@ public class UserUseCaseMapping {
             int usecaseId,
             String usecaseName,
             String usecaseDescription,
-            int minvalue,
-            int maxvalue,
+            BigDecimal minvalue,
+            BigDecimal maxvalue,
             int minpulses,
             int maxpulses,
             int minintensity,
@@ -76,11 +78,11 @@ public class UserUseCaseMapping {
         return usecaseDescription;
     }
 
-    public int getMinvalue() {
+    public BigDecimal getMinvalue() {
         return minvalue;
     }
 
-    public int getMaxvalue() {
+    public BigDecimal getMaxvalue() {
         return maxvalue;
     }
 
