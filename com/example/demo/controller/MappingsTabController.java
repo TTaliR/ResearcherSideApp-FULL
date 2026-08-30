@@ -316,6 +316,12 @@ public class MappingsTabController {
 
         int minIntensity = parseRequiredInt(ruleMinIntensityField, "Min Intensity");
         int maxIntensity = parseRequiredInt(ruleMaxIntensityField, "Max Intensity");
+        if (minIntensity < 1 || minIntensity > 255 || maxIntensity < 1 || maxIntensity > 255) {
+            throw new IllegalArgumentException("Intensity values must be between 1 and 255.");
+        }
+        if (minIntensity > maxIntensity) {
+            throw new IllegalArgumentException("Min Intensity cannot be greater than Max Intensity.");
+        }
 
         int minDuration = parseRequiredInt(ruleMinDurationField, "Min Duration");
         int maxDuration = parseRequiredInt(ruleMaxDurationField, "Max Duration");
@@ -768,6 +774,12 @@ public class MappingsTabController {
             Label values = new Label("Values: " + formatMappingValues(rule));
             Label pulses = new Label("Pulse count: " + rule.pulseLabel);
             Label intensity = new Label("Intensity: " + rule.intensityLabel);
+            if (rule.hasInvalidIntensity()) {
+                card.getStyleClass().add("mapping-card-invalid");
+                intensity.setText(intensity.getText() + " — Invalid (expected 1–255)");
+                intensity.setWrapText(true);
+                intensity.getStyleClass().add("mapping-invalid-value");
+            }
             Label duration = new Label("Duration: " + rule.durationLabel);
             Label interval = new Label("Interval: " + rule.intervalLabel);
             Node assignedUsers = createMappingAssignedUsersNode(rule);

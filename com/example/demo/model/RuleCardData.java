@@ -23,4 +23,10 @@ public class RuleCardData {
     public int minInterval;
     public int maxInterval;
     public boolean active = true;
+
+    public boolean hasInvalidIntensity() {
+        return minIntensity < 1 || minIntensity > 255
+                || maxIntensity < 1 || maxIntensity > 255
+                || minIntensity > maxIntensity;
+    }
 }

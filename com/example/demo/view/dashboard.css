@@ -614,6 +614,17 @@
     -fx-background-color: #f8fbff;
 }
 
+.mapping-card-invalid,
+.mapping-card-invalid.mapping-card-selected {
+    -fx-border-color: #dc2626;
+    -fx-background-color: #fff7ed;
+}
+
+.mapping-invalid-value {
+    -fx-text-fill: #b91c1c;
+    -fx-font-weight: bold;
+}
+
 .mapping-card-unassigned {
     -fx-background-color: #ffffff;
     -fx-border-color: #d7e0eb;
