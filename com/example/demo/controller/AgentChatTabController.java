@@ -10,6 +10,8 @@ import com.example.demo.service.ApiService;
 import com.example.demo.util.AlertUtils;
 import com.example.demo.util.FormatUtils;
 import com.fasterxml.jackson.databind.JsonNode;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
@@ -27,6 +29,7 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.*;
 import javafx.scene.web.WebView;
 import javafx.stage.Popup;
+import javafx.util.Duration;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -36,6 +39,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiConsumer;
 import java.util.function.BiPredicate;
 import java.util.function.BooleanSupplier;
@@ -50,6 +55,12 @@ public class AgentChatTabController {
     private static final int MAX_RECENT_HISTORY_MESSAGE_LENGTH = 700;
     private static final int MAX_AGENT_REPLY_SUMMARY_LENGTH = 700;
     private static final int SESSION_HISTORY_PAGE_SIZE = 8;
+    private static final List<String> AGENT_ACTIVITY_MESSAGES = List.of(
+            "Agent is thinking...",
+            "Agent is typing...",
+            "Agent is checking context...",
+            "Agent is reviewing the details..."
+    );
     private static final List<ChatCommandOption> CHAT_COMMAND_OPTIONS = createChatCommandOptions();
     private static final Map<String, ChatCommandOption> CHAT_COMMAND_OPTIONS_BY_COMMAND = createChatCommandOptionMap();
 
@@ -70,6 +81,8 @@ public class AgentChatTabController {
     private Button contextDrawerToggleButton;
     @FXML
     private Label agentTypingLabel;
+    @FXML
+    private HBox agentStatusBar;
     @FXML
     private ContextDrawerController contextDrawerContentController;
 
@@ -96,6 +109,9 @@ public class AgentChatTabController {
     private JsonNode latestStructuredAssistantResponse;
     private String activeSessionId = "";
     private AgentChatSession activeSession;
+    private Timeline agentActivityTimeline;
+    private int lastAgentActivityIndex = -1;
+    private boolean chatRequestInFlight;
 
     public void setSelectedUseCaseSupplier(Supplier<String> selectedUseCaseSupplier) {
         this.selectedUseCaseSupplier = selectedUseCaseSupplier == null ? () -> null : selectedUseCaseSupplier;
@@ -718,6 +734,9 @@ public class AgentChatTabController {
     }
 
     private void onSendMessage() {
+        if (chatRequestInFlight) {
+            return;
+        }
         String message = chatInputField.getText() == null ? "" : chatInputField.getText().trim();
         if (message.isEmpty()) {
             return;
@@ -785,42 +804,104 @@ public class AgentChatTabController {
 
         addChatMessage(message, true);
         chatInputField.clear();
-
-        setAgentTyping(true);
+        setChatRequestInFlight(true);
 
         ApiService.getInstance().postWithResponse(ApiService.EP_CHAT_CONFIG, payload)
                 .thenAccept(response -> {
+                    if (response != null && response.has("error")) {
+                        Platform.runLater(() -> handleChatFailure(formatChatFailure(response), message));
+                        return;
+                    }
                     CompletableFuture<Void> refresh = (mappingListRequest || shouldRefreshMappings(response))
                             ? mappingRefreshCallback.get()
                             : CompletableFuture.completedFuture(null);
-                    refresh.thenRun(() -> Platform.runLater(() -> handleChatResponse(response, mappingListRequest, selectedUseCase)))
-                            .exceptionally(ex -> {
-                                Platform.runLater(() -> {
-                                    setAgentTyping(false);
-                                    addChatMessage("Error refreshing mappings: " + ex.getMessage(), false);
-                                });
-                                return null;
-                            });
+                    refresh.whenComplete((ignored, refreshError) -> Platform.runLater(() -> {
+                        handleChatResponse(response, message);
+                        if (refreshError != null) {
+                            addChatMessage("The agent replied, but I could not refresh the mapping list. Use Refresh Mappings before making another change.", false);
+                        }
+                    }));
                 })
                 .exceptionally(ex -> {
-                    Platform.runLater(() -> {
-                        setAgentTyping(false);
-                        addChatMessage("Error: " + ex.getMessage(), false);
-                    });
+                    Platform.runLater(() -> handleChatFailure(formatChatFailure(ex), message));
                     return null;
                 });
     }
 
-    private void handleChatResponse(JsonNode response, boolean mappingListRequest, String selectedUseCase) {
-        setAgentTyping(false);
-        if (response != null && response.has("reply")) {
-            String reply = response.get("reply").asText();
+    private void handleChatResponse(JsonNode response, String originalMessage) {
+        if (response != null && response.hasNonNull("reply") && !response.path("reply").asText().isBlank()) {
+            setChatRequestInFlight(false);
+            String reply = response.path("reply").asText();
             addChatMessage(reply, false);
             rememberStructuredResponse(response);
             renderStructuredResponseCards(response);
         } else {
-            addChatMessage("AI response did not include reply field.", false);
+            handleChatFailure(
+                    "The agent returned an incomplete response. Your message is ready to retry.",
+                    originalMessage
+            );
         }
+    }
+
+    private void handleChatFailure(String failureMessage, String originalMessage) {
+        setChatRequestInFlight(false);
+        restoreFailedPrompt(originalMessage);
+        HBox row = addChatMessage(failureMessage, false);
+        Button retryButton = new Button("Retry");
+        retryButton.getStyleClass().add("secondary-button");
+        retryButton.setOnAction(ignored -> {
+            retryButton.setDisable(true);
+            restoreFailedPrompt(originalMessage);
+            onSendMessage();
+        });
+        row.getChildren().add(retryButton);
+    }
+
+    private void restoreFailedPrompt(String originalMessage) {
+        if (chatInputField == null || originalMessage == null || originalMessage.isBlank()) {
+            return;
+        }
+        chatInputField.setText(originalMessage);
+        chatInputField.positionCaret(originalMessage.length());
+        chatInputField.requestFocus();
+    }
+
+    private String formatChatFailure(JsonNode response) {
+        int statusCode = response != null && response.path("error").isNumber()
+                ? response.path("error").asInt()
+                : 0;
+        String detail = response == null ? "" : response.path("message").asText("");
+        return formatChatFailure(statusCode, detail);
+    }
+
+    private String formatChatFailure(Throwable error) {
+        Throwable cause = error;
+        while (cause instanceof CompletionException && cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        return formatChatFailure(0, cause == null ? "" : cause.getMessage());
+    }
+
+    private String formatChatFailure(int statusCode, String detail) {
+        String normalized = detail == null ? "" : detail.toLowerCase(Locale.ROOT);
+        if (statusCode == 408 || statusCode == 504 || normalized.contains("timed out") || normalized.contains("timeout")) {
+            return "The agent took too long to respond. Your message is ready to retry.";
+        }
+        if (statusCode == 429) {
+            return "The agent is handling too many requests right now. Wait a moment, then retry your message.";
+        }
+        if (statusCode == 401 || statusCode == 403) {
+            return "The agent service rejected this request because its access credentials are missing or expired.";
+        }
+        if (statusCode >= 500) {
+            return "The agent service is temporarily unavailable. Your message is ready to retry.";
+        }
+        if (normalized.contains("connection refused") || normalized.contains("unknown host")
+                || normalized.contains("connection reset") || normalized.contains("failed to connect")
+                || normalized.contains("network is unreachable") || normalized.contains("no route to host")) {
+            return "I could not reach the agent service. Check the n8n connection, then retry your message.";
+        }
+        return "The agent could not complete this request. Your message is ready to retry.";
     }
 
     private boolean shouldRefreshMappings(JsonNode response) {
@@ -1229,15 +1310,63 @@ public class AgentChatTabController {
     }
 
     private void setAgentTyping(boolean typing) {
-        if (agentTypingLabel == null) {
+        if (agentTypingLabel == null || agentStatusBar == null) {
             return;
         }
-        agentTypingLabel.setText("Agent is typing...");
-        agentTypingLabel.setVisible(typing);
-        agentTypingLabel.setManaged(typing);
+        agentStatusBar.setVisible(typing);
+        agentStatusBar.setManaged(typing);
+        if (!typing) {
+            if (agentActivityTimeline != null) {
+                agentActivityTimeline.stop();
+            }
+            return;
+        }
+
+        updateAgentActivityMessage();
+        if (agentActivityTimeline == null) {
+            agentActivityTimeline = new Timeline(
+                    new KeyFrame(Duration.seconds(2.4), ignored -> updateAgentActivityMessage())
+            );
+            agentActivityTimeline.setCycleCount(Timeline.INDEFINITE);
+        }
+        agentActivityTimeline.playFromStart();
     }
 
-    private void addChatMessage(String text, boolean userMessage) {
+    private void updateAgentActivityMessage() {
+        int nextIndex;
+        if (lastAgentActivityIndex < 0) {
+            nextIndex = ThreadLocalRandom.current().nextInt(AGENT_ACTIVITY_MESSAGES.size());
+        } else {
+            nextIndex = ThreadLocalRandom.current().nextInt(AGENT_ACTIVITY_MESSAGES.size() - 1);
+            if (nextIndex >= lastAgentActivityIndex) {
+                nextIndex++;
+            }
+        }
+        lastAgentActivityIndex = nextIndex;
+        agentTypingLabel.setText(AGENT_ACTIVITY_MESSAGES.get(nextIndex));
+    }
+
+    private void setChatRequestInFlight(boolean inFlight) {
+        chatRequestInFlight = inFlight;
+        boolean conversationOpen = activeSession != null && activeSessionId != null && !activeSessionId.isBlank();
+        if (chatInputField != null) {
+            chatInputField.setDisable(inFlight || !conversationOpen);
+        }
+        if (chatSendButton != null) {
+            chatSendButton.setDisable(inFlight || !conversationOpen);
+        }
+        if (promptSuggestionsPane != null) {
+            promptSuggestionsPane.setDisable(inFlight);
+        }
+        if (inFlight) {
+            hideChatCommandDropdown();
+        } else if (conversationOpen && chatInputField != null) {
+            chatInputField.requestFocus();
+        }
+        setAgentTyping(inFlight);
+    }
+
+    private HBox addChatMessage(String text, boolean userMessage) {
         storeConversationMessage(userMessage ? "user" : "assistant", text);
         WebView bubble = ChatBubbleFactory.createChatBubbleView(text, userMessage);
 
@@ -1248,6 +1377,7 @@ public class AgentChatTabController {
 
         chatHistoryBox.getChildren().add(row);
         rememberConversationMessage(userMessage ? "user" : "assistant", text);
+        return row;
     }
 
     private void renderStoredMessages(List<Map<String, String>> messages) {
@@ -1284,10 +1414,10 @@ public class AgentChatTabController {
 
     private void setConversationControlsEnabled(boolean enabled) {
         if (chatInputField != null) {
-            chatInputField.setDisable(!enabled);
+            chatInputField.setDisable(!enabled || chatRequestInFlight);
         }
         if (chatSendButton != null) {
-            chatSendButton.setDisable(!enabled);
+            chatSendButton.setDisable(!enabled || chatRequestInFlight);
         }
         if (contextDrawerToggleButton != null) {
             contextDrawerToggleButton.setDisable(!enabled);
@@ -1510,7 +1640,7 @@ public class AgentChatTabController {
     }
 
     private void submitPromptSuggestion(ChatCommandOption option) {
-        if (option == null || chatInputField == null) {
+        if (chatRequestInFlight || option == null || chatInputField == null) {
             return;
         }
 

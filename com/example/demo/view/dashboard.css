@@ -398,6 +398,24 @@
     -fx-padding: 2 0 2 0;
 }
 
+.agent-status-bar {
+    -fx-background-color: #eef6ff;
+    -fx-border-color: #93c5fd;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 8 12 8 12;
+}
+
+.agent-status-label {
+    -fx-text-fill: #1d4ed8;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+
+.agent-status-spinner {
+    -fx-progress-color: #2563eb;
+}
+
 .agent-response-cards {
     -fx-max-width: 640;
 }
