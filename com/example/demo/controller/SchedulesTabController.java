@@ -21,6 +21,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
+import javafx.util.StringConverter;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -201,6 +202,17 @@ public class SchedulesTabController {
 
             if (measureTypeComboBox != null) {
                 measureTypeComboBox.getItems().setAll("average", "median", "mode");
+                measureTypeComboBox.setConverter(new StringConverter<>() {
+                    @Override
+                    public String toString(String measure) {
+                        return formatScheduleMeasure(measure);
+                    }
+
+                    @Override
+                    public String fromString(String measure) {
+                        return measure;
+                    }
+                });
                 measureTypeComboBox.setValue("average");
             }
             setupPositiveIntegerSpinner(intervalDaysSpinner, 1);
@@ -398,8 +410,8 @@ public class SchedulesTabController {
 
         VBox details = new VBox(5,
             createScheduleDetailRow("User", formatScheduleUser(schedule.getUserId())),
-            createScheduleDetailRow("Measure", normalizeScheduleDisplayValue(schedule.getMeasureType())),
-            createScheduleDetailRow("Trigger", formatScheduleTrigger(schedule)),
+            createScheduleDetailRow("Measure", formatScheduleMeasure(schedule.getMeasureType())),
+            createScheduleDetailRow("Range", formatScheduleTrigger(schedule)),
             createScheduleDetailRow("Interval", Math.max(0, schedule.getIntervalDays()) + " days"),
             createScheduleDetailRow("Next check", formatScheduleNextCheck(schedule))
         );
@@ -436,8 +448,16 @@ public class SchedulesTabController {
         return userFormatter.apply(userId);
     }
 
-    private String normalizeScheduleDisplayValue(String value) {
-        return value == null || value.isBlank() ? "-" : value.trim();
+    private String formatScheduleMeasure(String measure) {
+        if (measure == null || measure.isBlank()) {
+            return "-";
+        }
+        return switch (measure.trim().toLowerCase(Locale.ROOT)) {
+            case "average" -> "Average";
+            case "median" -> "Median";
+            case "mode" -> "Most frequent value";
+            default -> measure.trim();
+        };
     }
 
     private String formatScheduleTrigger(Schedule schedule) {
@@ -624,7 +644,7 @@ public class SchedulesTabController {
     private String getSelectedScheduleMeasure() {
         String measure = measureTypeComboBox == null ? "" : measureTypeComboBox.getValue();
         if (measure == null || measure.isBlank()) {
-            throw new IllegalArgumentException("Please choose average, median, or mode.");
+            throw new IllegalArgumentException("Please choose Average, Median, or Most frequent value.");
         }
         return measure.trim().toLowerCase(Locale.ROOT);
     }
@@ -641,16 +661,16 @@ public class SchedulesTabController {
 
     private int getTriggerPercentageValue() {
         if (triggerPercentageSpinner == null || triggerPercentageSpinner.getValueFactory() == null) {
-            throw new IllegalStateException("Trigger percentage control is not available.");
+            throw new IllegalStateException("Range percentage control is not available.");
         }
 
         String editorText = triggerPercentageSpinner.getEditor() == null
             ? ""
             : triggerPercentageSpinner.getEditor().getText().trim();
         if (!editorText.isEmpty()) {
-            int typedValue = parseScheduleInteger(editorText, "Trigger percentage");
+            int typedValue = parseScheduleInteger(editorText, "Range percentage");
             if (typedValue == 0) {
-                throw new IllegalArgumentException("Trigger percentage cannot be 0.");
+                throw new IllegalArgumentException("Range percentage cannot be 0.");
             }
             triggerPercentageSpinner.getValueFactory().setValue(typedValue);
             return typedValue;
@@ -658,10 +678,10 @@ public class SchedulesTabController {
 
         Integer value = triggerPercentageSpinner.getValue();
         if (value == null) {
-            throw new IllegalArgumentException("Trigger percentage is required.");
+            throw new IllegalArgumentException("Range percentage is required.");
         }
         if (value == 0) {
-            throw new IllegalArgumentException("Trigger percentage cannot be 0.");
+            throw new IllegalArgumentException("Range percentage cannot be 0.");
         }
         return value;
     }
