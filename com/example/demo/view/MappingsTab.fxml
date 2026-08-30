@@ -75,6 +75,8 @@
         <Label text="Selected Mapping:" styleClass="topbar-label" />
         <Label fx:id="selectedMappingLabel" text="None selected" styleClass="topbar-value" />
         <Separator orientation="VERTICAL" />
+        <Label fx:id="mappingEditorStatusLabel" text="All changes saved" styleClass="mapping-editor-status-saved" />
+        <Separator orientation="VERTICAL" />
         <VBox spacing="3.0">
             <Label text="Logging Interval" styleClass="topbar-label" />
             <HBox spacing="8.0" alignment="CENTER_LEFT">

@@ -50,6 +50,7 @@ public class MappingsTabController {
     @FXML private TextField ruleMinIntervalField;
     @FXML private TextField ruleMaxIntervalField;
     @FXML private Label selectedMappingLabel;
+    @FXML private Label mappingEditorStatusLabel;
     @FXML private Label loggingIntervalValueLabel;
     @FXML private Label vibrationIntervalValueLabel;
     @FXML private Button saveRuleButton;
@@ -83,6 +84,7 @@ public class MappingsTabController {
     private RuleCardData selectedMappingForEdit;
     private boolean showingActiveMappingsOnly = true;
     private boolean mappingsRenderRetryScheduled;
+    private boolean updatingRuleBuilderFields;
 
     private enum MappingChangeScope {
         ALL_USERS,
@@ -107,7 +109,13 @@ public class MappingsTabController {
         enforceIntegerInput(ruleMaxDurationField);
         enforceIntegerInput(ruleMinIntervalField);
         enforceIntegerInput(ruleMaxIntervalField);
+        ruleInputFields().forEach(field -> field.textProperty().addListener((observable, oldValue, newValue) -> {
+            if (!updatingRuleBuilderFields) {
+                setMappingEditorDirty(true);
+            }
+        }));
         updateSelectedMappingForEdit(null);
+        setMappingEditorDirty(false);
         mappingToggleGroup.selectedToggleProperty().addListener(new ChangeListener<Toggle>() {
             @Override
             public void changed(ObservableValue<? extends Toggle> observable, Toggle oldValue, Toggle newValue) {
@@ -203,6 +211,7 @@ public class MappingsTabController {
         updateRuleBuilderUseCaseDisplay(selectedUseCase);
         updateIntervalDisplays(selectedUseCase);
         updateSelectedMappingForEdit(null);
+        setMappingEditorDirty(ruleInputFields().stream().anyMatch(field -> !field.getText().isBlank()));
         renderMappingsWhenReady(selectedUseCase);
     }
 
@@ -284,6 +293,7 @@ public class MappingsTabController {
                         return;
                     }
 
+                    setMappingEditorDirty(false);
                     String savedUseCase = useCaseLabelResolver.apply(FormatUtils.normalizeUseCaseName(ruleConfig.getType()));
                     refreshMappingsAfterCreate(ruleConfig, savedUseCase, scrollPosition);
                 }))
@@ -485,6 +495,7 @@ public class MappingsTabController {
             return;
         }
 
+        setMappingEditorDirty(false);
         refreshMappingsPreservingEditor(editingRule, ruleConfig, scrollPosition);
         AlertUtils.showInfoAlert("Mapping Updated", successMessage);
     }
@@ -1384,6 +1395,15 @@ public class MappingsTabController {
         }
     }
 
+    private void setMappingEditorDirty(boolean dirty) {
+        if (mappingEditorStatusLabel == null) {
+            return;
+        }
+        mappingEditorStatusLabel.setText(dirty ? "Unsaved changes" : "All changes saved");
+        mappingEditorStatusLabel.getStyleClass().removeAll("mapping-editor-status-saved", "mapping-editor-status-unsaved");
+        mappingEditorStatusLabel.getStyleClass().add(dirty ? "mapping-editor-status-unsaved" : "mapping-editor-status-saved");
+    }
+
     private BigDecimal parseRequiredDecimal(TextField field, String fieldName) {
         if (field == null || field.getText() == null || field.getText().trim().isEmpty()) {
             throw new IllegalArgumentException(fieldName + " is required.");
@@ -1397,7 +1417,14 @@ public class MappingsTabController {
     }
 
     private void clearRuleBuilderForm() {
-        List.of(
+        updatingRuleBuilderFields = true;
+        ruleInputFields().forEach(TextInputControl::clear);
+        updatingRuleBuilderFields = false;
+        setMappingEditorDirty(false);
+    }
+
+    private List<TextField> ruleInputFields() {
+        return List.of(
                 ruleMinValueField,
                 ruleMaxValueField,
                 ruleMinPulsesField,
@@ -1408,7 +1435,7 @@ public class MappingsTabController {
                 ruleMaxDurationField,
                 ruleMinIntervalField,
                 ruleMaxIntervalField
-        ).forEach(TextInputControl::clear);
+        );
     }
 
     private void populateRuleBuilderFromMapping(RuleCardData rule) {
@@ -1416,6 +1443,7 @@ public class MappingsTabController {
             return;
         }
 
+        updatingRuleBuilderFields = true;
         setText(ruleMinValueField, rule.minValue);
         setText(ruleMaxValueField, rule.maxValue);
         setText(ruleMinPulsesField, rule.minPulses);
@@ -1426,6 +1454,8 @@ public class MappingsTabController {
         setText(ruleMaxDurationField, rule.maxDuration);
         setText(ruleMinIntervalField, rule.minInterval);
         setText(ruleMaxIntervalField, rule.maxInterval);
+        updatingRuleBuilderFields = false;
+        setMappingEditorDirty(false);
     }
 
     private void setText(TextField field, int value) {

@@ -198,6 +198,24 @@
     -fx-font-size: 12px;
 }
 
+.mapping-editor-status-saved,
+.mapping-editor-status-unsaved {
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-padding: 4 8;
+    -fx-background-radius: 10;
+}
+
+.mapping-editor-status-saved {
+    -fx-text-fill: #166534;
+    -fx-background-color: #dcfce7;
+}
+
+.mapping-editor-status-unsaved {
+    -fx-text-fill: #9a3412;
+    -fx-background-color: #ffedd5;
+}
+
 .workspace-tabs {
     -fx-padding: 0 16 16 16;
 }
