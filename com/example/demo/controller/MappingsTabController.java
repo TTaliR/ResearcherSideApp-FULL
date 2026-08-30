@@ -752,18 +752,18 @@ public class MappingsTabController {
 
             Label title = new Label(formatMappingCardTitle(rule));
             title.getStyleClass().add("mapping-card-title");
+            title.setWrapText(true);
+            title.setMaxWidth(Double.MAX_VALUE);
 
-            HBox titleRow = new HBox(8);
-            titleRow.setAlignment(Pos.CENTER_LEFT);
-
-            Region spacer = new Region();
-            HBox.setHgrow(spacer, Priority.ALWAYS);
+            HBox actionRow = new HBox(8);
+            actionRow.setAlignment(Pos.CENTER_RIGHT);
+            actionRow.getStyleClass().add("mapping-card-actions");
 
             Button selectButton = MappingUiFactory.createSelectMappingButton(rule, this::selectMappingForEdit);
             Button assignButton = createAssignUsersToMappingButton(rule);
             Button activationButton = MappingUiFactory.createDeleteMappingButton(rule, this::onDeleteMappingRequested);
             activationButton.setOnAction(ignored -> onDeleteMappingRequested(rule, activationButton));
-            titleRow.getChildren().addAll(title, spacer, assignButton, selectButton, activationButton);
+            actionRow.getChildren().addAll(assignButton, selectButton, activationButton);
 
             Label values = new Label("Values: " + formatMappingValues(rule));
             Label pulses = new Label("Pulse count: " + rule.pulseLabel);
@@ -774,9 +774,9 @@ public class MappingsTabController {
             if (!assignedToSelectedUser) {
                 Label unassignedHint = new Label(selectedUser == null ? "Not assigned to any user" : "Not assigned to selected user");
                 unassignedHint.getStyleClass().add("mapping-assigned-muted");
-                card.getChildren().addAll(titleRow, values, pulses, intensity, duration, interval, unassignedHint);
+                card.getChildren().addAll(title, actionRow, values, pulses, intensity, duration, interval, unassignedHint);
             } else {
-                card.getChildren().addAll(titleRow, values, pulses, intensity, duration, interval, assignedUsers);
+                card.getChildren().addAll(title, actionRow, values, pulses, intensity, duration, interval, assignedUsers);
             }
 
             card.setOnMouseClicked(event -> {
@@ -834,8 +834,8 @@ public class MappingsTabController {
                     this::onDeleteMappingRequested,
                     selected
             );
-            if (!card.getChildren().isEmpty() && card.getChildren().get(0) instanceof HBox titleRow) {
-                titleRow.getChildren().add(2, createAssignUsersToMappingButton(rule));
+            if (card.getChildren().size() > 1 && card.getChildren().get(1) instanceof HBox actionRow) {
+                actionRow.getChildren().add(0, createAssignUsersToMappingButton(rule));
             }
             if (history.size() > 1) {
                 card.getChildren().add(createMappingHistoryNode(history));

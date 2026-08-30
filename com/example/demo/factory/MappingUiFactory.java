@@ -12,8 +12,6 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.HBox;
-import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import java.util.Date;
@@ -60,19 +58,17 @@ public class MappingUiFactory {
 
         Label title = new Label(rule.useCaseLabel + ": " + rule.mappingId);
         title.getStyleClass().add("mapping-card-title");
+        title.setWrapText(true);
+        title.setMaxWidth(Double.MAX_VALUE);
 
-        HBox titleRow = new HBox(8);
-        titleRow.setAlignment(Pos.CENTER_LEFT);
-
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-
-        titleRow.getChildren().addAll(title, spacer);
+        HBox actionRow = new HBox(8);
+        actionRow.setAlignment(Pos.CENTER_RIGHT);
+        actionRow.getStyleClass().add("mapping-card-actions");
         if (onSelect != null) {
-            titleRow.getChildren().add(createSelectMappingButton(rule, onSelect));
+            actionRow.getChildren().add(createSelectMappingButton(rule, onSelect));
         }
         if (onDelete != null) {
-            titleRow.getChildren().add(createDeleteMappingButton(rule, onDelete));
+            actionRow.getChildren().add(createDeleteMappingButton(rule, onDelete));
         }
 
         Label values = new Label("Values: " + FormatUtils.formatMappingValue(rule.minValue) + "-" + FormatUtils.formatMappingValue(rule.maxValue));
@@ -90,7 +86,7 @@ public class MappingUiFactory {
         }
         dateInfo.getStyleClass().add("mapping-assigned-muted");
 
-        card.getChildren().addAll(titleRow, values, pulses, intensity, duration, interval, dateInfo);
+        card.getChildren().addAll(title, actionRow, values, pulses, intensity, duration, interval, dateInfo);
         if (!rule.active) {
             Label unassignedHint = new Label("Not currently assigned");
             unassignedHint.getStyleClass().add("mapping-assigned-muted");

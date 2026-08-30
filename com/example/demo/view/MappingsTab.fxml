@@ -26,12 +26,12 @@
         <Label text="Mapping Rule Builder" styleClass="drawer-title" alignment="CENTER_LEFT"/>
     </VBox>
     <HBox spacing="8.0" styleClass="chat-panel" fx:id="ruleBuilderPane">
-        <VBox spacing="3.0" alignment="CENTER">
+        <VBox spacing="3.0" alignment="CENTER" prefWidth="240.0" maxWidth="240.0">
             <HBox alignment="CENTER_LEFT">
                 <Label minWidth="100.0" text="Sensor Type:" styleClass="topbar-label" />
                 <Label fx:id="ruleSensorTypeLabel" text="-" styleClass="topbar-value" />
             </HBox>
-            <Label fx:id="ruleSensorTypeDescriptionLabel" text="-" styleClass="topbar-muted-value" />
+            <Label fx:id="ruleSensorTypeDescriptionLabel" text="-" wrapText="true" maxWidth="240.0" styleClass="topbar-muted-value" />
         </VBox>
         <Separator orientation="VERTICAL"></Separator>
         <VBox spacing="10.0" alignment="CENTER_LEFT">
