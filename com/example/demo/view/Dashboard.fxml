@@ -34,7 +34,7 @@
                             <fx:include source="MappingsTab.fxml" fx:id="mappingsTabContent" />
                         </content>
                     </Tab>
-                    <Tab fx:id="schedulingTab" text="Personalization">
+                    <Tab fx:id="schedulingTab" text="Schedules">
                         <content>
                             <fx:include source="SchedulesTab.fxml" fx:id="schedulesTabContent" />
                         </content>

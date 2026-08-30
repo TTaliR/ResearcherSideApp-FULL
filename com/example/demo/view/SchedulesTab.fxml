@@ -19,33 +19,45 @@
     <fx:define>
         <ToggleGroup fx:id="scheduleToggleGroup" />
     </fx:define>
-    <VBox spacing="3.0">
-        <Label text="Participant Personalization" styleClass="drawer-title" />
-        <Label text="Periodically checks the selected feedback measure and adjusts the participant's vibration threshold by the configured percentage."
-               wrapText="true" styleClass="topbar-muted-value" />
+    <VBox spacing="4.0" styleClass="schedule-help">
+        <Label text="How schedules work" styleClass="drawer-title" />
+        <Label text="Every Interval days, the system summarizes this participant's recorded values using the selected Measure, then recalculates the participant's mapping input boundaries. Range sets the positive percentage below and above the measured result."
+               wrapText="true" maxWidth="900.0" styleClass="topbar-muted-value" />
+        <Label text="Example: a measured result of 100 with a 10% range produces mapping boundaries of 90–110."
+               wrapText="true" styleClass="topbar-value" />
     </VBox>
     <HBox spacing="0" alignment="CENTER_LEFT" styleClass="segmented-button-bar">
         <ToggleButton fx:id="listActiveSchedulesButton" text="List Active" onAction="#onListActiveSchedules" toggleGroup="$scheduleToggleGroup" selected="true" />
         <ToggleButton fx:id="listAllSchedulesButton" text="List All" onAction="#onListAllSchedules" toggleGroup="$scheduleToggleGroup" />
     </HBox>
     <HBox spacing="8.0" alignment="CENTER_LEFT">
-        <Label text="Schedule ID:" styleClass="topbar-label" />
+        <Label text="Schedule ID:" styleClass="topbar-label">
+            <tooltip><Tooltip text="Generated automatically. Select an existing schedule to edit it." /></tooltip>
+        </Label>
         <TextField fx:id="scheduleIdField" promptText="(for edit)" prefWidth="90" disable="true" />
-        <Label text="User ID:" styleClass="topbar-label" />
+        <Label text="Participant:" styleClass="topbar-label">
+            <tooltip><Tooltip text="The selected participant whose mapping boundaries will be recalculated." /></tooltip>
+        </Label>
         <TextField fx:id="userIdField" promptText="e.g. 100" prefWidth="80" />
-        <Label text="Interval" styleClass="topbar-label" />
+        <Label text="Recalculate every" styleClass="topbar-label">
+            <tooltip><Tooltip text="How many days to wait between automatic mapping recalculations." /></tooltip>
+        </Label>
         <Spinner fx:id="intervalDaysSpinner" prefWidth="95" editable="true">
             <tooltip>
                 <Tooltip text="Interval must be 1 day or more." />
             </tooltip>
         </Spinner>
         <Label text="Days" styleClass="topbar-muted-value" />
-        <Label text="Measure:" styleClass="topbar-label" />
+        <Label text="Measure:" styleClass="topbar-label">
+            <tooltip><Tooltip text="How recorded participant values are summarized: Average, Median, or Most frequent value." /></tooltip>
+        </Label>
         <ComboBox fx:id="measureTypeComboBox" prefWidth="120" promptText="Select" />
-        <Label text="Range ± %:" styleClass="topbar-label" />
+        <Label text="Range around result (%):" styleClass="topbar-label">
+            <tooltip><Tooltip text="Positive percentage placed below and above the measured result to form the new mapping boundaries." /></tooltip>
+        </Label>
         <Spinner fx:id="triggerPercentageSpinner" prefWidth="105" editable="true">
             <tooltip>
-                <Tooltip text="Use a negative % to lower the vibration threshold." />
+                <Tooltip text="Example: result 100 and range 10% creates boundaries 90–110." />
             </tooltip>
         </Spinner>
     </HBox>

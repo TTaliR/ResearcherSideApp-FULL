@@ -230,12 +230,12 @@ public class SchedulesTabController {
         }
 
         triggerPercentageSpinner.setValueFactory(
-            new SpinnerValueFactory.IntegerSpinnerValueFactory(Integer.MIN_VALUE, Integer.MAX_VALUE, 1, 1)
+            new SpinnerValueFactory.IntegerSpinnerValueFactory(1, Integer.MAX_VALUE, 1, 1)
         );
         triggerPercentageSpinner.setEditable(true);
         triggerPercentageSpinner.getEditor().setTextFormatter(new TextFormatter<>(change -> {
             String newText = change.getControlNewText();
-            return newText.matches("-?\\d*") ? change : null;
+            return newText.matches("\\d*") ? change : null;
         }));
     }
 
@@ -341,7 +341,7 @@ public class SchedulesTabController {
             measureTypeComboBox.setValue(List.of("average", "median", "mode").contains(measureType) ? measureType : "average");
         }
         if (triggerPercentageSpinner != null && triggerPercentageSpinner.getValueFactory() != null) {
-            triggerPercentageSpinner.getValueFactory().setValue((int) Math.round(schedule.getTriggerPercentage()));
+            triggerPercentageSpinner.getValueFactory().setValue(Math.max(1, (int) Math.round(schedule.getTriggerPercentage())));
         }
     }
 
@@ -461,7 +461,8 @@ public class SchedulesTabController {
     }
 
     private String formatScheduleTrigger(Schedule schedule) {
-        return String.valueOf((int) Math.round(schedule.getTriggerPercentage())) + "%";
+        int percentage = (int) Math.round(schedule.getTriggerPercentage());
+        return percentage > 0 ? percentage + "%" : "Invalid (must be positive)";
     }
 
     private String formatScheduleNextCheck(Schedule schedule) {
@@ -669,8 +670,8 @@ public class SchedulesTabController {
             : triggerPercentageSpinner.getEditor().getText().trim();
         if (!editorText.isEmpty()) {
             int typedValue = parseScheduleInteger(editorText, "Range percentage");
-            if (typedValue == 0) {
-                throw new IllegalArgumentException("Range percentage cannot be 0.");
+            if (typedValue <= 0) {
+                throw new IllegalArgumentException("Range percentage must be greater than 0.");
             }
             triggerPercentageSpinner.getValueFactory().setValue(typedValue);
             return typedValue;
@@ -680,8 +681,8 @@ public class SchedulesTabController {
         if (value == null) {
             throw new IllegalArgumentException("Range percentage is required.");
         }
-        if (value == 0) {
-            throw new IllegalArgumentException("Range percentage cannot be 0.");
+        if (value <= 0) {
+            throw new IllegalArgumentException("Range percentage must be greater than 0.");
         }
         return value;
     }

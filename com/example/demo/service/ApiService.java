@@ -377,7 +377,7 @@ public class ApiService {
     public CompletableFuture<ScheduleApiResponse> addSchedule(int userId, int intervalDays, String measureType,
                                                               int triggerPercentage, String usecaseName) {
         String trimmedMeasureType = measureType == null ? "" : measureType.trim();
-        if (userId <= 0 || intervalDays <= 0 || trimmedMeasureType.isEmpty() || triggerPercentage == 0) {
+        if (userId <= 0 || intervalDays <= 0 || trimmedMeasureType.isEmpty() || triggerPercentage <= 0) {
             return CompletableFuture.completedFuture(
                 failedScheduleResponse("Invalid schedule add request: userId, intervalDays, measureType, and triggerPercentage must be valid")
             );
@@ -395,7 +395,7 @@ public class ApiService {
                                                                  String measureType, int triggerPercentage,
                                                                  String usecaseName) {
         String trimmedMeasureType = measureType == null ? "" : measureType.trim();
-        if (scheduleId <= 0 || userId <= 0 || intervalDays <= 0 || trimmedMeasureType.isEmpty() || triggerPercentage == 0) {
+        if (scheduleId <= 0 || userId <= 0 || intervalDays <= 0 || trimmedMeasureType.isEmpty() || triggerPercentage <= 0) {
             return CompletableFuture.completedFuture(
                 failedScheduleResponse("Invalid schedule change request: scheduleId, userId, intervalDays, measureType, and triggerPercentage must be valid")
             );

@@ -362,6 +362,14 @@
     -fx-padding: 2;
 }
 
+.schedule-help {
+    -fx-background-color: #eff6ff;
+    -fx-border-color: #bfdbfe;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 10 12;
+}
+
 .chat-command-hint {
     -fx-text-fill: #5d6b7c;
     -fx-font-size: 10px;
