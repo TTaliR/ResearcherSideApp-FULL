@@ -730,12 +730,12 @@ dataLayer.selectAll("circle")
         .style("transform", "translateY(0px)");
     tooltip.html(
             d.count > 1
-              ? `<strong>${d.count} aggregated alerts</strong><br>
+              ? `<strong>${d.count} grouped alerts</strong><br>
                 <strong>Time:</strong> ${formatTime(d3.min(d.points, p => p.parsedTime))} - ${formatTime(d3.max(d.points, p => p.parsedTime))}<br>
                 <strong>Value range:</strong> ${d3.min(d.points, p => p.value)} - ${d3.max(d.points, p => p.value)}<br>
                 <strong>Max intensity:</strong> ${d.maxIntensity}<br>
                 <strong>Max pulses:</strong> ${d.maxPulses}<br>
-                <strong>Click:</strong> show aggregated dots`
+                <strong>Click:</strong> show grouped alerts`
               : `<strong>Time:</strong> ${formatTime(d.parsedTime)}<br>
                 <strong>Value:</strong> ${d.value ?? "N/A"}<br>
                 <strong>Intensity:</strong> ${d.intensity}<br>
@@ -779,7 +779,7 @@ dataLayer.selectAll("circle")
         const panelWidth = Math.min(560, window.innerWidth - 48);
 
         detailPanel
-          .html(`<div class="detail-panel-header"><strong>${d.points.length} aggregated dots</strong><button type="button" class="detail-panel-close" aria-label="Close aggregate details">&times;</button></div><div>${rows}${more}</div>`)
+          .html(`<div class="detail-panel-header"><strong>${d.points.length} grouped alerts</strong><button type="button" class="detail-panel-close" aria-label="Close grouped alert details">&times;</button></div><div>${rows}${more}</div>`)
           .style("left", Math.max(12, Math.min(event.pageX + 12, window.innerWidth - panelWidth - 24)) + "px")
           .style("top", Math.max(10, Math.min(event.pageY + 12, window.innerHeight - 290)) + "px")
           .style("display", "block");
