@@ -416,6 +416,7 @@ function isColorLight(color) {
     // Basic meta values injected by runtime
     const userId = USER_ID_PLACEHOLDER; //
     const sensorType = SENSOR_TYPE_PLACEHOLDER;
+    const sensorValueLabel = SENSOR_LABEL_PLACEHOLDER;
 
     // Show basic context for the chart
     document.getElementById("meta-info").textContent = `User ID: ${userId} | Sensor: ${sensorType}`;
@@ -460,13 +461,15 @@ const dataLayer = g.append("g")
       .domain(d3.extent(normalizedData, d => d.parsedTime))
       .range([0, width]);
 
+    const minValue = d3.min(normalizedData, d => d.value);
+    const maxValue = d3.max(normalizedData, d => d.value);
+    const valueSpan = maxValue - minValue;
+    const paddingBase = valueSpan > 0 ? valueSpan : Math.max(Math.abs(minValue), 1);
+    const yPadding = paddingBase * 0.2;
     const y = d3.scaleLinear()
     .domain([
-        (() => {
-            const minVal = d3.min(normalizedData, d => d.value);
-            return minVal === 0 ? 0 : minVal - 10; // pad lower bound (unless zero)
-        })(),
-        d3.max(normalizedData, d => d.value) + 10 // add top padding
+        minValue >= 0 ? Math.max(0, minValue - yPadding) : minValue - yPadding,
+        maxValue + yPadding
     ])
     .nice()
     .range([height, 0]);
@@ -607,7 +610,7 @@ document.getElementById("data-stats").textContent = statsText;
       .attr("text-anchor", "middle")
       .attr("fill", "#374151")
       .attr("font-size", "13px")
-      .text("Value");
+      .text(sensorValueLabel);
 
     g.append("text")
       .attr("class", "axis-label x-axis-label")
@@ -629,6 +632,7 @@ document.getElementById("data-stats").textContent = statsText;
     const linePointsWithGaps = insertGaps(visualLineData);
     const alertSourceData = normalizedData.filter(d => d.pulses > 0 && d.alert_type);
     let renderedCircleData = clusterPoints(alertSourceData, x, y);
+    const hasGroupedAlerts = renderedCircleData.some(d => d.count > 1);
 
     // Draw a downsampled visual path; the original data array stays intact for export.
     const linePath = dataLayer.append("path")
@@ -844,35 +848,36 @@ pulseValues.forEach((v) => {
   currentY += 2 * r + pulsePadding; // move down for next circle
 });
 
-    // Cluster numbers explanation
-    currentY += 15;
-    legend.append("text").text("Numbers").attr("y", currentY).attr("font-weight", "bold");
+    if (hasGroupedAlerts) {
+      currentY += 15;
+      legend.append("text").text("Number").attr("y", currentY).attr("font-weight", "bold");
 
-    const legendCircleColor = "#f59e42";
-    legend.append("circle")
-      .attr("cx", 10)
-      .attr("cy", currentY + 18)
-      .attr("r", 8)
-      .attr("fill", legendCircleColor)
-      .attr("stroke", "#333");
+      const legendCircleColor = "#f59e42";
+      legend.append("circle")
+        .attr("cx", 10)
+        .attr("cy", currentY + 18)
+        .attr("r", 8)
+        .attr("fill", legendCircleColor)
+        .attr("stroke", "#333");
 
-    const legendIsLight = isColorLight(legendCircleColor);
-    const legendTextFill = legendIsLight ? '#1F2937' : '#FFFFFF';
-    const legendTextStroke = legendIsLight ? '#FFFFFF' : '#1F2937';
+      const legendIsLight = isColorLight(legendCircleColor);
+      const legendTextFill = legendIsLight ? '#1F2937' : '#FFFFFF';
+      const legendTextStroke = legendIsLight ? '#FFFFFF' : '#1F2937';
 
-    legend.append("text")
-      .attr("class", "cluster-count")
-      .attr("x", 10)
-      .attr("y", currentY + 21)
-      .attr("fill", legendTextFill)
-      .attr("stroke", legendTextStroke)
-      .text("3");
+      legend.append("text")
+        .attr("class", "cluster-count")
+        .attr("x", 10)
+        .attr("y", currentY + 21)
+        .attr("fill", legendTextFill)
+        .attr("stroke", legendTextStroke)
+        .text("3");
 
-    legend.append("text")
-      .attr("x", 25)
-      .attr("y", currentY + 22)
-      .attr("font-size", "11px")
-      .text("Aggregated points");
+      legend.append("text")
+        .attr("x", 25)
+        .attr("y", currentY + 22)
+        .attr("font-size", "11px")
+        .text("Grouped alerts");
+    }
 
     // Zoom behavior: allows pan + zoom on x-axis while keeping y fixed
 const zoom = d3.zoom()

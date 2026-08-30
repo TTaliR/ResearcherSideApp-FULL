@@ -5,6 +5,7 @@ import com.example.demo.model.User;
 import com.example.demo.service.ApiService;
 import com.example.demo.service.ExportService;
 import com.example.demo.util.AlertUtils;
+import com.example.demo.util.FormatUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import javafx.animation.PauseTransition;
 import javafx.application.Platform;
@@ -259,7 +260,8 @@ public class GraphTabController {
         String html = template
             .replace("const data = DATA_PLACEHOLDER;", "const data = JSON.parse(\"" + escapedJson + "\");")
             .replace("USER_ID_PLACEHOLDER", String.valueOf(userId))
-            .replace("SENSOR_TYPE_PLACEHOLDER", "\"" + useCase + "\"");
+            .replace("SENSOR_TYPE_PLACEHOLDER", "\"" + useCase + "\"")
+            .replace("SENSOR_LABEL_PLACEHOLDER", "\"" + FormatUtils.formatUseCaseName(useCase) + " Value\"");
 
         graphWebView.getEngine().loadContent(html);
     }
