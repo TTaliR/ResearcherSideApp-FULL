@@ -11,6 +11,7 @@ import com.example.demo.util.AlertUtils;
 import com.example.demo.util.ButtonLoadingState;
 import com.example.demo.util.DateUtils;
 import com.example.demo.util.FormatUtils;
+import com.example.demo.util.HapticPreviewCalculator;
 import com.fasterxml.jackson.databind.JsonNode;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
@@ -26,6 +27,7 @@ import javafx.scene.layout.*;
 import javafx.util.Duration;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.*;
@@ -51,6 +53,15 @@ public class MappingsTabController {
     @FXML private TextField ruleMaxIntervalField;
     @FXML private Label selectedMappingLabel;
     @FXML private Label mappingEditorStatusLabel;
+    @FXML private Slider mappingPreviewInputSlider;
+    @FXML private TextField mappingPreviewInputField;
+    @FXML private HBox mappingPreviewWaveform;
+    @FXML private Label mappingPreviewPulsesLabel;
+    @FXML private Label mappingPreviewIntensityLabel;
+    @FXML private Label mappingPreviewDurationLabel;
+    @FXML private Label mappingPreviewIntervalLabel;
+    @FXML private Label mappingPreviewTotalLabel;
+    @FXML private Label mappingPreviewMessageLabel;
     @FXML private Label loggingIntervalValueLabel;
     @FXML private Label vibrationIntervalValueLabel;
     @FXML private Button saveRuleButton;
@@ -85,6 +96,7 @@ public class MappingsTabController {
     private boolean showingActiveMappingsOnly = true;
     private boolean mappingsRenderRetryScheduled;
     private boolean updatingRuleBuilderFields;
+    private boolean updatingPreviewControls;
 
     private enum MappingChangeScope {
         ALL_USERS,
@@ -109,13 +121,30 @@ public class MappingsTabController {
         enforceIntegerInput(ruleMaxDurationField);
         enforceIntegerInput(ruleMinIntervalField);
         enforceIntegerInput(ruleMaxIntervalField);
+        enforceDecimalInput(mappingPreviewInputField);
         ruleInputFields().forEach(field -> field.textProperty().addListener((observable, oldValue, newValue) -> {
             if (!updatingRuleBuilderFields) {
                 setMappingEditorDirty(true);
+                updateHapticPreview(false);
             }
         }));
+        mappingPreviewInputField.textProperty().addListener((observable, oldValue, newValue) -> {
+            if (!updatingPreviewControls) {
+                syncPreviewSliderToInput();
+                updateHapticPreview(false);
+            }
+        });
+        mappingPreviewInputSlider.valueProperty().addListener((observable, oldValue, newValue) -> {
+            if (!updatingPreviewControls) {
+                updatingPreviewControls = true;
+                mappingPreviewInputField.setText(formatPreviewInput(newValue.doubleValue()));
+                updatingPreviewControls = false;
+                updateHapticPreview(false);
+            }
+        });
         updateSelectedMappingForEdit(null);
         setMappingEditorDirty(false);
+        updateHapticPreview(false);
         mappingToggleGroup.selectedToggleProperty().addListener(new ChangeListener<Toggle>() {
             @Override
             public void changed(ObservableValue<? extends Toggle> observable, Toggle oldValue, Toggle newValue) {
@@ -212,6 +241,7 @@ public class MappingsTabController {
         updateIntervalDisplays(selectedUseCase);
         updateSelectedMappingForEdit(null);
         setMappingEditorDirty(ruleInputFields().stream().anyMatch(field -> !field.getText().isBlank()));
+        updateHapticPreview(false);
         renderMappingsWhenReady(selectedUseCase);
     }
 
@@ -1404,6 +1434,185 @@ public class MappingsTabController {
         mappingEditorStatusLabel.getStyleClass().add(dirty ? "mapping-editor-status-unsaved" : "mapping-editor-status-saved");
     }
 
+    private void updateHapticPreview(boolean resetInputToMidpoint) {
+        SensorRuleConfig rule;
+        try {
+            rule = buildRuleConfigFromForm();
+        } catch (IllegalArgumentException ex) {
+            showUnavailableHapticPreview(ex.getMessage(), !hasIncompleteRuleInput(), true);
+            return;
+        }
+
+        configurePreviewInputRange(rule, resetInputToMidpoint);
+        BigDecimal previewInput;
+        try {
+            previewInput = new BigDecimal(mappingPreviewInputField.getText().trim());
+        } catch (Exception ex) {
+            showUnavailableHapticPreview("Enter a valid preview input.", true, false);
+            return;
+        }
+
+        boolean heartRate = "HeartRate".equalsIgnoreCase(FormatUtils.normalizeUseCaseName(rule.getType()));
+        try {
+            HapticPreviewCalculator.Result result = HapticPreviewCalculator.calculate(previewInput, rule, heartRate);
+            showHapticPreview(result);
+        } catch (IllegalArgumentException ex) {
+            showUnavailableHapticPreview(ex.getMessage(), true, false);
+        }
+    }
+
+    private void configurePreviewInputRange(SensorRuleConfig rule, boolean resetInputToMidpoint) {
+        BigDecimal min = rule.getMinvalue();
+        BigDecimal max = rule.getMaxvalue();
+
+        updatingPreviewControls = true;
+        mappingPreviewInputSlider.setMin(min.doubleValue());
+        mappingPreviewInputSlider.setMax(max.doubleValue());
+        mappingPreviewInputSlider.setDisable(min.compareTo(max) == 0);
+        if (resetInputToMidpoint || mappingPreviewInputField.getText().isBlank()) {
+            BigDecimal midpoint = min.add(max).divide(BigDecimal.valueOf(2));
+            mappingPreviewInputField.setText(FormatUtils.formatDecimal(midpoint));
+            mappingPreviewInputSlider.setValue(midpoint.doubleValue());
+        } else {
+            try {
+                BigDecimal input = new BigDecimal(mappingPreviewInputField.getText().trim());
+                mappingPreviewInputSlider.setValue(input.max(min).min(max).doubleValue());
+            } catch (NumberFormatException ignored) {
+                // The validation message below tells the researcher how to recover.
+            }
+        }
+        updatingPreviewControls = false;
+    }
+
+    private void syncPreviewSliderToInput() {
+        try {
+            BigDecimal input = new BigDecimal(mappingPreviewInputField.getText().trim());
+            BigDecimal min = BigDecimal.valueOf(mappingPreviewInputSlider.getMin());
+            BigDecimal max = BigDecimal.valueOf(mappingPreviewInputSlider.getMax());
+            if (input.compareTo(min) >= 0 && input.compareTo(max) <= 0) {
+                updatingPreviewControls = true;
+                mappingPreviewInputSlider.setValue(input.doubleValue());
+                updatingPreviewControls = false;
+            }
+        } catch (Exception ignored) {
+            // Partial text is allowed while the researcher types.
+        }
+    }
+
+    private void showHapticPreview(HapticPreviewCalculator.Result result) {
+        mappingPreviewInputSlider.setDisable(mappingPreviewInputSlider.getMin() == mappingPreviewInputSlider.getMax());
+        mappingPreviewPulsesLabel.setText("Pulses: " + String.format(Locale.ROOT, "%,d", result.pulses()));
+        mappingPreviewIntensityLabel.setText("Intensity: " + result.intensity());
+        mappingPreviewDurationLabel.setText("Duration: " + result.duration() + " ms");
+        mappingPreviewIntervalLabel.setText("Interval: " + result.interval() + " ms");
+        mappingPreviewTotalLabel.setText("Total length: " + formatPreviewTotal(result.totalDurationMs()));
+        mappingPreviewMessageLabel.setText("Heart rate uses 10 pulses and derives Interval from BPM; Intensity and Duration are interpolated.");
+        mappingPreviewMessageLabel.setVisible(result.heartRate());
+        mappingPreviewMessageLabel.setManaged(result.heartRate());
+        mappingPreviewMessageLabel.getStyleClass().remove("mapping-preview-message-error");
+        renderHapticWaveform(result);
+    }
+
+    private void showUnavailableHapticPreview(String message, boolean error, boolean disableSlider) {
+        mappingPreviewInputSlider.setDisable(disableSlider);
+        mappingPreviewWaveform.getChildren().clear();
+        mappingPreviewPulsesLabel.setText("Pulses: -");
+        mappingPreviewIntensityLabel.setText("Intensity: -");
+        mappingPreviewDurationLabel.setText("Duration: -");
+        mappingPreviewIntervalLabel.setText("Interval: -");
+        mappingPreviewTotalLabel.setText("Total length: -");
+        mappingPreviewMessageLabel.setText(message == null || message.isBlank()
+                ? "Complete the mapping fields to see a preview."
+                : message);
+        mappingPreviewMessageLabel.setVisible(true);
+        mappingPreviewMessageLabel.setManaged(true);
+        mappingPreviewMessageLabel.getStyleClass().remove("mapping-preview-message-error");
+        if (error) {
+            mappingPreviewMessageLabel.getStyleClass().add("mapping-preview-message-error");
+        }
+    }
+
+    private void renderHapticWaveform(HapticPreviewCalculator.Result result) {
+        mappingPreviewWaveform.getChildren().clear();
+        int shownPulses = Math.min(result.pulses(), 16);
+        boolean truncated = result.pulses() > shownPulses;
+        double availableWidth = mappingPreviewWaveform.getWidth() > 240
+                ? mappingPreviewWaveform.getWidth() - (truncated ? 150 : 24)
+                : 600;
+        long shownDuration = (long) shownPulses * result.duration()
+                + (long) Math.max(0, shownPulses - 1) * result.interval();
+        double scale = shownDuration <= 0 ? 1 : Math.min(0.25, availableWidth / shownDuration);
+        double pulseWidth = Math.max(4, Math.min(80, result.duration() * scale));
+        double gapWidth = Math.max(2, Math.min(45, result.interval() * scale));
+        double pulseHeight = 12 + 28 * (result.intensity() / 255.0);
+
+        for (int index = 0; index < shownPulses; index++) {
+            Region pulse = fixedWidthRegion(pulseWidth, "mapping-preview-pulse");
+            pulse.setPrefHeight(pulseHeight);
+            pulse.setMaxHeight(pulseHeight);
+            pulse.setOpacity(0.35 + 0.65 * (result.intensity() / 255.0));
+            pulse.setAccessibleText("Pulse " + (index + 1) + ", " + result.duration()
+                    + " milliseconds, intensity " + result.intensity());
+            mappingPreviewWaveform.getChildren().add(pulse);
+            if (index < shownPulses - 1) {
+                mappingPreviewWaveform.getChildren().add(fixedWidthRegion(gapWidth, "mapping-preview-gap"));
+            }
+        }
+        if (truncated) {
+            Label overflow = new Label("+" + String.format(Locale.ROOT, "%,d", result.pulses() - shownPulses) + " more");
+            overflow.getStyleClass().add("mapping-preview-overflow");
+            mappingPreviewWaveform.getChildren().add(overflow);
+        }
+    }
+
+    private Region fixedWidthRegion(double width, String styleClass) {
+        Region region = new Region();
+        region.setMinWidth(width);
+        region.setPrefWidth(width);
+        region.setMaxWidth(width);
+        region.getStyleClass().add(styleClass);
+        return region;
+    }
+
+    private String formatPreviewTotal(long totalDurationMs) {
+        if (totalDurationMs < 1000) {
+            return totalDurationMs + " ms";
+        }
+        if (totalDurationMs < 60000) {
+            BigDecimal seconds = BigDecimal.valueOf(totalDurationMs)
+                    .divide(BigDecimal.valueOf(1000), 2, RoundingMode.HALF_UP)
+                    .stripTrailingZeros();
+            return seconds.toPlainString() + " s";
+        }
+
+        long hours = totalDurationMs / 3_600_000;
+        long minutes = totalDurationMs % 3_600_000 / 60_000;
+        BigDecimal seconds = BigDecimal.valueOf(totalDurationMs % 60_000)
+                .divide(BigDecimal.valueOf(1000), 1, RoundingMode.HALF_UP)
+                .stripTrailingZeros();
+        StringBuilder formatted = new StringBuilder();
+        if (hours > 0) {
+            formatted.append(hours).append(" h ");
+        }
+        if (minutes > 0) {
+            formatted.append(minutes).append(" min ");
+        }
+        if (seconds.signum() > 0 || formatted.isEmpty()) {
+            formatted.append(seconds.toPlainString()).append(" s");
+        }
+        return formatted.toString().trim();
+    }
+
+    private String formatPreviewInput(double value) {
+        return FormatUtils.formatDecimal(BigDecimal.valueOf(value).setScale(3, RoundingMode.HALF_UP));
+    }
+
+    private boolean hasIncompleteRuleInput() {
+        String selectedUseCase = selectedUseCaseSupplier.get();
+        return selectedUseCase == null || selectedUseCase.isBlank()
+                || ruleInputFields().stream().anyMatch(field -> field.getText() == null || field.getText().isBlank());
+    }
+
     private BigDecimal parseRequiredDecimal(TextField field, String fieldName) {
         if (field == null || field.getText() == null || field.getText().trim().isEmpty()) {
             throw new IllegalArgumentException(fieldName + " is required.");
@@ -1421,6 +1630,7 @@ public class MappingsTabController {
         ruleInputFields().forEach(TextInputControl::clear);
         updatingRuleBuilderFields = false;
         setMappingEditorDirty(false);
+        resetHapticPreviewInput();
     }
 
     private List<TextField> ruleInputFields() {
@@ -1456,6 +1666,14 @@ public class MappingsTabController {
         setText(ruleMaxIntervalField, rule.maxInterval);
         updatingRuleBuilderFields = false;
         setMappingEditorDirty(false);
+        updateHapticPreview(true);
+    }
+
+    private void resetHapticPreviewInput() {
+        updatingPreviewControls = true;
+        mappingPreviewInputField.clear();
+        updatingPreviewControls = false;
+        updateHapticPreview(false);
     }
 
     private void setText(TextField field, int value) {

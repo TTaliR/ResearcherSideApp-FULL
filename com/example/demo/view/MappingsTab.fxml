@@ -5,8 +5,10 @@
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.ScrollPane?>
 <?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.Slider?>
 <?import javafx.scene.control.TextField?>
 <?import javafx.scene.control.Tooltip?>
+<?import javafx.scene.control.TitledPane?>
 <?import javafx.scene.control.ToggleButton?>
 <?import javafx.scene.control.ToggleGroup?>
 <?import javafx.scene.layout.FlowPane?>
@@ -70,6 +72,35 @@
             <Button fx:id="clearRuleButton" text="Clear" styleClass="cancel-button" onAction="#clearRuleInputFields" />
         </VBox>
     </HBox>
+    <TitledPane fx:id="mappingPreviewPane" text="Haptic Pattern Preview" expanded="false" animated="false"
+                collapsible="true" styleClass="mapping-preview-container">
+        <content>
+            <VBox spacing="8.0" styleClass="mapping-preview-panel">
+                <Label text="Linear interpolation is used. Pulse width represents Duration, spacing represents Interval, and height/opacity represents Intensity."
+                       wrapText="true" styleClass="topbar-muted-value" />
+                <HBox alignment="CENTER_LEFT" spacing="10.0">
+                    <Label text="Preview input:" styleClass="topbar-label" />
+                    <Slider fx:id="mappingPreviewInputSlider" minWidth="220.0" prefWidth="420.0" maxWidth="600.0" />
+                    <TextField fx:id="mappingPreviewInputField" prefWidth="105.0" promptText="Midpoint" />
+                </HBox>
+                <HBox fx:id="mappingPreviewWaveform" alignment="CENTER_LEFT" minHeight="48.0" prefHeight="48.0"
+                      spacing="0.0" styleClass="mapping-preview-waveform" />
+                <FlowPane alignment="CENTER_LEFT" hgap="8.0" vgap="6.0">
+                    <Label fx:id="mappingPreviewPulsesLabel" text="Pulses: -" styleClass="mapping-preview-stat" />
+                    <Label fx:id="mappingPreviewIntensityLabel" text="Intensity: -" styleClass="mapping-preview-stat" />
+                    <Label fx:id="mappingPreviewDurationLabel" text="Duration: -" styleClass="mapping-preview-stat" />
+                    <Label fx:id="mappingPreviewIntervalLabel" text="Interval: -" styleClass="mapping-preview-stat" />
+                    <Label fx:id="mappingPreviewTotalLabel" text="Total length: -" styleClass="mapping-preview-total">
+                        <tooltip>
+                            <Tooltip text="Total length = Pulses × Duration + (Pulses − 1) × Interval. There is no Interval after the final pulse." />
+                        </tooltip>
+                    </Label>
+                </FlowPane>
+                <Label fx:id="mappingPreviewMessageLabel" text="Complete the mapping fields to see a preview."
+                       wrapText="true" styleClass="mapping-preview-message" />
+            </VBox>
+        </content>
+    </TitledPane>
     <HBox alignment="CENTER_LEFT" spacing="10.0">
         <Button fx:id="refreshRuleButton" text="Refresh Mappings" onAction="#refreshMappings" styleClass="secondary-button" />
         <Label text="Selected Mapping:" styleClass="topbar-label" />
