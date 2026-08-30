@@ -58,11 +58,9 @@ public class ApiService {
 
     private static final ApiService INSTANCE = new ApiService();
     private final ObjectMapper mapper;
-    private Map<String, Integer> sensorTypeCache;
 
     private ApiService() {
         this.mapper = new ObjectMapper();
-        this.sensorTypeCache = new HashMap<>();
     }
 
     public static ApiService getInstance() { return INSTANCE; }
@@ -968,17 +966,11 @@ public class ApiService {
     }
 
     /**
-     * Fetch sensor types and cache them locally to avoid repeated network calls.
+     * Fetch the current sensor types from the API.
      * Returns a CompletableFuture<Map<String,Integer>> mapping sensor name -> sensor id.
      */
     public CompletableFuture<Map<String, Integer>> getSensorTypes() {
         return CompletableFuture.supplyAsync(() -> {
-            // Return cached data if available
-            if (!sensorTypeCache.isEmpty()) {
-                return new HashMap<>(sensorTypeCache);
-            }
-
-            // Otherwise fetch from API
             try {
                 JsonNode response = get(EP_GET_USECASES, null).get();
                 Map<String, Integer> sensorMap = new HashMap<>();
@@ -991,8 +983,6 @@ public class ApiService {
                     }
                 }
 
-                // Cache the results
-                sensorTypeCache = new HashMap<>(sensorMap);
                 return sensorMap;
 
             } catch (Exception e) {
