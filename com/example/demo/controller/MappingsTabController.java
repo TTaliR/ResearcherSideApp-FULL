@@ -57,6 +57,7 @@ public class MappingsTabController {
     @FXML private Button editLoggingIntervalButton;
     @FXML private Button editVibrationIntervalButton;
     @FXML private ToggleGroup mappingToggleGroup;
+    @FXML private ToggleButton listAllMappingsToggle;
     @FXML private Pane ruleBuilderPane;
     @FXML private ScrollPane mappingsScrollPane;
 
@@ -75,6 +76,7 @@ public class MappingsTabController {
     private BiPredicate<User, RuleCardData> ruleAssignmentResolver = (user, rule) -> false;
     private Function<RuleCardData, List<User>> usersAssignedToRuleResolver = ignored -> List.of();
     private Supplier<CompletableFuture<Void>> mappingRefreshCallback = () -> CompletableFuture.completedFuture(null);
+    private Runnable selectAllUsersCallback = () -> {};
     private Runnable useCasesRefreshCallback = () -> {};
     private Supplier<String> chatSessionIdSupplier = () -> "";
 
@@ -180,6 +182,10 @@ public class MappingsTabController {
         this.mappingRefreshCallback = mappingRefreshCallback == null ? this.mappingRefreshCallback : mappingRefreshCallback;
     }
 
+    public void setSelectAllUsersCallback(Runnable selectAllUsersCallback) {
+        this.selectAllUsersCallback = selectAllUsersCallback == null ? this.selectAllUsersCallback : selectAllUsersCallback;
+    }
+
     public void setUseCasesRefreshCallback(Runnable useCasesRefreshCallback) {
         this.useCasesRefreshCallback = useCasesRefreshCallback == null ? this.useCasesRefreshCallback : useCasesRefreshCallback;
     }
@@ -278,9 +284,8 @@ public class MappingsTabController {
                         return;
                     }
 
-                    refreshMappingsPreservingEditor(null, ruleConfig, scrollPosition);
                     String savedUseCase = useCaseLabelResolver.apply(FormatUtils.normalizeUseCaseName(ruleConfig.getType()));
-                    AlertUtils.showInfoAlert("Save Successful", "Saved mapping for " + savedUseCase + ".");
+                    refreshMappingsAfterCreate(ruleConfig, savedUseCase, scrollPosition);
                 }))
                 .exceptionally(ex -> {
                     Platform.runLater(() -> {
@@ -497,12 +502,71 @@ public class MappingsTabController {
                     updateRenderedMappingSelection(refreshedRule);
                 }
             }
-            Platform.runLater(() -> {
-                if (mappingsScrollPane != null) {
-                    mappingsScrollPane.setVvalue(scrollPosition);
-                }
-            });
+            Platform.runLater(() -> restoreMappingsScrollPosition(scrollPosition));
         }));
+    }
+
+    private void refreshMappingsAfterCreate(SensorRuleConfig ruleConfig, String savedUseCase,
+                                            double scrollPosition) {
+        mappingRefreshCallback.get().whenComplete((ignored, ex) -> Platform.runLater(() -> {
+            RuleCardData createdRule = ex == null ? findIdenticalMapping(ruleConfig) : null;
+            Platform.runLater(() -> restoreMappingsScrollPosition(scrollPosition));
+            showMappingCreatedDialog(savedUseCase, createdRule, ruleConfig);
+        }));
+    }
+
+    private void showMappingCreatedDialog(String savedUseCase, RuleCardData createdRule,
+                                          SensorRuleConfig ruleConfig) {
+        ButtonType showMappingButton = new ButtonType("Show Mapping", ButtonBar.ButtonData.OK_DONE);
+        ButtonType stayHereButton = new ButtonType("Stay Here", ButtonBar.ButtonData.CANCEL_CLOSE);
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Mapping Created");
+        alert.setHeaderText("Saved mapping for " + savedUseCase + ".");
+        alert.setContentText("The new mapping may be hidden by the current participant or listing filters.");
+        alert.getButtonTypes().setAll(showMappingButton, stayHereButton);
+
+        if (alert.showAndWait().filter(showMappingButton::equals).isPresent()) {
+            showCreatedMapping(createdRule, ruleConfig);
+        }
+    }
+
+    private void showCreatedMapping(RuleCardData createdRule, SensorRuleConfig ruleConfig) {
+        selectAllUsersCallback.run();
+        showingActiveMappingsOnly = false;
+        if (listAllMappingsToggle != null) {
+            mappingToggleGroup.selectToggle(listAllMappingsToggle);
+        }
+
+        RuleCardData mappingToShow = createdRule == null ? findIdenticalMapping(ruleConfig) : createdRule;
+        if (mappingToShow == null) {
+            renderMappingsWhenReady(selectedUseCaseSupplier.get());
+            return;
+        }
+
+        updateSelectedMappingForEdit(mappingToShow);
+        renderMappingsWhenReady(selectedUseCaseSupplier.get());
+        Platform.runLater(() -> scrollToMapping(mappingToShow.mappingId));
+    }
+
+    private void scrollToMapping(int mappingId) {
+        if (mappingsScrollPane == null || mappingsFlowPane == null) {
+            return;
+        }
+        mappingsFlowPane.getChildren().stream()
+                .filter(node -> Objects.equals(node.getUserData(), mappingId))
+                .findFirst()
+                .ifPresent(node -> {
+                    double scrollableHeight = mappingsFlowPane.getHeight()
+                            - mappingsScrollPane.getViewportBounds().getHeight();
+                    double position = scrollableHeight <= 0 ? 0 : node.getBoundsInParent().getMinY() / scrollableHeight;
+                    mappingsScrollPane.setVvalue(Math.max(0, Math.min(1, position)));
+                });
+    }
+
+    private void restoreMappingsScrollPosition(double scrollPosition) {
+        if (mappingsScrollPane != null) {
+            mappingsScrollPane.setVvalue(scrollPosition);
+        }
     }
 
     private RuleCardData findIdenticalMapping(SensorRuleConfig ruleConfig) {

@@ -745,6 +745,7 @@ public class DashboardController {
         mappingsTabContentController.setRuleAssignmentResolver(this::isUserAssignedToRule);
         mappingsTabContentController.setUsersAssignedToRuleResolver(this::findUsersAssignedToRule);
         mappingsTabContentController.setMappingRefreshCallback(this::refreshMappingData);
+        mappingsTabContentController.setSelectAllUsersCallback(() -> topBarController.selectAllUsers());
         mappingsTabContentController.setUseCasesRefreshCallback(this::loadUseCases);
         mappingsTabContentController.setChatSessionIdSupplier(this::getCurrentChatSessionId);
         mappingsTabContentController.onSelectedUseCaseChanged(state.getSelectedUseCase());

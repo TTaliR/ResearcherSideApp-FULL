@@ -20,7 +20,7 @@
     </fx:define>
     <HBox spacing="0" alignment="CENTER_LEFT" styleClass="segmented-button-bar">
         <ToggleButton text="List Active" onAction="#onListActiveMappings" toggleGroup="$mappingToggleGroup" selected="true"  />
-        <ToggleButton text="List All" onAction="#onListAllMappings" toggleGroup="$mappingToggleGroup" />
+        <ToggleButton fx:id="listAllMappingsToggle" text="List All" onAction="#onListAllMappings" toggleGroup="$mappingToggleGroup" />
     </HBox>
     <VBox spacing="0">
         <Label text="Mapping Rule Builder" styleClass="drawer-title" alignment="CENTER_LEFT"/>
