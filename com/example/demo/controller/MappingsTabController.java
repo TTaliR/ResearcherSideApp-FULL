@@ -58,6 +58,7 @@ public class MappingsTabController {
     @FXML private Button editVibrationIntervalButton;
     @FXML private ToggleGroup mappingToggleGroup;
     @FXML private Pane ruleBuilderPane;
+    @FXML private ScrollPane mappingsScrollPane;
 
     private Supplier<String> selectedUseCaseSupplier = () -> "";
     private Supplier<Integer> selectedUseCaseIdSupplier = () -> null;
@@ -267,6 +268,7 @@ public class MappingsTabController {
                 return;
             }
 
+            double scrollPosition = getMappingsScrollPosition();
             ButtonLoadingState loading = ButtonLoadingState.start(saveRuleButton, "Saving...");
             ApiService.getInstance().saveSensorRuleConfig(ruleConfig)
                 .thenAccept(success -> Platform.runLater(() -> {
@@ -276,9 +278,7 @@ public class MappingsTabController {
                         return;
                     }
 
-                    clearRuleBuilderForm();
-                    updateSelectedMappingForEdit(null);
-                    mappingRefreshCallback.get();
+                    refreshMappingsPreservingEditor(null, ruleConfig, scrollPosition);
                     String savedUseCase = useCaseLabelResolver.apply(FormatUtils.normalizeUseCaseName(ruleConfig.getType()));
                     AlertUtils.showInfoAlert("Save Successful", "Saved mapping for " + savedUseCase + ".");
                 }))
@@ -408,6 +408,7 @@ public class MappingsTabController {
     }
 
     private void changeMappingForAllUsers(RuleCardData editingRule, SensorRuleConfig ruleConfig, int useCaseId) {
+        double scrollPosition = getMappingsScrollPosition();
         ButtonLoadingState loading = ButtonLoadingState.start(saveRuleButton, "Updating...");
         ApiService.getInstance().changeMapping(
                 editingRule.mappingId,
@@ -420,7 +421,10 @@ public class MappingsTabController {
                     loading,
                     success,
                     "Could not change mapping ID " + editingRule.mappingId + ".",
-                    "Updated mapping ID " + editingRule.mappingId + "."
+                    "Updated mapping ID " + editingRule.mappingId + ".",
+                    editingRule,
+                    ruleConfig,
+                    scrollPosition
             )))
             .exceptionally(ex -> {
                 Platform.runLater(() -> {
@@ -433,6 +437,7 @@ public class MappingsTabController {
 
     private void changeMappingForCurrentUserOnly(RuleCardData editingRule, User currentUser,
                                                  SensorRuleConfig ruleConfig, int useCaseId) {
+        double scrollPosition = getMappingsScrollPosition();
         ButtonLoadingState loading = ButtonLoadingState.start(saveRuleButton, "Updating...");
         ApiService.getInstance().changeMappingForUserOnly(
                 editingRule.mappingId,
@@ -446,7 +451,10 @@ public class MappingsTabController {
                     loading,
                     success,
                     "Could not duplicate mapping ID " + editingRule.mappingId + " for user " + currentUser.getUserID() + ".",
-                    "Applied mapping changes only to user " + currentUser.getUserID() + "."
+                    "Applied mapping changes only to user " + currentUser.getUserID() + ".",
+                    editingRule,
+                    ruleConfig,
+                    scrollPosition
             )))
             .exceptionally(ex -> {
                 Platform.runLater(() -> {
@@ -457,17 +465,44 @@ public class MappingsTabController {
             });
     }
 
-    private void handleMappingChangeResult(ButtonLoadingState loading, boolean success, String failureMessage, String successMessage) {
+    private void handleMappingChangeResult(ButtonLoadingState loading, boolean success, String failureMessage,
+                                           String successMessage, RuleCardData editingRule,
+                                           SensorRuleConfig ruleConfig, double scrollPosition) {
         loading.close();
         if (!success) {
             AlertUtils.showErrorAlert("Update Failed", failureMessage);
             return;
         }
 
-        clearRuleBuilderForm();
-        updateSelectedMappingForEdit(null);
-        mappingRefreshCallback.get();
+        refreshMappingsPreservingEditor(editingRule, ruleConfig, scrollPosition);
         AlertUtils.showInfoAlert("Mapping Updated", successMessage);
+    }
+
+    private double getMappingsScrollPosition() {
+        return mappingsScrollPane == null ? 0 : mappingsScrollPane.getVvalue();
+    }
+
+    private void refreshMappingsPreservingEditor(RuleCardData editingRule, SensorRuleConfig ruleConfig,
+                                                  double scrollPosition) {
+        mappingRefreshCallback.get().whenComplete((ignored, ex) -> Platform.runLater(() -> {
+            if (editingRule != null) {
+                User selectedUser = selectedUserSupplier.get();
+                RuleCardData refreshedRule = rulesSupplier.get().stream()
+                        .filter(rule -> rule.mappingId == editingRule.mappingId)
+                        .filter(rule -> selectedUser == null || isUserAssignedToRule(selectedUser, rule))
+                        .findFirst()
+                        .orElseGet(() -> findIdenticalMapping(ruleConfig));
+                if (refreshedRule != null) {
+                    updateSelectedMappingForEdit(refreshedRule);
+                    updateRenderedMappingSelection(refreshedRule);
+                }
+            }
+            Platform.runLater(() -> {
+                if (mappingsScrollPane != null) {
+                    mappingsScrollPane.setVvalue(scrollPosition);
+                }
+            });
+        }));
     }
 
     private RuleCardData findIdenticalMapping(SensorRuleConfig ruleConfig) {

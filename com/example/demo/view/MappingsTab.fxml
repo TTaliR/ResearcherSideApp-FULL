@@ -97,7 +97,7 @@
     </HBox>
 
     <StackPane VBox.vgrow="ALWAYS">
-        <ScrollPane fitToWidth="true" hbarPolicy="NEVER" styleClass="mappings-scroll" VBox.vgrow="ALWAYS">
+        <ScrollPane fx:id="mappingsScrollPane" fitToWidth="true" hbarPolicy="NEVER" styleClass="mappings-scroll" VBox.vgrow="ALWAYS">
             <FlowPane fx:id="mappingsFlowPane" hgap="14.0" vgap="14.0" prefWrapLength="920.0">
                 <padding>
                     <Insets top="12.0" right="12.0" bottom="12.0" left="12.0" />
