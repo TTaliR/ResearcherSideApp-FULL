@@ -67,6 +67,23 @@ if (!Array.isArray(data) || data.length === 0) {
     }))
     .filter(d => d.parsedTime && !Number.isNaN(d.value));
 
+  function insertGaps(points) {
+    if (points.length < 2) return points;
+
+    const diffs = points.slice(1)
+      .map((point, index) => point.parsedTime - points[index].parsedTime)
+      .filter(diff => diff > 0)
+      .sort((a, b) => a - b);
+    const medianDiff = diffs[Math.floor(diffs.length / 2)] || 0;
+    const gapThreshold = Math.max(5 * medianDiff, 2 * 60 * 1000);
+
+    return points.flatMap((point, index) =>
+      index > 0 && point.parsedTime - points[index - 1].parsedTime > gapThreshold
+        ? [{ parsedTime: new Date((point.parsedTime.getTime() + points[index - 1].parsedTime.getTime()) / 2), value: null }, point]
+        : [point]
+    );
+  }
+
   if (normalized.length === 0) {
     document.body.innerHTML = '<div class="empty">No valid time/value points</div>';
   } else {
@@ -116,12 +133,13 @@ if (!Array.isArray(data) || data.length === 0) {
       .call(d3.axisLeft(y).ticks(4));
 
     const line = d3.line()
+      .defined(d => d.value != null)
       .x(d => x(d.parsedTime))
       .y(d => y(d.value))
       .curve(d3.curveMonotoneX);
 
     g.append("path")
-      .datum(normalized)
+      .datum(insertGaps(normalized))
       .attr("fill", "none")
       .attr("stroke", "#2563eb")
       .attr("stroke-width", 2)
