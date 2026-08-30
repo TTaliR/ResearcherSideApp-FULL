@@ -27,7 +27,6 @@ import javafx.scene.shape.Circle;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
@@ -150,7 +149,7 @@ public class LeftSidebarController {
                     return;
                 }
 
-                useCaseLabel.setText(formatUseCaseName(item));
+                useCaseLabel.setText(FormatUtils.formatUseCaseName(item));
                 newChatButton.setOnAction(event -> {
                     if (onNewChatSessionRequested != null) {
                         onNewChatSessionRequested.accept(item);
@@ -182,7 +181,7 @@ public class LeftSidebarController {
                     if (empty || item == null) {
                         setText(null);
                     } else {
-                        setText(formatUseCaseName(item));
+                        setText(FormatUtils.formatUseCaseName(item));
                     }
                 }
             });
@@ -193,7 +192,7 @@ public class LeftSidebarController {
                     if (empty || item == null) {
                         setText(null);
                     } else {
-                        setText(formatUseCaseName(item));
+                        setText(FormatUtils.formatUseCaseName(item));
                     }
                 }
             });
@@ -365,7 +364,7 @@ public class LeftSidebarController {
         selectedUserForAssignmentLabel.setText(userDisplay);
 
         String displayUsecase = user.getUsecaseName();
-        currentUserUseCaseLabel.setText(displayUsecase == null || displayUsecase.isBlank() ? "-" : formatUseCaseName(displayUsecase));
+        currentUserUseCaseLabel.setText(displayUsecase == null || displayUsecase.isBlank() ? "-" : FormatUtils.formatUseCaseName(displayUsecase));
 
         if (displayUsecase != null && !displayUsecase.isBlank() && userUseCaseComboBox.getItems().contains(displayUsecase)) {
             userUseCaseComboBox.setValue(displayUsecase);
@@ -420,17 +419,6 @@ public class LeftSidebarController {
     private String formatUser(User user) {
         String name = (user.getFName() + " " + user.getLName()).trim();
         return name.isEmpty() ? String.valueOf(user.getUserID()) : user.getUserID() + " - " + name;
-    }
-
-    private String formatUseCaseName(String useCase) {
-        if (useCase == null || useCase.isBlank()) {
-            return useCase;
-        }
-        // Split by underscore OR positive lookahead for an uppercase letter
-        return Arrays.stream(useCase.split("(?=[A-Z])|_"))
-                .filter(word -> !word.isEmpty()) // filter out empty strings caused by leading uppercase letters
-                .map(word -> Character.toUpperCase(word.charAt(0)) + word.substring(1).toLowerCase())
-                .collect(Collectors.joining(" "));
     }
 
     // Public API for parent controller
