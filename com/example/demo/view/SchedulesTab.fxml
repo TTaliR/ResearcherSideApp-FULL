@@ -19,6 +19,11 @@
     <fx:define>
         <ToggleGroup fx:id="scheduleToggleGroup" />
     </fx:define>
+    <VBox spacing="3.0">
+        <Label text="Participant Personalization" styleClass="drawer-title" />
+        <Label text="Periodically checks the selected feedback measure and adjusts the participant's vibration threshold by the configured percentage."
+               wrapText="true" styleClass="topbar-muted-value" />
+    </VBox>
     <HBox spacing="0" alignment="CENTER_LEFT" styleClass="segmented-button-bar">
         <ToggleButton fx:id="listActiveSchedulesButton" text="List Active" onAction="#onListActiveSchedules" toggleGroup="$scheduleToggleGroup" selected="true" />
         <ToggleButton fx:id="listAllSchedulesButton" text="List All" onAction="#onListAllSchedules" toggleGroup="$scheduleToggleGroup" />
