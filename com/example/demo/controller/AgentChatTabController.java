@@ -1325,7 +1325,7 @@ public class AgentChatTabController {
         updateAgentActivityMessage();
         if (agentActivityTimeline == null) {
             agentActivityTimeline = new Timeline(
-                    new KeyFrame(Duration.seconds(2.4), ignored -> updateAgentActivityMessage())
+                    new KeyFrame(Duration.seconds(5), ignored -> updateAgentActivityMessage())
             );
             agentActivityTimeline.setCycleCount(Timeline.INDEFINITE);
         }
