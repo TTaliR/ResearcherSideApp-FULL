@@ -23,13 +23,13 @@ Participant tags identify who raised or demonstrated each finding: `[P1]`, `[P2]
 - Mapping cards and history wrap negative values in parentheses, for example `(-10)-(-5)`, while edit fields and backend payloads retain normal numeric values.
 - PDF mapping output preserves decimal values instead of converting them to integers.
 - Field prompts now communicate signed decimal sensor values and the `1–255` intensity range.
-- Legacy mappings with intensity outside `1–255`, or with reversed intensity endpoints, are visually marked invalid. They remain readable but cannot be saved again until corrected.
+- Legacy mappings with intensity outside `1–255` are visually marked invalid. Descending intensity ranges remain valid.
 
 ### Compatibility behavior
 
 - The backend contract and field names are unchanged.
 - Existing invalid mappings are not automatically migrated or disabled.
-- Attempting to save or update an invalid mapping is blocked until both intensity endpoints are within `1–255` and ordered correctly.
+- Attempting to save or update an invalid mapping is blocked until both intensity endpoints are within `1–255`.
 
 ## Mapping creation and editing workflow
 

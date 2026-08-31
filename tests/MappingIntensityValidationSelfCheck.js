@@ -12,7 +12,7 @@ const css = read("com", "example", "demo", "view", "dashboard.css");
 assert.match(model, /boolean hasInvalidIntensity\(\)/);
 assert.match(model, /minIntensity < 1 \|\| minIntensity > 255/);
 assert.match(model, /maxIntensity < 1 \|\| maxIntensity > 255/);
-assert.match(model, /minIntensity > maxIntensity/);
+assert.doesNotMatch(model, /minIntensity > maxIntensity/);
 assert.match(controller, /Intensity values must be between 1 and 255\./);
 assert.match(controller, /rule\.hasInvalidIntensity\(\)/);
 assert.match(factory, /rule\.hasInvalidIntensity\(\)/);

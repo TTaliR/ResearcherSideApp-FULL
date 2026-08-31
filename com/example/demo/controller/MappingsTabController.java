@@ -359,10 +359,6 @@ public class MappingsTabController {
         if (minIntensity < 1 || minIntensity > 255 || maxIntensity < 1 || maxIntensity > 255) {
             throw new IllegalArgumentException("Intensity values must be between 1 and 255.");
         }
-        if (minIntensity > maxIntensity) {
-            throw new IllegalArgumentException("Min Intensity cannot be greater than Max Intensity.");
-        }
-
         int minDuration = parseRequiredInt(ruleMinDurationField, "Min Duration");
         int maxDuration = parseRequiredInt(ruleMaxDurationField, "Max Duration");
 

@@ -26,7 +26,6 @@ public class RuleCardData {
 
     public boolean hasInvalidIntensity() {
         return minIntensity < 1 || minIntensity > 255
-                || maxIntensity < 1 || maxIntensity > 255
-                || minIntensity > maxIntensity;
+                || maxIntensity < 1 || maxIntensity > 255;
     }
 }
