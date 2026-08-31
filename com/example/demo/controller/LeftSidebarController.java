@@ -118,16 +118,17 @@ public class LeftSidebarController {
         useCaseListView.setItems(useCases);
         useCaseListView.setCellFactory(listView -> new ListCell<>() {
             private final Label useCaseLabel = new Label();
-            private final Region spacer = new Region();
             private final Button newChatButton = new Button("New chat");
             private final Button sessionsMenuButton = new Button("▾");
             private final HBox chatActions = new HBox(newChatButton, sessionsMenuButton);
-            private final HBox content = new HBox(6, useCaseLabel, spacer, chatActions);
+            private final HBox content = new HBox(6, useCaseLabel, chatActions);
 
             {
                 content.setAlignment(Pos.CENTER_LEFT);
                 chatActions.setAlignment(Pos.CENTER_LEFT);
-                HBox.setHgrow(spacer, Priority.ALWAYS);
+                useCaseLabel.setMinWidth(0);
+                useCaseLabel.setMaxWidth(Double.MAX_VALUE);
+                HBox.setHgrow(useCaseLabel, Priority.ALWAYS);
                 useCaseLabel.getStyleClass().add("sidebar-usecase-row-label");
                 newChatButton.getStyleClass().add("sidebar-new-chat-button");
                 sessionsMenuButton.getStyleClass().add("sidebar-sessions-menu-button");
